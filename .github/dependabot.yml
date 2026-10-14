@@ -1,0 +1,20 @@
+# Weekly dependency update pull requests (standard §8.4). Each one must pass CI like any change.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      angular: { patterns: ['@angular/*', 'angular-eslint'] }
+      lint: { patterns: ['eslint', '@eslint/*', 'typescript-eslint', 'prettier'] }
+  - package-ecosystem: uv
+    directory: /apps/assistant
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+  - package-ecosystem: docker
+    directories: ['/apps/api', '/apps/web', '/apps/assistant']
+    schedule: { interval: weekly }

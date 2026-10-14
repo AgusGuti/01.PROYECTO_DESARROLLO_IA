@@ -1,0 +1,13 @@
+node_modules
+dist
+coverage
+.angular
+.tools
+.venv
+package-lock.json
+uv.lock
+packages/api-contracts/openapi.yaml
+packages/api-contracts/generated
+.opencode/agents
+docs/standards
+docs/product/propuesta-proyecto-impresion-3d.md

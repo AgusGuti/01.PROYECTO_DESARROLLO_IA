@@ -1,0 +1,4 @@
+node scripts/git/protect-main.mjs commit
+node scripts/ai/guard-scan.mjs --staged
+npx --no-install lint-staged
+node scripts/secrets-scan.mjs --staged

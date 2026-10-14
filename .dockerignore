@@ -1,0 +1,15 @@
+**/node_modules
+**/dist
+**/.angular
+**/.venv
+**/__pycache__
+**/coverage
+.git
+.tools
+.env
+.env.*
+!.env.example
+.claude
+.opencode
+docs
+e2e

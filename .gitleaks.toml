@@ -1,0 +1,16 @@
+# Secret scanning rules: the gitleaks defaults, minus folders that hold installed or generated
+# files rather than our source. This file is a quality gate; do not allowlist real findings.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Installed dependencies, downloaded tools and build output"
+paths = [
+  '''(^|/)node_modules/''',
+  '''(^|/)\.venv/''',
+  '''(^|/)\.tools/''',
+  '''(^|/)dist/''',
+  '''(^|/)\.angular/''',
+  '''(^|/)package-lock\.json$''',
+  '''(^|/)uv\.lock$''',
+]
