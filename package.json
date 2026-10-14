@@ -24,6 +24,8 @@
     "db:up": "docker compose up -d --wait mongo",
     "db:down": "docker compose stop mongo",
     "db:shell": "docker compose exec mongo mongosh print3d",
+    "db:indexes": "npm run db:indexes -w @print3d/api",
+    "db:seed": "npm run db:seed -w @print3d/api",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings 0",

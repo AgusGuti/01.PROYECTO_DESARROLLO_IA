@@ -11,6 +11,24 @@ export const routes: Routes = [
       import('./features/system-status/status-page').then((module) => module.StatusPage),
   },
   {
+    path: 'impresoras',
+    title: 'Impresoras · Print3D Planner',
+    loadComponent: () =>
+      import('./features/printers/printers-list-page').then((module) => module.PrintersListPage),
+  },
+  {
+    path: 'impresoras/nueva',
+    title: 'Nueva impresora · Print3D Planner',
+    loadComponent: () =>
+      import('./features/printers/printer-form-page').then((module) => module.PrinterFormPage),
+  },
+  {
+    path: 'impresoras/:id/editar',
+    title: 'Editar impresora · Print3D Planner',
+    loadComponent: () =>
+      import('./features/printers/printer-form-page').then((module) => module.PrinterFormPage),
+  },
+  {
     path: '**',
     title: 'Página no encontrada · Print3D Planner',
     loadComponent: () =>

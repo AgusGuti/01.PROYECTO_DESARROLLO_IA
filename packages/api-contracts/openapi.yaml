@@ -104,6 +104,220 @@ components:
         - status
         - checks
         - timestamp
+    Printer:
+      type: object
+      properties:
+        id:
+          type: string
+          example: 66f0c0ffee0123456789abcd
+        name:
+          type: string
+        buildVolume:
+          $ref: "#/components/schemas/PrinterBuildVolume"
+        nozzle:
+          $ref: "#/components/schemas/PrinterNozzle"
+        compatibleMaterials:
+          type: array
+          items:
+            $ref: "#/components/schemas/Material"
+        typicalSpeedMmS:
+          type:
+            - integer
+            - "null"
+        status:
+          $ref: "#/components/schemas/PrinterStatus"
+        version:
+          type: integer
+          description: Send this back when editing.
+        archivedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+          description: Set while the printer waits to be removed ("Pendiente de eliminar").
+        createdAt:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+        updatedAt:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+      required:
+        - id
+        - name
+        - buildVolume
+        - nozzle
+        - compatibleMaterials
+        - typicalSpeedMmS
+        - status
+        - version
+        - archivedAt
+        - createdAt
+        - updatedAt
+    PrinterBuildVolume:
+      type: object
+      properties:
+        x:
+          type: integer
+          minimum: 1
+          maximum: 2000
+        y:
+          type: integer
+          minimum: 1
+          maximum: 2000
+        z:
+          type: integer
+          minimum: 1
+          maximum: 2000
+      required:
+        - x
+        - y
+        - z
+      additionalProperties: false
+      description: Usable print volume in millimetres.
+    PrinterNozzle:
+      type: object
+      properties:
+        diameterMm:
+          anyOf:
+            - type: number
+              enum:
+                - 0.2
+            - type: number
+              enum:
+                - 0.25
+            - type: number
+              enum:
+                - 0.4
+            - type: number
+              enum:
+                - 0.6
+            - type: number
+              enum:
+                - 0.8
+            - type: number
+              enum:
+                - 1
+        material:
+          type: string
+          enum:
+            - brass
+            - hardened_steel
+            - stainless_steel
+      required:
+        - diameterMm
+        - material
+      additionalProperties: false
+    Material:
+      type: string
+      enum:
+        - PLA
+        - PETG
+        - ABS
+        - ASA
+        - TPU
+        - PA
+        - PC
+        - HIPS
+        - PVA
+        - PP
+        - PLA_CF
+        - PETG_CF
+        - PA_CF
+        - PA_GF
+    PrinterStatus:
+      type: string
+      enum:
+        - available
+        - in_use
+        - maintenance
+    CreatePrinterRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Ender 3 Pro
+        buildVolume:
+          $ref: "#/components/schemas/PrinterBuildVolume"
+        nozzle:
+          $ref: "#/components/schemas/PrinterNozzle"
+        compatibleMaterials:
+          type: array
+          items:
+            $ref: "#/components/schemas/Material"
+          minItems: 1
+          maxItems: 14
+        status:
+          $ref: "#/components/schemas/PrinterStatus"
+        typicalSpeedMmS:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        restoreIfDeleted:
+          type: boolean
+          default: false
+          description: Set to true to restore a deleted printer that holds this name, replacing its data with
+            the submitted data. Without it, that name answers 409 (issue path "restoreIfDeleted").
+      required:
+        - name
+        - buildVolume
+        - nozzle
+        - compatibleMaterials
+      additionalProperties: false
+    PrinterList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Printer"
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+      required:
+        - items
+        - page
+        - pageSize
+        - total
+    UpdatePrinterRequest:
+      type: object
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Ender 3 Pro
+        buildVolume:
+          $ref: "#/components/schemas/PrinterBuildVolume"
+        nozzle:
+          $ref: "#/components/schemas/PrinterNozzle"
+        compatibleMaterials:
+          type: array
+          items:
+            $ref: "#/components/schemas/Material"
+          minItems: 1
+          maxItems: 14
+        typicalSpeedMmS:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+          maximum: 1000
+        status:
+          $ref: "#/components/schemas/PrinterStatus"
+      required:
+        - version
+      additionalProperties: false
   parameters: {}
 paths:
   /health/live:
@@ -140,4 +354,258 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Readiness"
+  /api/v1/printers:
+    post:
+      operationId: createPrinter
+      tags:
+        - Printers
+      summary: Register a printer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePrinterRequest"
+      responses:
+        "200":
+          description: Restored. A deleted printer with this name was revived with the submitted data (only
+            with restoreIfDeleted true). The Location header points to it.
+          headers:
+            Location:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Printer"
+        "201":
+          description: Created. The Location header points to the new printer.
+          headers:
+            Location:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Printer"
+        "400":
+          description: Invalid input, or a reinforced material without a hardened_steel nozzle.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: 'The name is taken. Issue path "name": a live or pending-removal printer holds it.
+            Issue path "restoreIfDeleted": a deleted printer holds it; resend with restoreIfDeleted
+            true to restore it.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    get:
+      operationId: listPrinters
+      tags:
+        - Printers
+      summary: List printers
+      description: Includes printers pending removal (archivedAt set). Removed printers are not listed.
+      parameters:
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 1
+          required: false
+          name: page
+          in: query
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          required: false
+          name: pageSize
+          in: query
+        - schema:
+            type: string
+            enum:
+              - available
+              - in_use
+              - maintenance
+          required: false
+          name: status
+          in: query
+        - schema:
+            type: string
+            enum:
+              - name
+              - createdAt
+            default: name
+          required: false
+          name: sort
+          in: query
+        - schema:
+            type: string
+            enum:
+              - asc
+              - desc
+            default: asc
+          required: false
+          name: order
+          in: query
+      responses:
+        "200":
+          description: One page of printers. A page past the last one is empty.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrinterList"
+        "400":
+          description: Unknown or invalid query parameter.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/printers/{id}/unarchive:
+    post:
+      operationId: unarchivePrinter
+      tags:
+        - Printers
+      summary: Cancel the pending removal of a printer
+      description: Clears archivedAt so the printer can be edited again. Repeating it on a printer that is
+        not pending removal is a 200 with no change.
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      responses:
+        "200":
+          description: The printer, no longer pending removal.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Printer"
+        "400":
+          description: Malformed id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such printer, or it was removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/printers/{id}:
+    get:
+      operationId: getPrinter
+      tags:
+        - Printers
+      summary: Get one printer
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      responses:
+        "200":
+          description: The printer (also when it is pending removal).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Printer"
+        "400":
+          description: Malformed id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such printer, or it was removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    patch:
+      operationId: updatePrinter
+      tags:
+        - Printers
+      summary: Edit a printer
+      description: "Send the `version` you last saw plus the fields to change. Nested objects and
+        `compatibleMaterials` are replaced whole; `typicalSpeedMmS: null` clears the speed."
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePrinterRequest"
+      responses:
+        "200":
+          description: The updated printer, with its new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Printer"
+        "400":
+          description: Invalid input, or the merged state breaks a rule.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such printer, or it was removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Stale version (issue path "version"), duplicate name (path "name"), or the printer is
+            pending removal.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    delete:
+      operationId: deletePrinter
+      tags:
+        - Printers
+      summary: Remove a printer
+      description: Never physical. An idle printer is removed; one in use or with assignments becomes
+        pending removal (archivedAt set). Repeating the request on a pending printer is a 204.
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      responses:
+        "204":
+          description: Removed, or pending removal.
+        "400":
+          description: Malformed id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such printer, or it was already removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
 webhooks: {}

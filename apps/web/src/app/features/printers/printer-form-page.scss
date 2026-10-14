@@ -1,0 +1,82 @@
+form {
+  display: grid;
+  gap: 1.25rem;
+  max-inline-size: 40rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.25rem;
+}
+
+input[type='text'],
+input[type='number'],
+select {
+  border: 1px solid var(--color-muted);
+  border-radius: 0.375rem;
+  font: inherit;
+  padding: 0.5rem;
+
+  &[aria-invalid='true'] {
+    border-color: var(--color-error);
+  }
+}
+
+fieldset {
+  border: 1px solid var(--color-border);
+  border-radius: 0.375rem;
+  padding: 0.75rem 1rem 1rem;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.materials {
+  display: grid;
+  gap: 0.5rem 1.5rem;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+}
+
+.check {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.field-error {
+  color: var(--color-error);
+  margin: 0;
+}
+
+.hint {
+  color: var(--color-muted);
+  margin-block: 0 0.5rem;
+}
+
+.notice,
+.status {
+  border-inline-start: 0.25rem solid var(--color-border);
+  margin-block: 0 1rem;
+  padding: 0.75rem 1rem;
+
+  &--warn {
+    border-color: var(--color-warn);
+  }
+
+  &--error {
+    border-color: var(--color-error);
+  }
+}
+
+.notice {
+  border-color: var(--color-warn);
+}
+
+.actions {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+}

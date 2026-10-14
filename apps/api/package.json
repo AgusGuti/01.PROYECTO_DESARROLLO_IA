@@ -10,7 +10,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --project unit",
     "test:int": "vitest run --project integration",
-    "openapi": "tsx scripts/generate-openapi.ts"
+    "openapi": "tsx scripts/generate-openapi.ts",
+    "db:indexes": "tsx --env-file-if-exists=../../.env scripts/ensure-indexes.ts",
+    "db:seed": "tsx --env-file-if-exists=../../.env scripts/seed-printers.ts"
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "9.1.0",

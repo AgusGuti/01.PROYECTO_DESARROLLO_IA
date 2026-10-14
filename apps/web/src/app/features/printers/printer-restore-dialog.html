@@ -1,0 +1,27 @@
+<dialog
+  #dialog
+  role="alertdialog"
+  aria-labelledby="restore-dialog-title"
+  aria-describedby="restore-dialog-text"
+  (cancel)="onCancelEvent($event)"
+>
+  <h2 id="restore-dialog-title">Restaurar impresora</h2>
+  <p id="restore-dialog-text">
+    Ya existió una impresora llamada «{{ printerName() }}» y fue eliminada. ¿Querés restaurarla con
+    los datos que cargaste en este formulario? Reemplazan a los datos anteriores.
+  </p>
+  <div class="actions">
+    <button
+      #cancelButton
+      type="button"
+      class="secondary"
+      (click)="cancelled.emit()"
+      [disabled]="busy()"
+    >
+      Cancelar
+    </button>
+    <button type="button" (click)="confirm()" [disabled]="busy()">
+      {{ busy() ? 'Restaurando…' : 'Restaurar' }}
+    </button>
+  </div>
+</dialog>
