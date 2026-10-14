@@ -2,6 +2,7 @@
 // `npm run contract` writes it to packages/api-contracts/openapi.yaml; never edit that file.
 import { OpenApiGeneratorV31, OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { registerHealthPaths } from '../modules/health/index.js';
+import { registerPrintersPaths } from '../modules/printers/index.js';
 import { problemSchema } from '../shared/http/problem.js';
 
 export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV31['generateDocument']> {
@@ -9,6 +10,7 @@ export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV31['generate
 
   registry.register('Problem', problemSchema);
   registerHealthPaths(registry);
+  registerPrintersPaths(registry);
   // Feature modules register their paths here as they are added.
 
   return new OpenApiGeneratorV31(registry.definitions).generateDocument({

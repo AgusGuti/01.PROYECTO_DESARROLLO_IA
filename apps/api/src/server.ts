@@ -3,6 +3,7 @@ import type { Logger } from 'pino';
 import { createApp } from './app.js';
 import { loadConfigFromEnvironment, type Config } from './config/env.js';
 import { createMongoDatabase } from './infrastructure/database/mongo.js';
+import { assertPrintersIndexes } from './modules/printers/index.js';
 import { createLogger } from './shared/logging/logger.js';
 
 function loadConfigOrExplain(): Config | undefined {
@@ -32,6 +33,19 @@ async function main(): Promise<void> {
     logger.fatal({ err: error }, 'cannot connect to MongoDB; is it running? Try: npm run db:up');
     process.exitCode = 1;
     return;
+  }
+
+  if (config.env === 'production') {
+    // autoIndex is off in production and indexes are created deliberately (npm run db:indexes).
+    // Refuse to serve traffic without them rather than accept duplicate names.
+    try {
+      await assertPrintersIndexes();
+    } catch (error) {
+      logger.fatal({ err: error }, 'database indexes are missing; run: npm run db:indexes');
+      await database.disconnect().catch(() => undefined);
+      process.exitCode = 1;
+      return;
+    }
   }
 
   const app = createApp({ config, logger, database });

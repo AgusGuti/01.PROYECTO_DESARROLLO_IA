@@ -37,6 +37,74 @@ export type Readiness = {
     timestamp: string;
 };
 
+export type Printer = {
+    id: string;
+    name: string;
+    buildVolume: PrinterBuildVolume;
+    nozzle: PrinterNozzle;
+    compatibleMaterials: Array<Material>;
+    typicalSpeedMmS: number | null;
+    status: PrinterStatus;
+    /**
+     * Send this back when editing.
+     */
+    version: number;
+    /**
+     * Set while the printer waits to be removed ("Pendiente de eliminar").
+     */
+    archivedAt: string | null;
+    createdAt: string;
+    updatedAt: string;
+};
+
+/**
+ * Usable print volume in millimetres.
+ */
+export type PrinterBuildVolume = {
+    x: number;
+    y: number;
+    z: number;
+};
+
+export type PrinterNozzle = {
+    diameterMm: 0.2 | 0.25 | 0.4 | 0.6 | 0.8 | 1;
+    material: 'brass' | 'hardened_steel' | 'stainless_steel';
+};
+
+export type Material = 'PLA' | 'PETG' | 'ABS' | 'ASA' | 'TPU' | 'PA' | 'PC' | 'HIPS' | 'PVA' | 'PP' | 'PLA_CF' | 'PETG_CF' | 'PA_CF' | 'PA_GF';
+
+export type PrinterStatus = 'available' | 'in_use' | 'maintenance';
+
+export type CreatePrinterRequest = {
+    name: string;
+    buildVolume: PrinterBuildVolume;
+    nozzle: PrinterNozzle;
+    compatibleMaterials: Array<Material>;
+    status?: PrinterStatus;
+    typicalSpeedMmS?: number;
+    /**
+     * Set to true to restore a deleted printer that holds this name, replacing its data with the submitted data. Without it, that name answers 409 (issue path "restoreIfDeleted").
+     */
+    restoreIfDeleted?: boolean;
+};
+
+export type PrinterList = {
+    items: Array<Printer>;
+    page: number;
+    pageSize: number;
+    total: number;
+};
+
+export type UpdatePrinterRequest = {
+    version: number;
+    name?: string;
+    buildVolume?: PrinterBuildVolume;
+    nozzle?: PrinterNozzle;
+    compatibleMaterials?: Array<Material>;
+    typicalSpeedMmS?: number | null;
+    status?: PrinterStatus;
+};
+
 export type GetLivenessData = {
     body?: never;
     path?: never;
@@ -77,3 +145,195 @@ export type GetReadinessResponses = {
 };
 
 export type GetReadinessResponse = GetReadinessResponses[keyof GetReadinessResponses];
+
+export type ListPrintersData = {
+    body?: never;
+    path?: never;
+    query?: {
+        page?: number;
+        pageSize?: number;
+        status?: 'available' | 'in_use' | 'maintenance';
+        sort?: 'name' | 'createdAt';
+        order?: 'asc' | 'desc';
+    };
+    url: '/api/v1/printers';
+};
+
+export type ListPrintersErrors = {
+    /**
+     * Unknown or invalid query parameter.
+     */
+    400: Problem;
+};
+
+export type ListPrintersError = ListPrintersErrors[keyof ListPrintersErrors];
+
+export type ListPrintersResponses = {
+    /**
+     * One page of printers. A page past the last one is empty.
+     */
+    200: PrinterList;
+};
+
+export type ListPrintersResponse = ListPrintersResponses[keyof ListPrintersResponses];
+
+export type CreatePrinterData = {
+    body?: CreatePrinterRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/printers';
+};
+
+export type CreatePrinterErrors = {
+    /**
+     * Invalid input, or a reinforced material without a hardened_steel nozzle.
+     */
+    400: Problem;
+    /**
+     * The name is taken. Issue path "name": a live or pending-removal printer holds it. Issue path "restoreIfDeleted": a deleted printer holds it; resend with restoreIfDeleted true to restore it.
+     */
+    409: Problem;
+};
+
+export type CreatePrinterError = CreatePrinterErrors[keyof CreatePrinterErrors];
+
+export type CreatePrinterResponses = {
+    /**
+     * Restored. A deleted printer with this name was revived with the submitted data (only with restoreIfDeleted true). The Location header points to it.
+     */
+    200: Printer;
+    /**
+     * Created. The Location header points to the new printer.
+     */
+    201: Printer;
+};
+
+export type CreatePrinterResponse = CreatePrinterResponses[keyof CreatePrinterResponses];
+
+export type UnarchivePrinterData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/printers/{id}/unarchive';
+};
+
+export type UnarchivePrinterErrors = {
+    /**
+     * Malformed id.
+     */
+    400: Problem;
+    /**
+     * No such printer, or it was removed.
+     */
+    404: Problem;
+};
+
+export type UnarchivePrinterError = UnarchivePrinterErrors[keyof UnarchivePrinterErrors];
+
+export type UnarchivePrinterResponses = {
+    /**
+     * The printer, no longer pending removal.
+     */
+    200: Printer;
+};
+
+export type UnarchivePrinterResponse = UnarchivePrinterResponses[keyof UnarchivePrinterResponses];
+
+export type DeletePrinterData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/printers/{id}';
+};
+
+export type DeletePrinterErrors = {
+    /**
+     * Malformed id.
+     */
+    400: Problem;
+    /**
+     * No such printer, or it was already removed.
+     */
+    404: Problem;
+};
+
+export type DeletePrinterError = DeletePrinterErrors[keyof DeletePrinterErrors];
+
+export type DeletePrinterResponses = {
+    /**
+     * Removed, or pending removal.
+     */
+    204: void;
+};
+
+export type DeletePrinterResponse = DeletePrinterResponses[keyof DeletePrinterResponses];
+
+export type GetPrinterData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/printers/{id}';
+};
+
+export type GetPrinterErrors = {
+    /**
+     * Malformed id.
+     */
+    400: Problem;
+    /**
+     * No such printer, or it was removed.
+     */
+    404: Problem;
+};
+
+export type GetPrinterError = GetPrinterErrors[keyof GetPrinterErrors];
+
+export type GetPrinterResponses = {
+    /**
+     * The printer (also when it is pending removal).
+     */
+    200: Printer;
+};
+
+export type GetPrinterResponse = GetPrinterResponses[keyof GetPrinterResponses];
+
+export type UpdatePrinterData = {
+    body?: UpdatePrinterRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/printers/{id}';
+};
+
+export type UpdatePrinterErrors = {
+    /**
+     * Invalid input, or the merged state breaks a rule.
+     */
+    400: Problem;
+    /**
+     * No such printer, or it was removed.
+     */
+    404: Problem;
+    /**
+     * Stale version (issue path "version"), duplicate name (path "name"), or the printer is pending removal.
+     */
+    409: Problem;
+};
+
+export type UpdatePrinterError = UpdatePrinterErrors[keyof UpdatePrinterErrors];
+
+export type UpdatePrinterResponses = {
+    /**
+     * The updated printer, with its new version.
+     */
+    200: Printer;
+};
+
+export type UpdatePrinterResponse = UpdatePrinterResponses[keyof UpdatePrinterResponses];

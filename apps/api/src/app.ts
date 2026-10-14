@@ -8,6 +8,7 @@ import type { Logger } from 'pino';
 import { pinoHttp } from 'pino-http';
 import type { Config } from './config/env.js';
 import { createHealthModule, type Clock, type DependencyProbe } from './modules/health/index.js';
+import { createPrintersModule } from './modules/printers/index.js';
 import { AppError } from './shared/errors/app-error.js';
 import { createErrorHandler, notFoundHandler } from './shared/http/error-handler.js';
 import { assignRequestId, REQUEST_ID_HEADER } from './shared/http/request-id.js';
@@ -17,6 +18,8 @@ export interface AppDependencies {
   logger: Logger;
   database: DependencyProbe;
   clock?: Clock;
+  /** Lets tests replace the printers repository and the usage check with fakes. */
+  printers?: Omit<Parameters<typeof createPrintersModule>[0], 'clock'>;
 }
 
 const systemClock: Clock = { now: () => new Date() };
@@ -26,6 +29,7 @@ export function createApp({
   logger,
   database,
   clock = systemClock,
+  printers = {},
 }: AppDependencies): Express {
   const app = express();
 
@@ -86,6 +90,7 @@ export function createApp({
   // 6. Versioned API. Feature modules mount their routers here.
   const v1 = Router();
   app.use('/api/v1', v1);
+  v1.use('/printers', createPrintersModule({ clock, ...printers }).router);
 
   // 7. Fallbacks: unknown route, then the single error handler. These stay last.
   app.use(notFoundHandler);

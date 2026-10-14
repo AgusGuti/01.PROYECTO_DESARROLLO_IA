@@ -30,3 +30,5 @@ CLAUDE.local.md
 .DS_Store
 Thumbs.db
 *.log
+# output of the editor's Vitest extension
+.vitest/
