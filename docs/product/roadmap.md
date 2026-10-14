@@ -4,7 +4,7 @@ Source of requirements: [the project proposal](propuesta-proyecto-impresion-3d.m
 One item at a time, each through the `new-feature` workflow, each merged by pull request with
 green CI before the next starts.
 
-**Current:** M1.1 – CU06 Registrar impresoras (not started)
+**Current:** M1.2 – CU05 Gestionar inventario de filamentos (not started). M1.1 – CU06 is merged.
 
 The session-start hook reads the line above. Update it when an item is merged.
 
