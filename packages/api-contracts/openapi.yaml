@@ -1,0 +1,143 @@
+openapi: 3.1.0
+info:
+  title: Print3D Planner API
+  version: 0.1.0
+  description: REST API for 3D print management, costing and scheduling. Dates are RFC 3339 in UTC.
+    Errors use RFC 9457 problem details (application/problem+json).
+servers:
+  - url: http://127.0.0.1:3000
+    description: Local development
+components:
+  schemas:
+    Problem:
+      type: object
+      properties:
+        type:
+          type: string
+          example: urn:print3d:problem:not_found
+        title:
+          type: string
+          example: Not found
+        status:
+          type: integer
+          example: 404
+        detail:
+          type: string
+          example: The requested resource does not exist.
+        code:
+          type: string
+          enum:
+            - validation_failed
+            - unauthenticated
+            - forbidden
+            - not_found
+            - conflict
+            - payload_too_large
+            - rate_limited
+            - internal
+            - service_unavailable
+        requestId:
+          type: string
+          description: Quote this id when reporting a problem.
+        issues:
+          type: array
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              message:
+                type: string
+            required:
+              - path
+              - message
+          description: Per-field validation problems.
+      required:
+        - type
+        - title
+        - status
+        - detail
+        - code
+        - requestId
+    Liveness:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+        uptimeSeconds:
+          type: integer
+          minimum: 0
+          example: 3600
+        timestamp:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+      required:
+        - status
+        - uptimeSeconds
+        - timestamp
+    Readiness:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - ready
+            - not_ready
+        checks:
+          type: object
+          properties:
+            database:
+              type: string
+              enum:
+                - up
+                - down
+          required:
+            - database
+        timestamp:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+      required:
+        - status
+        - checks
+        - timestamp
+  parameters: {}
+paths:
+  /health/live:
+    get:
+      operationId: getLiveness
+      tags:
+        - Health
+      summary: Is the process running?
+      description: Liveness probe. Does not check dependencies. Not rate limited.
+      responses:
+        "200":
+          description: The process is running.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Liveness"
+  /health/ready:
+    get:
+      operationId: getReadiness
+      tags:
+        - Health
+      summary: Can the API serve traffic?
+      description: Readiness probe. Checks the database connection. Not rate limited.
+      responses:
+        "200":
+          description: Every dependency is reachable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+        "503":
+          description: A dependency is down. The body says which one.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+webhooks: {}
