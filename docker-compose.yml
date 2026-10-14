@@ -1,0 +1,98 @@
+# Local development services. Everything is published on the loopback interface only:
+# nothing here is reachable from other machines (see docs/exceptions/EXC-0001).
+#
+#   npm run db:up                               MongoDB only (the usual case)
+#   docker compose --profile ollama up -d       also run Ollama in a container (needs GPU passthrough)
+#   docker compose --profile full up -d --build the whole stack in containers
+name: print3d
+
+services:
+  mongo:
+    image: mongo:8.2
+    # A single-node replica set, so multi-document transactions behave as in production
+    # (standard §4.4, §10.3).
+    command: ['--replSet', 'rs0', '--bind_ip_all']
+    ports:
+      - '127.0.0.1:27017:27017'
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      # Initiates the replica set on first start, then reports healthy once it is primary.
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --eval
+        - |
+          try { rs.status() } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: '127.0.0.1:27017' }] }) }
+          if (!db.hello().isWritablePrimary) { quit(1) }
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  ollama:
+    profiles: ['ollama']
+    image: ollama/ollama:latest
+    ports:
+      - '127.0.0.1:11434:11434'
+    volumes:
+      - ollama-models:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  api:
+    profiles: ['full']
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      NODE_ENV: production
+      CONTAINERIZED: 'true'
+      HOST: 0.0.0.0
+      PORT: '3000'
+      MONGODB_URI: mongodb://mongo:27017/print3d?directConnection=true
+      CORS_ORIGINS: http://localhost:8080
+      ASSISTANT_URL: http://assistant:8000
+    ports:
+      - '127.0.0.1:3000:3000'
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+
+  assistant:
+    profiles: ['full']
+    build:
+      context: apps/assistant
+    environment:
+      CONTAINERIZED: 'true'
+      ASSISTANT_HOST: 0.0.0.0
+      ASSISTANT_PORT: '8000'
+      OLLAMA_BASE_URL: ${OLLAMA_DOCKER_URL:-http://host.docker.internal:11434}
+      API_BASE_URL: http://api:3000
+    ports:
+      - '127.0.0.1:8000:8000'
+    restart: unless-stopped
+
+  web:
+    profiles: ['full']
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - '127.0.0.1:8080:8080'
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  mongo-data:
+  ollama-models:

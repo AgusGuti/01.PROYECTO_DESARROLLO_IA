@@ -1,0 +1,19 @@
+{
+  "name": "@print3d/api-contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Public REST contract: generated OpenAPI document and TypeScript types. Do not edit by hand.",
+  "types": "./generated/index.ts",
+  "exports": {
+    ".": {
+      "types": "./generated/index.ts",
+      "default": "./generated/index.ts"
+    },
+    "./openapi.yaml": "./openapi.yaml"
+  },
+  "files": [
+    "generated",
+    "openapi.yaml"
+  ]
+}

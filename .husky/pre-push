@@ -1,0 +1,2 @@
+node scripts/git/protect-main.mjs push
+npm run --silent verify:quick

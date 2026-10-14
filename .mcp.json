@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "angular-cli": {
+      "command": "node",
+      "args": ["node_modules/@angular/cli/bin/ng.js", "mcp", "--read-only", "--root", "apps/web"]
+    },
+    "context7": {
+      "command": "node",
+      "args": ["node_modules/@upstash/context7-mcp/dist/index.js"]
+    }
+  }
+}

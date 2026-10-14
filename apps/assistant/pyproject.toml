@@ -1,0 +1,53 @@
+[project]
+name = "print3d-assistant"
+version = "0.1.0"
+description = "Chat assistant for Print3D Planner (LangChain). Talks to the Express API only."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.143,<0.144",
+    "httpx>=0.28,<0.29",
+    "langchain>=1.4,<2",
+    "langchain-ollama>=1.1,<2",
+    "pydantic-settings>=2.15,<3",
+    "uvicorn>=0.54,<0.55",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4,<3",
+    "pytest>=9.1,<10",
+    "ruff>=0.17,<0.18",
+    # uv manages this environment from inside it, so it must survive `uv sync`.
+    "uv>=0.13,<0.14",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/assistant"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# E/F/W: errors, I: import order, B: likely bugs, UP: modern syntax, S: security (bandit),
+# ASYNC: async pitfalls, SIM: simplifications, ANN: missing annotations, RUF: ruff's own rules.
+select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC", "SIM", "ANN", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"] # pytest is built on plain `assert`
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+files = ["src", "tests"]
+plugins = ["pydantic.mypy"]
+warn_unreachable = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers --strict-config -ra"
