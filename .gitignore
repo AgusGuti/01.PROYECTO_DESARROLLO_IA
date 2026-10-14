@@ -1,0 +1,32 @@
+# dependencies and build output
+node_modules/
+dist/
+coverage/
+.angular/
+*.tsbuildinfo
+playwright-report/
+test-results/
+
+# python
+.venv/
+__pycache__/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# project-local tools and state (re-created by `npm run bootstrap`)
+.tools/
+.claude/.state/
+.claude/settings.local.json
+CLAUDE.local.md
+
+# secrets and local configuration: never commit
+.env
+.env.*
+!.env.example
+
+# editors and OS
+.idea/
+.DS_Store
+Thumbs.db
+*.log
