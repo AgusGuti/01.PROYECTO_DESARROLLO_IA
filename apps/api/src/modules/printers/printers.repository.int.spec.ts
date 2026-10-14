@@ -502,13 +502,24 @@ describe('printers repository on a real MongoDB', () => {
 
         const [unarchived, deleted] = await Promise.all([
           repository.unarchive(printer.id, T1),
-          // An archived printer cannot be soft-deleted, so this must never win.
           repository.softDelete(printer.id, T1),
         ]);
 
+        // An archived printer cannot be soft-deleted, so the delete can only win AFTER the
+        // unarchive. Both orders are valid; the unarchive always succeeds because the delete
+        // cannot run first.
         expect(unarchived).not.toBeNull();
-        expect(deleted).toBeNull();
-        expect(await collection().countDocuments({ deletedAt: { $ne: null } })).toBe(0);
+        const stored = await collection().findOne({ name: `Race ${round}` });
+        expect(stored).toMatchObject({ archivedAt: null });
+        // archive -> v2, unarchive -> v3, and a delete that won adds exactly one more (v4):
+        // the unarchive never touched the document after the delete.
+        expect(stored).toMatchObject(
+          deleted === null ? { deletedAt: null, version: 3 } : { version: 4 },
+        );
+        expect(await collection().countDocuments({ deletedAt: { $ne: null } })).toBe(
+          deleted === null ? 0 : 1,
+        );
+        await collection().deleteMany({});
       }
     });
   });
