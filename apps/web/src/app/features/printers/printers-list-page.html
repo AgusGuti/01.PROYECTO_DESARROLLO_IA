@@ -1,0 +1,142 @@
+<section aria-labelledby="printers-title">
+  <div class="page-header">
+    <h1 id="printers-title" #heading tabindex="-1">Impresoras</h1>
+    <a class="button" routerLink="/impresoras/nueva">Nueva impresora</a>
+  </div>
+
+  <div class="notices" aria-live="polite">
+    @if (notice(); as notice) {
+      <p
+        class="notice"
+        [class.notice--success]="notice.kind === 'success'"
+        [class.notice--error]="notice.kind === 'error'"
+      >
+        {{ notice.text }}
+      </p>
+    }
+  </div>
+
+  <div class="filter">
+    <label for="status-filter">Estado</label>
+    <select id="status-filter" #statusFilter (change)="changeStatus(statusFilter.value)">
+      <option value="">Todos</option>
+      @for (option of statusOptions; track option.value) {
+        <option [value]="option.value">{{ option.label }}</option>
+      }
+    </select>
+  </div>
+
+  @let view = state();
+  @let list = shownList(view);
+  @let busy = view.kind === 'loading';
+
+  @if (list) {
+    @if (list.items.length === 0) {
+      <p>No hay impresoras en esta página.</p>
+    } @else {
+      <table [attr.aria-busy]="busy">
+        <caption class="visually-hidden">
+          Lista de impresoras
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Nombre</th>
+            <th scope="col">Estado</th>
+            <th scope="col">Volumen de impresión</th>
+            <th scope="col">Boquilla</th>
+            <th scope="col">Materiales compatibles</th>
+            <th scope="col">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (printer of list.items; track printer.id) {
+            <tr>
+              <th scope="row">{{ printer.name }}</th>
+              <td>
+                {{ statusLabel(printer.status) }}
+                @if (printer.archivedAt !== null) {
+                  <span class="badge">Pendiente de eliminar</span>
+                }
+              </td>
+              <td>
+                {{ printer.buildVolume.x }} × {{ printer.buildVolume.y }} ×
+                {{ printer.buildVolume.z }} mm
+              </td>
+              <td>{{ nozzleText(printer) }}</td>
+              <td>{{ materialsText(printer) }}</td>
+              <td class="actions">
+                @if (printer.archivedAt === null) {
+                  <a
+                    [routerLink]="['/impresoras', printer.id, 'editar']"
+                    [attr.aria-label]="'Editar ' + printer.name"
+                    >Editar</a
+                  >
+                  <button
+                    type="button"
+                    class="link-danger"
+                    [attr.aria-label]="'Eliminar ' + printer.name"
+                    [disabled]="busy"
+                    (click)="askToDelete(printer, $event)"
+                  >
+                    Eliminar
+                  </button>
+                } @else {
+                  <button
+                    type="button"
+                    [attr.aria-label]="'Desarchivar ' + printer.name"
+                    [disabled]="busy || unarchiving() !== null"
+                    (click)="unarchive(printer)"
+                  >
+                    Desarchivar
+                  </button>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+
+    <nav class="pager" aria-label="Paginación">
+      <button type="button" [disabled]="busy || list.page <= 1" (click)="goToPage(list.page - 1)">
+        Anterior
+      </button>
+      <span>{{ rangeText(list) }}</span>
+      <button type="button" [disabled]="busy || !hasNext(list)" (click)="goToPage(list.page + 1)">
+        Siguiente
+      </button>
+    </nav>
+  }
+
+  @switch (view.kind) {
+    @case ('loading') {
+      <p class="status" role="status">Cargando impresoras…</p>
+    }
+    @case ('empty') {
+      @if (view.filtered) {
+        <p class="status">No hay impresoras con ese estado. Probá con otro filtro.</p>
+      } @else {
+        <div class="status">
+          <p>Todavía no registraste impresoras. Agregá la primera.</p>
+          <a class="button" routerLink="/impresoras/nueva">Nueva impresora</a>
+        </div>
+      }
+    }
+    @case ('failed') {
+      <div class="status status--error" role="alert">
+        <p>{{ view.message }}</p>
+        <button type="button" (click)="retry()">Reintentar</button>
+      </div>
+    }
+  }
+
+  @if (deleteTarget(); as target) {
+    <app-printer-delete-dialog
+      [printerName]="target.name"
+      [inUse]="target.status === 'in_use'"
+      [busy]="deleting()"
+      (confirmed)="confirmDelete()"
+      (cancelled)="cancelDelete()"
+    />
+  }
+</section>

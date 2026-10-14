@@ -1,0 +1,27 @@
+dialog {
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  max-inline-size: 30rem;
+  padding: 1.5rem;
+
+  &::backdrop {
+    background: rgb(0 0 0 / 40%);
+  }
+}
+
+h2 {
+  margin-block: 0 0.75rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-block-start: 1.5rem;
+}
+
+.secondary {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+}
