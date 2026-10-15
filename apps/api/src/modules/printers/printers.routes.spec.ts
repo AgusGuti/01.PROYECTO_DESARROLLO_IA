@@ -166,7 +166,11 @@ describe('POST /api/v1/printers', () => {
       expect(problem.issues).toEqual([{ path: 'restoreIfDeleted', message: expect.any(String) }]);
       const text = JSON.stringify(response.body);
       expect(text).not.toContain(old.id);
-      expect(text).not.toMatch(/777|321|322|323/);
+      // Look for the old data as whole JSON values and keys, not as loose digits: the random
+      // request id in the body can contain any digits by chance.
+      expect(text).not.toMatch(/[:,[]\s*(777|321|322|323)\s*[,}\]]/);
+      expect(text).not.toContain('typicalSpeedMmS');
+      expect(text).not.toContain('buildVolume');
       expect(repository.stored.get(old.id)).toEqual(old);
     });
 

@@ -13,7 +13,8 @@
     "openapi": "tsx scripts/generate-openapi.ts",
     "db:indexes": "tsx --env-file-if-exists=../../.env scripts/ensure-indexes.ts",
     "db:seed": "tsx --env-file-if-exists=../../.env scripts/seed-printers.ts",
-    "db:seed:filaments": "tsx --env-file-if-exists=../../.env scripts/seed-filaments.ts"
+    "db:seed:filaments": "tsx --env-file-if-exists=../../.env scripts/seed-filaments.ts",
+    "db:seed:parts": "tsx --env-file-if-exists=../../.env scripts/seed-parts.ts"
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "9.1.0",

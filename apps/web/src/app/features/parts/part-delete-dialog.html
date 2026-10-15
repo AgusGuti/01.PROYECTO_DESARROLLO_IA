@@ -1,0 +1,26 @@
+<dialog
+  #dialog
+  role="alertdialog"
+  aria-labelledby="delete-dialog-title"
+  aria-describedby="delete-dialog-text"
+  (cancel)="onCancelEvent($event)"
+>
+  <h2 id="delete-dialog-title">Eliminar pieza</h2>
+  <p id="delete-dialog-text">
+    ¿Querés eliminar la pieza «{{ partName() }}»? La pieza se quita de las listas pero se conserva.
+  </p>
+  <div class="actions">
+    <button
+      #cancelButton
+      type="button"
+      class="secondary"
+      (click)="cancelled.emit()"
+      [disabled]="busy()"
+    >
+      Cancelar
+    </button>
+    <button type="button" class="danger" (click)="confirm()" [disabled]="busy()">
+      {{ busy() ? 'Eliminando…' : 'Eliminar' }}
+    </button>
+  </div>
+</dialog>

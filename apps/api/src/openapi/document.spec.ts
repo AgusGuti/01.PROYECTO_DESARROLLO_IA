@@ -48,7 +48,65 @@ describe('the generated OpenAPI document', () => {
     ).toEqual(expect.arrayContaining(['200', '400', '404', '409']));
   });
 
-  it('keeps one Material component shared by printers and filaments', () => {
+  it('documents the part operations', () => {
+    const paths = buildOpenApiDocument().paths ?? {};
+
+    expect(Object.keys(paths['/api/v1/parts'] ?? {}).sort()).toEqual(['get', 'post']);
+    expect(Object.keys(paths['/api/v1/parts/{id}'] ?? {}).sort()).toEqual([
+      'delete',
+      'get',
+      'patch',
+    ]);
+    expect(Object.keys(paths['/api/v1/gcode-analyses'] ?? {})).toEqual(['post']);
+  });
+
+  it('documents both part source variants, as input and as output, with a discriminator', () => {
+    const schemas = buildOpenApiDocument().components?.schemas ?? {};
+    const input = JSON.stringify(schemas['PartSourceInput']);
+    const output = JSON.stringify(schemas['PartSource']);
+
+    for (const union of [input, output]) {
+      expect(union).toContain('"discriminator":{"propertyName":"kind"');
+      expect(union).toContain('#/components/schemas/ManualPartSource');
+    }
+    expect(input).toContain('#/components/schemas/GcodePartSourceInput');
+    expect(output).toContain('#/components/schemas/GcodePartSource"');
+    expect(JSON.stringify(schemas['ManualPartSource'])).toContain('"enum":["manual"]');
+    expect(JSON.stringify(schemas['GcodePartSourceInput'])).toContain('"enum":["gcode"]');
+    expect(JSON.stringify(schemas['GcodePartSourceInput'])).not.toContain('analyzedAt');
+    expect(JSON.stringify(schemas['GcodePartSource'])).toMatch(/"required":\[[^\]]*"analyzedAt"/);
+  });
+
+  it('documents every G-code warning code as one named enum', () => {
+    const schemas = buildOpenApiDocument().components?.schemas ?? {};
+
+    expect(schemas['GcodeWarningCode']).toEqual({
+      type: 'string',
+      enum: [
+        'GRAMS_FROM_DENSITY_TABLE',
+        'MATERIAL_NOT_SELECTED',
+        'WEIGHT_OUT_OF_RANGE',
+        'LAYER_HEIGHT_UNAVAILABLE',
+        'DIMENSIONS_UNAVAILABLE',
+        'DIMENSIONS_INCLUDE_SKIRT_OR_BRIM',
+        'MULTIPLE_EXTRUDERS_SUMMED',
+      ],
+    });
+    expect(JSON.stringify(schemas['GcodeAnalysis'])).toContain(
+      '#/components/schemas/GcodeWarningCode',
+    );
+  });
+
+  it('documents null as an allowed value to clear the optional part texts', () => {
+    const update = JSON.stringify(
+      buildOpenApiDocument().components?.schemas?.['UpdatePartRequest'],
+    );
+
+    expect(update).toMatch(/"description":\{"type":\["string","null"\]/);
+    expect(update).toMatch(/"suggestedPrinterName":\{"type":\["string","null"\]/);
+  });
+
+  it('keeps one Material component shared by printers, filaments and parts', () => {
     const document = buildOpenApiDocument();
     const schemas = document.components?.schemas ?? {};
 
@@ -57,5 +115,9 @@ describe('the generated OpenAPI document', () => {
     ]);
     expect(JSON.stringify(schemas['Filament'])).toContain('#/components/schemas/Material');
     expect(JSON.stringify(schemas['Printer'])).toContain('#/components/schemas/Material');
+    expect(JSON.stringify(schemas['Part'])).toContain('#/components/schemas/Material');
+    expect(JSON.stringify(schemas['AnalyzeGcodeRequest'])).toContain(
+      '#/components/schemas/Material',
+    );
   });
 });

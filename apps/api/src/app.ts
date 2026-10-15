@@ -9,6 +9,8 @@ import { pinoHttp } from 'pino-http';
 import type { Config } from './config/env.js';
 import { createHealthModule, type Clock, type DependencyProbe } from './modules/health/index.js';
 import { createFilamentsModule } from './modules/filaments/index.js';
+import { createGcodeModule } from './modules/gcode/index.js';
+import { createPartsModule } from './modules/parts/index.js';
 import { createPrintersModule } from './modules/printers/index.js';
 import { AppError } from './shared/errors/app-error.js';
 import { createErrorHandler, notFoundHandler } from './shared/http/error-handler.js';
@@ -23,6 +25,8 @@ export interface AppDependencies {
   printers?: Omit<Parameters<typeof createPrintersModule>[0], 'clock'>;
   /** Lets tests replace the filaments repository with a fake. */
   filaments?: Omit<Parameters<typeof createFilamentsModule>[0], 'clock'>;
+  /** Lets tests replace the parts repository with a fake. */
+  parts?: Omit<Parameters<typeof createPartsModule>[0], 'clock'>;
 }
 
 const systemClock: Clock = { now: () => new Date() };
@@ -34,6 +38,7 @@ export function createApp({
   clock = systemClock,
   printers = {},
   filaments = {},
+  parts = {},
 }: AppDependencies): Express {
   const app = express();
 
@@ -96,6 +101,8 @@ export function createApp({
   app.use('/api/v1', v1);
   v1.use('/printers', createPrintersModule({ clock, ...printers }).router);
   v1.use('/filaments', createFilamentsModule({ clock, ...filaments }).router);
+  v1.use('/parts', createPartsModule({ clock, ...parts }).router);
+  v1.use('/gcode-analyses', createGcodeModule().router);
 
   // 7. Fallbacks: unknown route, then the single error handler. These stay last.
   app.use(notFoundHandler);

@@ -478,6 +478,356 @@ components:
       required:
         - grams
       additionalProperties: false
+    Part:
+      type: object
+      properties:
+        id:
+          type: string
+          example: 66f0c0ffee0123456789abcd
+        name:
+          type: string
+        description:
+          type:
+            - string
+            - "null"
+        material:
+          $ref: "#/components/schemas/Material"
+        dimensionsMm:
+          $ref: "#/components/schemas/PartDimensions"
+        estimatedWeightGrams:
+          type: integer
+        estimatedPrintSeconds:
+          type: integer
+        layerHeightUm:
+          type: integer
+          description: "Micrometres: 200 means 0.2 mm."
+        suggestedPrinterName:
+          type:
+            - string
+            - "null"
+        source:
+          $ref: "#/components/schemas/PartSource"
+        version:
+          type: integer
+          description: Send this back when editing.
+        createdAt:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+        updatedAt:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+      required:
+        - id
+        - name
+        - description
+        - material
+        - dimensionsMm
+        - estimatedWeightGrams
+        - estimatedPrintSeconds
+        - layerHeightUm
+        - suggestedPrinterName
+        - source
+        - version
+        - createdAt
+        - updatedAt
+    PartDimensions:
+      type: object
+      properties:
+        x:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        y:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        z:
+          type: integer
+          minimum: 1
+          maximum: 1000
+      required:
+        - x
+        - y
+        - z
+      additionalProperties: false
+      description: Bounding box in whole millimetres. Replaced whole when edited.
+    PartSource:
+      oneOf:
+        - $ref: "#/components/schemas/ManualPartSource"
+        - $ref: "#/components/schemas/GcodePartSource"
+      discriminator:
+        propertyName: kind
+        mapping:
+          manual: "#/components/schemas/ManualPartSource"
+          gcode: "#/components/schemas/GcodePartSource"
+    ManualPartSource:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum:
+            - manual
+      required:
+        - kind
+      additionalProperties: false
+    GcodePartSource:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum:
+            - gcode
+        fileName:
+          type: string
+        slicer:
+          type: string
+          enum:
+            - cura
+        analyzedAt:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+          description: When the part was saved with this source (set by the server).
+      required:
+        - kind
+        - fileName
+        - slicer
+        - analyzedAt
+    CreatePartRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Soporte de estante en L
+        description:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          example: Soporte para estantes de 18 mm.
+        material:
+          $ref: "#/components/schemas/Material"
+        dimensionsMm:
+          $ref: "#/components/schemas/PartDimensions"
+        estimatedWeightGrams:
+          type: integer
+          minimum: 1
+          maximum: 20000
+          description: Estimated weight in grams.
+        estimatedPrintSeconds:
+          type: integer
+          minimum: 1
+          maximum: 2592000
+          description: Estimated print time in seconds (up to 30 days).
+        layerHeightUm:
+          type: integer
+          minimum: 10
+          maximum: 2000
+          description: "Layer height in micrometres: 200 means 0.2 mm."
+        suggestedPrinterName:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Creality Ender-3 Pro
+        source:
+          $ref: "#/components/schemas/PartSourceInput"
+      required:
+        - name
+        - material
+        - dimensionsMm
+        - estimatedWeightGrams
+        - estimatedPrintSeconds
+        - layerHeightUm
+      additionalProperties: false
+    PartSourceInput:
+      oneOf:
+        - $ref: "#/components/schemas/ManualPartSource"
+        - $ref: "#/components/schemas/GcodePartSourceInput"
+      discriminator:
+        propertyName: kind
+        mapping:
+          manual: "#/components/schemas/ManualPartSource"
+          gcode: "#/components/schemas/GcodePartSourceInput"
+      default:
+        kind: manual
+      description: Defaults to {"kind":"manual"}.
+    GcodePartSourceInput:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum:
+            - gcode
+        fileName:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: soporte-celular.gcode
+        slicer:
+          type: string
+          enum:
+            - cura
+      required:
+        - kind
+        - fileName
+        - slicer
+      additionalProperties: false
+    PartList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Part"
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+      required:
+        - items
+        - page
+        - pageSize
+        - total
+    UpdatePartRequest:
+      type: object
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Soporte de estante en L
+        description:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 1000
+          example: Soporte para estantes de 18 mm.
+        material:
+          $ref: "#/components/schemas/Material"
+        dimensionsMm:
+          $ref: "#/components/schemas/PartDimensions"
+        estimatedWeightGrams:
+          type: integer
+          minimum: 1
+          maximum: 20000
+          description: Estimated weight in grams.
+        estimatedPrintSeconds:
+          type: integer
+          minimum: 1
+          maximum: 2592000
+          description: Estimated print time in seconds (up to 30 days).
+        layerHeightUm:
+          type: integer
+          minimum: 10
+          maximum: 2000
+          description: "Layer height in micrometres: 200 means 0.2 mm."
+        suggestedPrinterName:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 100
+          example: Creality Ender-3 Pro
+        source:
+          $ref: "#/components/schemas/PartSourceInput"
+      required:
+        - version
+      additionalProperties: false
+    GcodeAnalysis:
+      type: object
+      properties:
+        slicer:
+          type: string
+          enum:
+            - cura
+        estimatedPrintSeconds:
+          type: integer
+        filamentMm:
+          type: integer
+          description: Filament length, all extruders.
+        filamentGrams:
+          type:
+            - integer
+            - "null"
+          description: Estimated from a density table (ADR 0015). Null without a material.
+        layerHeightUm:
+          type:
+            - integer
+            - "null"
+        dimensionsMm:
+          type:
+            - object
+            - "null"
+          properties:
+            x:
+              type: integer
+            y:
+              type: integer
+            z:
+              type: integer
+          required:
+            - x
+            - y
+            - z
+          description: Bounding box in whole millimetres, rounded up. Includes skirt and brim.
+        targetMachineName:
+          type:
+            - string
+            - "null"
+          description: The slicer machine name, kept only if it is printable ASCII.
+        warnings:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                $ref: "#/components/schemas/GcodeWarningCode"
+            required:
+              - code
+      required:
+        - slicer
+        - estimatedPrintSeconds
+        - filamentMm
+        - filamentGrams
+        - layerHeightUm
+        - dimensionsMm
+        - targetMachineName
+        - warnings
+    GcodeWarningCode:
+      type: string
+      enum:
+        - GRAMS_FROM_DENSITY_TABLE
+        - MATERIAL_NOT_SELECTED
+        - WEIGHT_OUT_OF_RANGE
+        - LAYER_HEIGHT_UNAVAILABLE
+        - DIMENSIONS_UNAVAILABLE
+        - DIMENSIONS_INCLUDE_SKIRT_OR_BRIM
+        - MULTIPLE_EXTRUDERS_SUMMED
+    AnalyzeGcodeRequest:
+      type: object
+      properties:
+        head:
+          type: string
+          minLength: 1
+          maxLength: 65536
+          description: The first 65536 characters of the .gcode file, exactly as read (not trimmed). It is
+            never stored or logged.
+        material:
+          allOf:
+            - $ref: "#/components/schemas/Material"
+            - description: Needed to estimate the weight in grams.
+      required:
+        - head
+      additionalProperties: false
   parameters: {}
 paths:
   /health/live:
@@ -1017,6 +1367,237 @@ paths:
                 $ref: "#/components/schemas/Problem"
         "409":
           description: Not enough material (issue path "grams"). The filament is unchanged.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/parts:
+    post:
+      operationId: createPart
+      tags:
+        - Parts
+      summary: Register a part
+      description: "Two parts may share a name: there is no uniqueness rule. A gcode `source` is stamped
+        with `analyzedAt` by the server; sending it is a 400."
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePartRequest"
+      responses:
+        "201":
+          description: Created. The Location header points to the new part.
+          headers:
+            Location:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Part"
+        "400":
+          description: Invalid input or an unknown field.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    get:
+      operationId: listParts
+      tags:
+        - Parts
+      summary: List parts
+      description: Removed parts are not listed.
+      parameters:
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 1
+          required: false
+          name: page
+          in: query
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          required: false
+          name: pageSize
+          in: query
+        - schema:
+            $ref: "#/components/schemas/Material"
+          required: false
+          name: material
+          in: query
+        - schema:
+            type: string
+            enum:
+              - name
+              - createdAt
+              - estimatedWeightGrams
+              - estimatedPrintSeconds
+            default: name
+          required: false
+          name: sort
+          in: query
+        - schema:
+            type: string
+            enum:
+              - asc
+              - desc
+            default: asc
+          required: false
+          name: order
+          in: query
+      responses:
+        "200":
+          description: One page of parts. A page past the last one is empty.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartList"
+        "400":
+          description: Unknown or invalid query parameter.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/parts/{id}:
+    get:
+      operationId: getPart
+      tags:
+        - Parts
+      summary: Get one part
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      responses:
+        "200":
+          description: The part.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Part"
+        "400":
+          description: Malformed id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such part, or it was removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    patch:
+      operationId: updatePart
+      tags:
+        - Parts
+      summary: Edit a part
+      description: Send the `version` you last saw plus the fields to change. `dimensionsMm` is replaced
+        whole. `null` clears `description` or `suggestedPrinterName`. `analyzedAt` is stamped again
+        only when the body carries a `source`.
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePartRequest"
+      responses:
+        "200":
+          description: The updated part, with its new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Part"
+        "400":
+          description: Invalid input or an unknown field.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such part, or it was removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Stale version (issue path "version").
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    delete:
+      operationId: deletePart
+      tags:
+        - Parts
+      summary: Remove a part
+      description: "Logical removal: the document is kept but no longer listed or readable."
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      responses:
+        "204":
+          description: Removed.
+        "400":
+          description: Malformed id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such part, or it was already removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/gcode-analyses:
+    post:
+      operationId: analyzeGcode
+      tags:
+        - G-code
+      summary: Read the estimates from the head of a Cura G-code file
+      description: "Stateless: nothing is stored and the text is never logged or returned. It answers 200
+        because it creates no resource. Only Cura (Marlin or RepRap flavour) is recognised."
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalyzeGcodeRequest"
+      responses:
+        "200":
+          description: The numbers found, with warning codes about how reliable they are.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GcodeAnalysis"
+        "400":
+          description: Invalid input, or the head is not a supported Cura header (issue path "head").
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "413":
+          description: The request body is over the size limit.
           content:
             application/problem+json:
               schema:
