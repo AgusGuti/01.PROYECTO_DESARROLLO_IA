@@ -133,6 +133,46 @@ describe('the generated OpenAPI document', () => {
     expect(Object.keys(paths['/api/v1/parts/{id}/usage'] ?? {})).toEqual(['get']);
   });
 
+  it('declares the error answers and the query of the part-in-use removal', () => {
+    const document = buildOpenApiDocument();
+    const answers = (path: string, method: 'get' | 'delete'): string[] =>
+      Object.keys(document.paths?.[path]?.[method]?.responses ?? {});
+
+    expect(answers('/api/v1/parts/{id}', 'delete')).toEqual(
+      expect.arrayContaining(['204', '400', '404', '409', '503']),
+    );
+    expect(answers('/api/v1/parts/{id}/usage', 'get')).toEqual(
+      expect.arrayContaining(['200', '400', '404', '503']),
+    );
+    const parameters = document.paths?.['/api/v1/parts/{id}']?.delete?.parameters ?? [];
+    expect(JSON.stringify(parameters)).toContain('"name":"removeFromProjects"');
+  });
+
+  it('documents PartUsage with its total and the projects that use the part', () => {
+    const usage = JSON.stringify(buildOpenApiDocument().components?.schemas?.['PartUsage']);
+
+    expect(usage).toContain('"total"');
+    expect(usage).toContain('"projects"');
+    expect(usage).toContain('"quantity"');
+  });
+
+  it('documents the project list query and the answers of the project routes', () => {
+    const paths = buildOpenApiDocument().paths ?? {};
+    const query = JSON.stringify(paths['/api/v1/projects']?.get?.parameters ?? []);
+
+    for (const name of ['page', 'pageSize', 'priority', 'sort', 'order']) {
+      expect(query).toContain(`"name":"${name}"`);
+    }
+    expect(query).toContain('"deadline"');
+    expect(query).toContain('"urgent"');
+    expect(Object.keys(paths['/api/v1/projects/{id}']?.patch?.responses ?? {})).toEqual(
+      expect.arrayContaining(['200', '400', '404', '409', '503']),
+    );
+    expect(Object.keys(paths['/api/v1/projects']?.post?.responses ?? {})).toEqual(
+      expect.arrayContaining(['201', '400', '503']),
+    );
+  });
+
   it('documents the 409 of a used part, the confirmation flag and a nullable part on a line', () => {
     const document = buildOpenApiDocument();
     const remove = JSON.stringify(document.paths?.['/api/v1/parts/{id}']?.delete);

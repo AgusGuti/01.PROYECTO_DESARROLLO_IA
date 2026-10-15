@@ -63,6 +63,21 @@ describe('todayLocal', () => {
     expect(todayLocal(new Date(2026, 0, 5, 23, 59, 59))).toBe('2026-01-05');
     expect(todayLocal(new Date(2026, 11, 31, 0, 0, 0))).toBe('2026-12-31');
   });
+
+  it('uses the local day even when the UTC day is already the next one (UTC-3 after 21:00)', () => {
+    // A stand-in for 2026-10-15 22:30 in Argentina, which is 2026-10-16 01:30 in UTC. It does not
+    // depend on the time zone of the machine running the test, so it also fails in a UTC runner if
+    // the code ever switches to the UTC day.
+    const argentinaEvening = {
+      getFullYear: () => 2026,
+      getMonth: () => 9,
+      getDate: () => 15,
+      toISOString: () => '2026-10-16T01:30:00.000Z',
+    };
+
+    expect(todayLocal(argentinaEvening)).toBe('2026-10-15');
+    expect(isOverdue('2026-10-15', todayLocal(argentinaEvening))).toBe(false);
+  });
 });
 
 describe('isOverdue', () => {

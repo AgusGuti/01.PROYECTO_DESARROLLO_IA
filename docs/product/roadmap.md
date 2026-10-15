@@ -4,7 +4,7 @@ Source of requirements: [the project proposal](propuesta-proyecto-impresion-3d.m
 One item at a time, each through the `new-feature` workflow, each merged by pull request with
 green CI before the next starts.
 
-**Current:** M1.4 – CU01 Registrar proyecto de impresión (not started). M1.1 – CU06, M1.2 – CU05 and M1.3 – CU02 (G-code import phase 1, Cura only) are merged.
+**Current:** M2.1 – CU03 Calcular costo de una impresión (design in progress). M1 (CU06, CU05, CU02, CU01) is merged.
 
 The session-start hook reads the line above. Update it when an item is merged.
 

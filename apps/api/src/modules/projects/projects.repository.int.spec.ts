@@ -314,6 +314,51 @@ describe('projects repository on a real MongoDB', () => {
       expect(page.total).toBe(2);
     });
 
+    it('filters by priority while sorting by name, and counts the same projects', async () => {
+      await make({ name: 'Zeta', priority: 'high' });
+      await make({ name: 'Árbol', priority: 'high' });
+      await make({ name: 'arbol', priority: 'high' });
+      await make({ name: 'Otro', priority: 'low' });
+      await make({ name: 'Bajo', priority: 'low' });
+
+      const first = await repository.list(
+        query({ priority: 'high', sort: 'name', order: 'asc', pageSize: 2 }),
+      );
+      const second = await repository.list(
+        query({ priority: 'high', sort: 'name', order: 'asc', pageSize: 2, page: 2 }),
+      );
+
+      expect(first.total).toBe(3);
+      expect(second.total).toBe(3);
+      expect(first.items.map((project) => project.name)).toEqual(['arbol', 'Árbol']);
+      expect(second.items.map((project) => project.name)).toEqual(['Zeta']);
+    });
+
+    it('keeps undated projects after the dated ones across a page boundary', async () => {
+      await make({ name: 'Sin fecha 1' });
+      await make({ name: 'Con fecha 2', deadline: day('2026-02-02') });
+      await make({ name: 'Sin fecha 2' });
+      await make({ name: 'Con fecha 1', deadline: day('2026-01-01') });
+      await make({ name: 'Con fecha 3', deadline: day('2026-03-03') });
+
+      const names = async (page: number, order: 'asc' | 'desc'): Promise<string[]> =>
+        (await repository.list(query({ sort: 'deadline', order, pageSize: 2, page }))).items.map(
+          (project) => project.name,
+        );
+
+      // Three dated projects fill page 1 and the first slot of page 2, so the boundary falls
+      // between dated and undated rows in both directions.
+      expect([await names(1, 'asc'), await names(2, 'asc')]).toEqual([
+        ['Con fecha 1', 'Con fecha 2'],
+        ['Con fecha 3', expect.stringContaining('Sin fecha')],
+      ]);
+      expect([await names(1, 'desc'), await names(2, 'desc')]).toEqual([
+        ['Con fecha 3', 'Con fecha 2'],
+        ['Con fecha 1', expect.stringContaining('Sin fecha')],
+      ]);
+      expect(await names(3, 'asc')).toHaveLength(1);
+    });
+
     it('returns an empty page past the end, still with the true total', async () => {
       await make();
 

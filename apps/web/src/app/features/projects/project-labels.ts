@@ -57,7 +57,9 @@ export function formatDeadline(deadline: string): string {
 const pad = (value: number, length: number): string => String(value).padStart(length, '0');
 
 /** Today's calendar day as YYYY-MM-DD, from the browser's LOCAL date parts. */
-export function todayLocal(now: Date = new Date()): string {
+export function todayLocal(
+  now: Pick<Date, 'getFullYear' | 'getMonth' | 'getDate'> = new Date(),
+): string {
   return `${pad(now.getFullYear(), 4)}-${pad(now.getMonth() + 1, 2)}-${pad(now.getDate(), 2)}`;
 }
 
