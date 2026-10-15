@@ -3,7 +3,7 @@ import mongoose, { Schema, type Types } from 'mongoose';
 import { AppError } from '../../shared/errors/app-error.js';
 import { MATERIALS, type Material } from '../../shared/catalog/materials.js';
 import type { Part, PartListQuery, PartPage, PartPatch, PartSource } from './parts.domain.js';
-import type { PartRepository } from './parts.service.js';
+import type { LivePartSummary, PartRepository } from './parts.service.js';
 
 /** Case-insensitive, accent-sensitive Spanish comparison, used when sorting by name. */
 const NAME_COLLATION = { locale: 'es', strength: 2 } as const;
@@ -172,6 +172,20 @@ export function createMongoPartRepository(): PartRepository {
       return guarded(async () => {
         const stored = await PartModel.findOne({ _id: id, deletedAt: null }).lean<StoredPart>();
         return stored === null ? null : toPart(stored);
+      });
+    },
+
+    findLiveByIds(ids) {
+      return guarded(async () => {
+        if (ids.length === 0) return [];
+        const found = await PartModel.find({ _id: { $in: [...ids] }, deletedAt: null })
+          .select({ name: 1, material: 1 })
+          .lean<Pick<StoredPart, '_id' | 'name' | 'material'>[]>();
+        return found.map((stored): LivePartSummary => ({
+          id: stored._id.toString(),
+          name: stored.name,
+          material: stored.material,
+        }));
       });
     },
 

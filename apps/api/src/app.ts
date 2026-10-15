@@ -10,8 +10,9 @@ import type { Config } from './config/env.js';
 import { createHealthModule, type Clock, type DependencyProbe } from './modules/health/index.js';
 import { createFilamentsModule } from './modules/filaments/index.js';
 import { createGcodeModule } from './modules/gcode/index.js';
-import { createPartsModule } from './modules/parts/index.js';
+import { createPartLookup, createPartsModule } from './modules/parts/index.js';
 import { createPrintersModule } from './modules/printers/index.js';
+import { createProjectsModule } from './modules/projects/index.js';
 import { AppError } from './shared/errors/app-error.js';
 import { createErrorHandler, notFoundHandler } from './shared/http/error-handler.js';
 import { assignRequestId, REQUEST_ID_HEADER } from './shared/http/request-id.js';
@@ -25,8 +26,10 @@ export interface AppDependencies {
   printers?: Omit<Parameters<typeof createPrintersModule>[0], 'clock'>;
   /** Lets tests replace the filaments repository with a fake. */
   filaments?: Omit<Parameters<typeof createFilamentsModule>[0], 'clock'>;
-  /** Lets tests replace the parts repository with a fake. */
-  parts?: Omit<Parameters<typeof createPartsModule>[0], 'clock'>;
+  /** Lets tests replace the parts repository and the usage port with fakes. */
+  parts?: Partial<Omit<Parameters<typeof createPartsModule>[0], 'clock'>>;
+  /** Lets tests replace the projects repository and the part lookup with fakes. */
+  projects?: Partial<Omit<Parameters<typeof createProjectsModule>[0], 'clock'>>;
 }
 
 const systemClock: Clock = { now: () => new Date() };
@@ -39,6 +42,7 @@ export function createApp({
   printers = {},
   filaments = {},
   parts = {},
+  projects = {},
 }: AppDependencies): Express {
   const app = express();
 
@@ -101,7 +105,15 @@ export function createApp({
   app.use('/api/v1', v1);
   v1.use('/printers', createPrintersModule({ clock, ...printers }).router);
   v1.use('/filaments', createFilamentsModule({ clock, ...filaments }).router);
-  v1.use('/parts', createPartsModule({ clock, ...parts }).router);
+  // The only place that knows both modules (ADR 0017): projects read parts through a lookup, and
+  // parts ask projects whether a part is used. Neither module imports the other.
+  const partLookup = createPartLookup(parts.repository);
+  const projectsModule = createProjectsModule({ clock, partLookup, ...projects });
+  v1.use('/projects', projectsModule.router);
+  v1.use(
+    '/parts',
+    createPartsModule({ clock, partUsage: projectsModule.partUsage, ...parts }).router,
+  );
   v1.use('/gcode-analyses', createGcodeModule().router);
 
   // 7. Fallbacks: unknown route, then the single error handler. These stay last.

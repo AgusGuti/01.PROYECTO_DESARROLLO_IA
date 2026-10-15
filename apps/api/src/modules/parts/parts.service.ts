@@ -25,7 +25,41 @@ export interface PartRepository {
   update(id: string, version: number, patch: PartPatch, now: Date): Promise<Part | null>;
   /** One atomic write guarded by `{ id, not deleted }`; bumps the version. */
   softDelete(id: string, now: Date): Promise<Part | null>;
+  /** Name and material of the live parts among `ids` (a single query). */
+  findLiveByIds(ids: readonly string[]): Promise<LivePartSummary[]>;
 }
+
+export interface LivePartSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly material: Part['material'];
+}
+
+export interface PartUsageProject {
+  readonly id: string;
+  readonly name: string;
+  readonly quantity: number;
+}
+
+export interface PartUsageReport {
+  /** The true number of live projects that use the part. */
+  readonly total: number;
+  readonly projects: readonly PartUsageProject[];
+}
+
+/**
+ * Port owned by this module (ADR 0017): the projects that use a part. The projects module
+ * implements it structurally and app.ts connects them.
+ */
+export interface PartUsage {
+  /** Live projects that use the part: the true total and at most `limit` of them. */
+  listProjects(partId: string, limit: number): Promise<PartUsageReport>;
+  /** Pulls the part from every live project. Idempotent. Returns how many projects changed. */
+  removeFromProjects(partId: string, now: Date): Promise<number>;
+}
+
+/** The usage endpoint lists at most this many projects; `total` is always the true count. */
+export const USAGE_LIST_LIMIT = 50;
 
 export interface NewPart {
   readonly name: string;
@@ -51,7 +85,9 @@ export interface PartsService {
   get(id: string): Promise<Part>;
   list(query: PartListQuery): Promise<PartPage>;
   update(id: string, edit: PartEdit): Promise<Part>;
-  remove(id: string): Promise<void>;
+  /** `removeFromProjects: true` is the confirmation of ADR 0018. */
+  remove(id: string, options?: { removeFromProjects?: boolean }): Promise<void>;
+  usage(id: string): Promise<PartUsageReport>;
 }
 
 const notFound = (): AppError => new AppError('not_found', 'The part does not exist.');
@@ -64,9 +100,22 @@ function staleVersion(): AppError {
 
 export function createPartsService(deps: {
   repository: PartRepository;
+  partUsage: PartUsage;
   clock: Clock;
 }): PartsService {
-  const { repository, clock } = deps;
+  const { repository, partUsage, clock } = deps;
+
+  /** Fails closed: if usage cannot be known, nothing is deleted (503). */
+  async function viaUsage<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError('service_unavailable', 'The project data is temporarily unavailable.', {
+        cause: error,
+      });
+    }
+  }
 
   return {
     async create(input) {
@@ -115,9 +164,30 @@ export function createPartsService(deps: {
       throw staleVersion();
     },
 
-    async remove(id) {
+    async remove(id, options = {}) {
+      if ((await repository.findLiveById(id)) === null) throw notFound();
+
+      if (options.removeFromProjects === true) {
+        // Pull first (ADR 0018): a failure in between leaves a live part with fewer lines,
+        // which a retry repairs. Delete first would leave lines nobody can remove.
+        await viaUsage(() => partUsage.removeFromProjects(id, clock.now()));
+      } else {
+        const { total } = await viaUsage(() => partUsage.listProjects(id, 1));
+        if (total > 0) {
+          // Fixed text: no project names or counts in an error (the usage endpoint has them).
+          throw new AppError('conflict', 'The part is used by one or more projects.', {
+            issues: [{ path: 'projects', message: 'Remove the part from the projects first.' }],
+          });
+        }
+      }
+
       // Missing and already deleted look the same: nothing live matched.
       if ((await repository.softDelete(id, clock.now())) === null) throw notFound();
+    },
+
+    async usage(id) {
+      if ((await repository.findLiveById(id)) === null) throw notFound();
+      return viaUsage(() => partUsage.listProjects(id, USAGE_LIST_LIMIT));
     },
   };
 }

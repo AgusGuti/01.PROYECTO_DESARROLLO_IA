@@ -3,6 +3,7 @@ import {
   createPartSchema,
   listPartsQuerySchema,
   partIdParamsSchema,
+  removePartQuerySchema,
   updatePartSchema,
 } from './parts.schemas.js';
 
@@ -321,4 +322,25 @@ describe('part id parameter', () => {
       expect(partIdParamsSchema.safeParse({ id }).success).toBe(false);
     },
   );
+});
+
+describe('remove part query', () => {
+  it('defaults the flag to false and turns true into a boolean', () => {
+    expect(removePartQuerySchema.parse({})).toEqual({ removeFromProjects: false });
+    expect(removePartQuerySchema.parse({ removeFromProjects: 'true' })).toEqual({
+      removeFromProjects: true,
+    });
+    expect(removePartQuerySchema.parse({ removeFromProjects: 'false' })).toEqual({
+      removeFromProjects: false,
+    });
+  });
+
+  it.each([
+    ['yes', { removeFromProjects: 'yes' }],
+    ['TRUE', { removeFromProjects: 'TRUE' }],
+    ['1', { removeFromProjects: '1' }],
+    ['an unknown key', { other: 'true' }],
+  ])('rejects %s', (_label, query) => {
+    expect(removePartQuerySchema.safeParse(query).success).toBe(false);
+  });
 });

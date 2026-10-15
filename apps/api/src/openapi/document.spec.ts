@@ -120,4 +120,26 @@ describe('the generated OpenAPI document', () => {
       '#/components/schemas/Material',
     );
   });
+
+  it('documents the project operations and the part usage endpoint', () => {
+    const paths = buildOpenApiDocument().paths ?? {};
+
+    expect(Object.keys(paths['/api/v1/projects'] ?? {}).sort()).toEqual(['get', 'post']);
+    expect(Object.keys(paths['/api/v1/projects/{id}'] ?? {}).sort()).toEqual([
+      'delete',
+      'get',
+      'patch',
+    ]);
+    expect(Object.keys(paths['/api/v1/parts/{id}/usage'] ?? {})).toEqual(['get']);
+  });
+
+  it('documents the 409 of a used part, the confirmation flag and a nullable part on a line', () => {
+    const document = buildOpenApiDocument();
+    const remove = JSON.stringify(document.paths?.['/api/v1/parts/{id}']?.delete);
+
+    expect(remove).toContain('removeFromProjects');
+    expect(remove).toContain('"409"');
+    expect(JSON.stringify(document.components?.schemas?.['ProjectItem'])).toContain('"null"');
+    expect(JSON.stringify(document.components?.schemas?.['Project'])).toContain('"format":"date"');
+  });
 });

@@ -742,6 +742,270 @@ components:
       required:
         - version
       additionalProperties: false
+    PartUsage:
+      type: object
+      properties:
+        total:
+          type: integer
+          description: All live projects that use the part.
+        projects:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              quantity:
+                type: integer
+            required:
+              - id
+              - name
+              - quantity
+          description: At most 50, sorted by name then id.
+      required:
+        - total
+        - projects
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+          example: 66f0c0ffee0123456789abcd
+        name:
+          type: string
+        description:
+          type:
+            - string
+            - "null"
+        priority:
+          type: string
+          enum:
+            - low
+            - normal
+            - high
+            - urgent
+          description: "From the least to the most urgent: low, normal, high, urgent."
+        deadline:
+          type: &a1
+            - string
+            - "null"
+          format: date
+          example: 2026-11-30
+          description: YYYY-MM-DD, a calendar day (no time zone), or null.
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectItem"
+        version:
+          type: integer
+          description: Send this back when editing.
+        createdAt:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+        updatedAt:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+      required:
+        - id
+        - name
+        - description
+        - priority
+        - deadline
+        - items
+        - version
+        - createdAt
+        - updatedAt
+    ProjectItem:
+      type: object
+      properties:
+        partId:
+          type: string
+          example: 66f0c0ffee0123456789abcd
+        quantity:
+          type: integer
+        part:
+          type:
+            - object
+            - "null"
+          properties:
+            name:
+              type: string
+            material:
+              $ref: "#/components/schemas/Material"
+          required:
+            - name
+            - material
+          description: The part as it is now, or null when it is no longer live ("deleted").
+      required:
+        - partId
+        - quantity
+        - part
+    CreateProjectRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Soportes para el taller
+        description:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          example: Estantes y herramientas del taller.
+        priority:
+          type: string
+          enum:
+            - low
+            - normal
+            - high
+            - urgent
+          default: normal
+          description: "From the least to the most urgent: low, normal, high, urgent."
+        deadline:
+          type: string
+          format: date
+          example: 2026-11-30
+          description: YYYY-MM-DD, a calendar day (no time zone), years 2000..2099. A past day is allowed.
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectItemInput"
+          maxItems: 100
+          default: []
+          description: Up to 100 lines, each part at most once, every part must exist. Replaced whole on edit.
+      required:
+        - name
+      additionalProperties: false
+    ProjectItemInput:
+      type: object
+      properties:
+        partId:
+          type: string
+          pattern: ^[0-9a-f]{24}$/i
+          example: 66f0c0ffee0123456789abcd
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 1000
+      required:
+        - partId
+        - quantity
+      additionalProperties: false
+    ProjectList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectSummary"
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+      required:
+        - items
+        - page
+        - pageSize
+        - total
+    ProjectSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          example: 66f0c0ffee0123456789abcd
+        name:
+          type: string
+        description:
+          type:
+            - string
+            - "null"
+        priority:
+          type: string
+          enum:
+            - low
+            - normal
+            - high
+            - urgent
+          description: "From the least to the most urgent: low, normal, high, urgent."
+        deadline:
+          type: *a1
+          format: date
+          example: 2026-11-30
+          description: YYYY-MM-DD, a calendar day (no time zone), or null.
+        itemCount:
+          type: integer
+          description: Number of lines.
+        unitCount:
+          type: integer
+          description: Sum of the quantities.
+        createdAt:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+        updatedAt:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+      required:
+        - id
+        - name
+        - description
+        - priority
+        - deadline
+        - itemCount
+        - unitCount
+        - createdAt
+        - updatedAt
+    UpdateProjectRequest:
+      type: object
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Soportes para el taller
+        description:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 1000
+          example: Estantes y herramientas del taller.
+        priority:
+          type: string
+          enum:
+            - low
+            - normal
+            - high
+            - urgent
+          description: "From the least to the most urgent: low, normal, high, urgent."
+        deadline:
+          type:
+            - string
+            - "null"
+          format: date
+          example: 2026-11-30
+          description: YYYY-MM-DD, a calendar day (no time zone), years 2000..2099. A past day is allowed.
+            null clears it.
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectItemInput"
+          maxItems: 100
+          description: Up to 100 lines, each part at most once, every part must exist. Replaced whole on edit.
+      required:
+        - version
+      additionalProperties: false
     GcodeAnalysis:
       type: object
       properties:
@@ -1546,6 +1810,298 @@ paths:
       tags:
         - Parts
       summary: Remove a part
+      description: 'Logical removal: the document is kept but no longer listed or readable. A part that
+        live projects use is refused with 409 (issue path "projects"); ask `GET /parts/{id}/usage`
+        and repeat with `removeFromProjects=true` to pull it from those projects first and then
+        remove it.'
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+        - schema:
+            type: string
+            enum:
+              - "true"
+              - "false"
+            default: "false"
+            description: "true confirms the removal of a part that projects use: it is pulled from them first."
+          required: false
+          description: "true confirms the removal of a part that projects use: it is pulled from them first."
+          name: removeFromProjects
+          in: query
+      responses:
+        "204":
+          description: Removed.
+        "400":
+          description: Malformed id or unknown query parameter.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such part, or it was already removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Live projects use the part and removal was not confirmed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: The project data is temporarily unavailable; nothing was removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/parts/{id}/usage:
+    get:
+      operationId: getPartUsage
+      tags:
+        - Parts
+      summary: Which live projects use a part
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      responses:
+        "200":
+          description: The true total and at most 50 projects, sorted by name then id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartUsage"
+        "400":
+          description: Malformed id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such part, or it was removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: The project data is temporarily unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/projects:
+    post:
+      operationId: createProject
+      tags:
+        - Projects
+      summary: Register a project
+      description: Two projects may share a name. A past deadline is allowed and a project may have no
+        lines. Every line must reference a live part (issue path "items.N.partId").
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectRequest"
+      responses:
+        "201":
+          description: Created. The Location header points to the new project.
+          headers:
+            Location:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          description: Invalid input, an unknown field, a repeated part or a part that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: The part data is temporarily unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    get:
+      operationId: listProjects
+      tags:
+        - Projects
+      summary: List projects
+      description: Removed projects are not listed. Sorting by priority goes low, normal, high, urgent.
+        Projects without a deadline come last in both directions.
+      parameters:
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 1
+          required: false
+          name: page
+          in: query
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          required: false
+          name: pageSize
+          in: query
+        - schema:
+            type: string
+            enum:
+              - low
+              - normal
+              - high
+              - urgent
+            description: "From the least to the most urgent: low, normal, high, urgent."
+          required: false
+          description: "From the least to the most urgent: low, normal, high, urgent."
+          name: priority
+          in: query
+        - schema:
+            type: string
+            enum:
+              - deadline
+              - priority
+              - name
+              - createdAt
+            default: createdAt
+            description: A project without a deadline comes last in both directions when sorting by it.
+          required: false
+          description: A project without a deadline comes last in both directions when sorting by it.
+          name: sort
+          in: query
+        - schema:
+            type: string
+            enum:
+              - asc
+              - desc
+            default: desc
+          required: false
+          name: order
+          in: query
+      responses:
+        "200":
+          description: One page of project summaries. A page past the last one is empty.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectList"
+        "400":
+          description: Unknown or invalid query parameter.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/projects/{id}:
+    get:
+      operationId: getProject
+      tags:
+        - Projects
+      summary: Get one project
+      description: "Each line carries the part as it is now, or `part: null` when it was deleted."
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      responses:
+        "200":
+          description: The project.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          description: Malformed id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such project, or it was removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: The part data is temporarily unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    patch:
+      operationId: updateProject
+      tags:
+        - Projects
+      summary: Edit a project
+      description: Send the `version` you last saw plus the fields to change. `items` is replaced whole
+        (`[]` empties it). `null` clears `description` or `deadline`.
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectRequest"
+      responses:
+        "200":
+          description: The updated project, with its new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          description: Invalid input, an unknown field, a repeated part or a part that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such project, or it was removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Stale version (issue path "version").
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: The part data is temporarily unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    delete:
+      operationId: deleteProject
+      tags:
+        - Projects
+      summary: Remove a project
       description: "Logical removal: the document is kept but no longer listed or readable."
       parameters:
         - schema:
@@ -1565,7 +2121,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
         "404":
-          description: No such part, or it was already removed.
+          description: No such project, or it was already removed.
           content:
             application/problem+json:
               schema:

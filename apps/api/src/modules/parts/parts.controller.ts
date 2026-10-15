@@ -1,11 +1,12 @@
 // Controller: parse the request, call one service method, map the result. No rules here.
 import type { RequestHandler } from 'express';
 import { parseInput } from '../../shared/http/validate.js';
-import { toPartDto, toPartListDto } from './parts.mapper.js';
+import { toPartDto, toPartListDto, toPartUsageDto } from './parts.mapper.js';
 import {
   createPartSchema,
   listPartsQuerySchema,
   partIdParamsSchema,
+  removePartQuerySchema,
   updatePartSchema,
 } from './parts.schemas.js';
 import type { PartsService } from './parts.service.js';
@@ -16,6 +17,7 @@ export interface PartsController {
   get: RequestHandler;
   update: RequestHandler;
   remove: RequestHandler;
+  usage: RequestHandler;
 }
 
 export function createPartsController(service: PartsService): PartsController {
@@ -45,8 +47,14 @@ export function createPartsController(service: PartsService): PartsController {
 
     remove: async (req, res) => {
       const { id } = parseInput(partIdParamsSchema, req.params);
-      await service.remove(id);
+      const options = parseInput(removePartQuerySchema, req.query);
+      await service.remove(id, options);
       res.status(204).end();
+    },
+
+    usage: async (req, res) => {
+      const { id } = parseInput(partIdParamsSchema, req.params);
+      res.json(toPartUsageDto(await service.usage(id)));
     },
   };
 }

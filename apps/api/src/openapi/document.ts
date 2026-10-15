@@ -6,6 +6,7 @@ import { registerFilamentsPaths } from '../modules/filaments/index.js';
 import { registerGcodePaths } from '../modules/gcode/index.js';
 import { registerPartsPaths } from '../modules/parts/index.js';
 import { registerPrintersPaths } from '../modules/printers/index.js';
+import { registerProjectsPaths } from '../modules/projects/index.js';
 import { problemSchema } from '../shared/http/problem.js';
 
 export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV31['generateDocument']> {
@@ -16,6 +17,7 @@ export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV31['generate
   registerPrintersPaths(registry);
   registerFilamentsPaths(registry);
   registerPartsPaths(registry);
+  registerProjectsPaths(registry);
   registerGcodePaths(registry);
   // Feature modules register their paths here as they are added.
 

@@ -1,7 +1,8 @@
 // Internal part -> response DTO. Fields are copied one by one, so a field added to the internal
 // model later (such as `deletedAt`) cannot leak into the API by accident.
 import type { Part, PartPage, PartSource } from './parts.domain.js';
-import type { PartDto, PartListDto } from './parts.schemas.js';
+import type { PartDto, PartListDto, PartUsageDto } from './parts.schemas.js';
+import type { PartUsageReport } from './parts.service.js';
 
 function toSourceDto(source: PartSource): PartDto['source'] {
   if (source.kind === 'manual') return { kind: 'manual' };
@@ -40,5 +41,16 @@ export function toPartListDto(
     page: paging.page,
     pageSize: paging.pageSize,
     total: result.total,
+  };
+}
+
+export function toPartUsageDto(usage: PartUsageReport): PartUsageDto {
+  return {
+    total: usage.total,
+    projects: usage.projects.map((project) => ({
+      id: project.id,
+      name: project.name,
+      quantity: project.quantity,
+    })),
   };
 }
