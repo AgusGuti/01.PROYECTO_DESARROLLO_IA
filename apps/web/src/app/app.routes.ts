@@ -29,6 +29,24 @@ export const routes: Routes = [
       import('./features/printers/printer-form-page').then((module) => module.PrinterFormPage),
   },
   {
+    path: 'filamentos',
+    title: 'Filamentos · Print3D Planner',
+    loadComponent: () =>
+      import('./features/filaments/filaments-list-page').then((module) => module.FilamentsListPage),
+  },
+  {
+    path: 'filamentos/nuevo',
+    title: 'Nuevo filamento · Print3D Planner',
+    loadComponent: () =>
+      import('./features/filaments/filament-form-page').then((module) => module.FilamentFormPage),
+  },
+  {
+    path: 'filamentos/:id/editar',
+    title: 'Editar filamento · Print3D Planner',
+    loadComponent: () =>
+      import('./features/filaments/filament-form-page').then((module) => module.FilamentFormPage),
+  },
+  {
     path: '**',
     title: 'Página no encontrada · Print3D Planner',
     loadComponent: () =>

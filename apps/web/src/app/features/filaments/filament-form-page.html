@@ -1,0 +1,177 @@
+<section aria-labelledby="form-title">
+  <h1 id="form-title">{{ filamentId === null ? 'Nuevo filamento' : 'Editar filamento' }}</h1>
+
+  @let view = load();
+  @switch (view.kind) {
+    @case ('loading') {
+      <p class="status" role="status">Cargando el filamento…</p>
+    }
+    @case ('notFound') {
+      <div class="status status--error" role="alert">
+        <p>El filamento ya no existe.</p>
+        <a routerLink="/filamentos">Volver al listado</a>
+      </div>
+    }
+    @case ('failed') {
+      <div class="status status--error" role="alert">
+        <p>{{ view.message }}</p>
+        <button type="button" (click)="reload()">Reintentar</button>
+      </div>
+    }
+    @case ('ready') {
+      @let saving = save().kind === 'saving';
+      @let brandError = errorFor('brand');
+      @let materialError = errorFor('material');
+      @let colorError = errorFor('colorName');
+      @let initialError = errorFor('initialGrams');
+      @let availableError = errorFor('availableGrams');
+      @let costError = errorFor('purchaseCost');
+      @let dateError = errorFor('purchaseDate');
+
+      <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+        @let result = save();
+        @if (result.kind === 'failed') {
+          <div class="status status--error" role="alert">
+            <p>{{ result.message }}</p>
+            @if (result.stale) {
+              <button type="button" (click)="reload()">Recargar</button>
+            }
+          </div>
+        }
+
+        <div class="field">
+          <label for="field-brand">Marca</label>
+          <input
+            id="field-brand"
+            type="text"
+            formControlName="brand"
+            autocomplete="off"
+            [attr.aria-invalid]="brandError ? 'true' : null"
+            [attr.aria-describedby]="describedBy('brand', null)"
+          />
+          @if (brandError) {
+            <p id="field-brand-error" class="field-error">{{ brandError }}</p>
+          }
+        </div>
+
+        <div class="field">
+          <label for="field-material">Material</label>
+          <select
+            id="field-material"
+            formControlName="material"
+            [attr.aria-invalid]="materialError ? 'true' : null"
+            [attr.aria-describedby]="describedBy('material', null)"
+          >
+            @for (option of materialOptions; track option.value) {
+              <option [value]="option.value">{{ option.label }}</option>
+            }
+          </select>
+          @if (materialError) {
+            <p id="field-material-error" class="field-error">{{ materialError }}</p>
+          }
+        </div>
+
+        <div class="field">
+          <label for="field-color">Color</label>
+          <input
+            id="field-color"
+            type="text"
+            formControlName="colorName"
+            autocomplete="off"
+            [attr.aria-invalid]="colorError ? 'true' : null"
+            [attr.aria-describedby]="describedBy('colorName', null)"
+          />
+          @if (colorError) {
+            <p id="field-color-error" class="field-error">{{ colorError }}</p>
+          }
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="field-initial-grams">Peso inicial (g)</label>
+            <input
+              id="field-initial-grams"
+              type="number"
+              inputmode="numeric"
+              step="1"
+              formControlName="initialGrams"
+              [attr.aria-invalid]="initialError ? 'true' : null"
+              [attr.aria-describedby]="describedBy('initialGrams', null)"
+            />
+            @if (initialError) {
+              <p id="field-initial-grams-error" class="field-error">{{ initialError }}</p>
+            }
+          </div>
+
+          <div class="field">
+            <label for="field-available-grams">
+              {{
+                filamentId === null ? 'Gramos disponibles (g), opcional' : 'Gramos disponibles (g)'
+              }}
+            </label>
+            <input
+              id="field-available-grams"
+              type="number"
+              inputmode="numeric"
+              step="1"
+              formControlName="availableGrams"
+              [attr.aria-invalid]="availableError ? 'true' : null"
+              [attr.aria-describedby]="
+                describedBy('availableGrams', filamentId === null ? 'available-hint' : null)
+              "
+            />
+            @if (filamentId === null) {
+              <p id="available-hint" class="hint">
+                Dejalo vacío si el carrete es nuevo: se usa el peso inicial.
+              </p>
+            }
+            @if (availableError) {
+              <p id="field-available-grams-error" class="field-error">{{ availableError }}</p>
+            }
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="field-cost">Costo de compra (pesos)</label>
+            <input
+              id="field-cost"
+              type="text"
+              inputmode="decimal"
+              autocomplete="off"
+              formControlName="purchaseCost"
+              [attr.aria-invalid]="costError ? 'true' : null"
+              [attr.aria-describedby]="describedBy('purchaseCost', 'cost-hint')"
+            />
+            <p id="cost-hint" class="hint">En pesos argentinos, por ejemplo 15000 o 15000,50.</p>
+            @if (costError) {
+              <p id="field-cost-error" class="field-error">{{ costError }}</p>
+            }
+          </div>
+
+          <div class="field">
+            <label for="field-date">Fecha de compra</label>
+            <input
+              id="field-date"
+              type="date"
+              formControlName="purchaseDate"
+              [attr.max]="today"
+              [attr.aria-invalid]="dateError ? 'true' : null"
+              [attr.aria-describedby]="describedBy('purchaseDate', null)"
+            />
+            @if (dateError) {
+              <p id="field-date-error" class="field-error">{{ dateError }}</p>
+            }
+          </div>
+        </div>
+
+        <div class="actions">
+          <button type="submit" [disabled]="saving">
+            {{ saving ? 'Guardando…' : 'Guardar' }}
+          </button>
+          <a routerLink="/filamentos">Cancelar</a>
+        </div>
+      </form>
+    }
+  }
+</section>

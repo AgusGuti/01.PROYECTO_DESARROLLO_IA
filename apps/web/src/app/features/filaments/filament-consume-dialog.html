@@ -1,0 +1,41 @@
+<dialog
+  #dialog
+  role="alertdialog"
+  aria-labelledby="consume-dialog-title"
+  aria-describedby="consume-dialog-text"
+  (cancel)="onCancelEvent($event)"
+>
+  <form (submit)="confirm($event)" novalidate>
+    <h2 id="consume-dialog-title">Descontar material</h2>
+    <p id="consume-dialog-text">
+      «{{ filament().brand }} · {{ filament().colorName }}»: quedan {{ maxGrams() }} g en el
+      carrete.
+    </p>
+
+    <label for="consume-grams">Gramos a descontar</label>
+    <input
+      #gramsInput
+      id="consume-grams"
+      type="number"
+      inputmode="numeric"
+      step="1"
+      min="1"
+      [attr.max]="maxGrams()"
+      [attr.aria-invalid]="error() ? 'true' : null"
+      [attr.aria-describedby]="error() ? 'consume-error' : null"
+      (input)="error.set(null)"
+    />
+    @if (error(); as message) {
+      <p id="consume-error" class="field-error" role="alert">{{ message }}</p>
+    }
+
+    <div class="actions">
+      <button type="button" class="secondary" (click)="cancelled.emit()" [disabled]="sending()">
+        Cancelar
+      </button>
+      <button type="submit" [disabled]="sending()">
+        {{ sending() ? 'Descontando…' : 'Descontar' }}
+      </button>
+    </div>
+  </form>
+</dialog>
