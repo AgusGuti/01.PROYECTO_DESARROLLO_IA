@@ -180,11 +180,10 @@ describe('ProjectFormPage (create)', () => {
 
     expect(page.selectById('field-priority')?.value).toBe('normal');
     expect(page.byId('field-deadline')?.value).toBe('');
-    expect(page.byId('field-deadline')?.getAttribute('type')).toBe('date');
-    expect(page.byId('field-deadline')?.getAttribute('min')).toBe('2000-01-01');
-    expect(page.byId('field-deadline')?.getAttribute('max')).toBe('2099-12-31');
+    expect(page.byId('field-deadline')?.getAttribute('type')).toBe('text');
+    expect(page.byId('field-deadline')?.getAttribute('placeholder')).toBe('DD-MM-AAAA');
     expect(page.byId('field-deadline')?.getAttribute('aria-describedby')).toBe('deadline-hint');
-    expect(page.errorOf('deadline-hint')).toBe('Puede ser una fecha pasada.');
+    expect(page.errorOf('deadline-hint')).toBe('Formato DD-MM-AAAA. Puede ser una fecha pasada.');
     expect(
       Array.from(page.selectById('field-priority')?.options ?? []).map((o) => o.text.trim()),
     ).toEqual(['Baja', 'Normal', 'Alta', 'Urgente']);
@@ -228,7 +227,7 @@ describe('ProjectFormPage (create)', () => {
       expect(document.activeElement).toBe(page.byId('field-description'));
     });
 
-    it.each(['1999-12-31', '2100-01-01'])(
+    it.each(['31-12-1999', '01-01-2100', '2026-11-30', '30-02-2026'])(
       'rejects the deadline %s because the API only accepts 2000 to 2099',
       async (value) => {
         const page = await renderCreating();
@@ -243,18 +242,19 @@ describe('ProjectFormPage (create)', () => {
       },
     );
 
-    it.each(['2000-01-01', '2099-12-31', '2020-02-29'])(
-      'accepts the deadline %s',
-      async (value) => {
-        const page = await renderCreating();
-        await page.type('field-name', 'Proyecto');
-        await page.type('field-deadline', value);
+    it.each([
+      ['01-01-2000', '2000-01-01'],
+      ['31-12-2099', '2099-12-31'],
+      ['29-02-2020', '2020-02-29'],
+    ])('accepts the deadline %s', async (value, iso) => {
+      const page = await renderCreating();
+      await page.type('field-name', 'Proyecto');
+      await page.type('field-deadline', value);
 
-        await page.submit();
+      await page.submit();
 
-        expect(page.api.create).toHaveBeenCalledWith(expect.objectContaining({ deadline: value }));
-      },
-    );
+      expect(page.api.create).toHaveBeenCalledWith(expect.objectContaining({ deadline: iso }));
+    });
   });
 
   describe('saving', () => {
@@ -275,7 +275,7 @@ describe('ProjectFormPage (create)', () => {
       await page.type('field-name', 'Soportes');
       await page.type('field-description', 'Para el taller');
       await page.choose('field-priority', 'urgent');
-      await page.type('field-deadline', '2026-11-30');
+      await page.type('field-deadline', '30-11-2026');
       await page.addPart('a1', '4');
       await page.addPart('b2');
 
@@ -695,7 +695,7 @@ describe('ProjectFormPage (edit)', () => {
     expect(page.byId('field-name')?.value).toBe('Soportes del taller');
     expect(page.byId('field-description')?.value).toBe('Para el taller');
     expect(page.selectById('field-priority')?.value).toBe('high');
-    expect(page.byId('field-deadline')?.value).toBe('2026-11-30');
+    expect(page.byId('field-deadline')?.value).toBe('30-11-2026');
     expect(page.lineNames()).toEqual(['Soporte']);
     expect(page.byId('line-qty-0')?.value).toBe('2');
   });
@@ -747,7 +747,7 @@ describe('ProjectFormPage (edit)', () => {
   it('sends the priority and a new deadline when those changed', async () => {
     const page = await renderEditing();
     await page.choose('field-priority', 'low');
-    await page.type('field-deadline', '2026-12-24');
+    await page.type('field-deadline', '24-12-2026');
 
     await page.submit();
 

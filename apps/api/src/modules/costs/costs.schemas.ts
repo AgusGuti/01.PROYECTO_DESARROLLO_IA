@@ -1,5 +1,6 @@
 // Zod schemas for the costs API: the source of the OpenAPI contract (standard §7.1).
 // Every input object is strict and integer-only, so a float or an unknown key is a 400.
+import { MATERIALS } from '../../shared/catalog/materials.js';
 import { z } from '../../shared/http/zod.js';
 import { COST_WARNING_CODES } from './costs.domain.js';
 
@@ -28,6 +29,28 @@ export const costEstimateRequestSchema = z
     }),
   })
   .openapi('CostEstimateRequest');
+
+// Mirrors MAX_ITEMS of the projects module (100): modules must not import each other (ADR 0017).
+const MAX_PROJECT_LINES = 100;
+
+export const projectCostEstimateRequestSchema = z
+  .strictObject({
+    lines: z
+      .array(
+        z.strictObject({
+          partId: objectId,
+          filamentId: objectId,
+          printerId: objectId.optional(),
+          quantity: z.number().int().min(1).max(1000),
+          marginBasisPoints: basisPoints.optional().openapi({
+            description: 'Present means this line is a sale. Absent means no margin.',
+          }),
+        }),
+      )
+      .min(1)
+      .max(MAX_PROJECT_LINES),
+  })
+  .openapi('ProjectCostEstimateRequest');
 
 export const updateCostSettingsSchema = z
   .strictObject({
@@ -81,7 +104,27 @@ export const costEstimateSchema = z
   })
   .openapi('CostEstimate');
 
+export const projectCostLineSchema = costEstimateSchema
+  .omit({ fixed: true })
+  .extend({ partId: objectId })
+  .openapi('ProjectCostLine');
+
+export const projectCostEstimateSchema = z
+  .object({
+    lines: z.array(projectCostLineSchema),
+    fixed: z.object({ costMinor: centavos('Settings fixed cost, charged once, no margin.') }),
+    subtotalMinor: centavos('Sum of the line subtotals plus the fixed cost.'),
+    marginMinor: centavos('Sum of the line margins.'),
+    totalMinor: centavos('subtotalMinor + marginMinor.'),
+    printSeconds: z.number().int(),
+    materials: z.array(z.object({ material: z.enum(MATERIALS), grams: z.number().int() })),
+    warnings: z.array(z.object({ code: costWarningCodeSchema })),
+  })
+  .openapi('ProjectCostEstimate');
+
 export type CostEstimateRequestInput = z.infer<typeof costEstimateRequestSchema>;
+export type ProjectCostEstimateRequestInput = z.infer<typeof projectCostEstimateRequestSchema>;
+export type ProjectCostEstimateDto = z.infer<typeof projectCostEstimateSchema>;
 export type UpdateCostSettingsInput = z.infer<typeof updateCostSettingsSchema>;
 export type CostEstimateDto = z.infer<typeof costEstimateSchema>;
 export type CostSettingsDto = z.infer<typeof costSettingsSchema>;

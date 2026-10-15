@@ -84,6 +84,11 @@
                   [attr.aria-label]="'Editar ' + project.name"
                   >Editar</a
                 >
+                <a
+                  [routerLink]="['/proyectos', project.id, 'costo']"
+                  [attr.aria-label]="'Costo de ' + project.name"
+                  >Costo</a
+                >
                 <button
                   type="button"
                   class="link-danger"

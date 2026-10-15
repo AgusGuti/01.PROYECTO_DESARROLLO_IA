@@ -15,6 +15,7 @@ import { createTestClock, validRates } from './testing/fakes.js';
 
 const ESTIMATES = '/api/v1/costs/estimates';
 const SETTINGS = '/api/v1/costs/settings';
+const PROJECTS = '/api/v1/costs/project-estimates';
 
 const partBody = {
   name: 'Soporte',
@@ -257,6 +258,52 @@ describe('costs API on a real MongoDB with the real wiring', () => {
       expect(response.status).toBe(400);
       expect(problemSchema.parse(response.body).issues).toEqual([
         { path: 'filamentId', message: 'The spool material differs from the part material.' },
+      ]);
+    });
+  });
+  describe('project estimates through the real readers', () => {
+    it('costs two lines from documents created through their own APIs, fixed once', async () => {
+      await put(0);
+      const partId = await makePart();
+      const filamentId = await makeFilament();
+      const printerId = await makePrinter();
+
+      const response = await request(app)
+        .post(PROJECTS)
+        .send({
+          lines: [
+            { partId, filamentId, printerId, quantity: 2, marginBasisPoints: 2500 },
+            { partId, filamentId, quantity: 1 },
+          ],
+        });
+
+      expect(response.status).toBe(200);
+      // Line 1: 409240 + margin 102310. Line 2: 200000 + wear 300 = 200300 (no printer).
+      // Subtotal = 409240 + 200300 + 5000; total adds the 102310 margin.
+      expect(response.body).toMatchObject({
+        fixed: { costMinor: 5000 },
+        subtotalMinor: 614_540,
+        marginMinor: 102_310,
+        totalMinor: 716_850,
+        printSeconds: 21_600,
+        materials: [{ material: 'PETG', grams: 300 }],
+        warnings: [{ code: 'electricity_printer_not_selected' }],
+      });
+      expect(await mongoose.connection.collection('settings').countDocuments({})).toBe(1);
+    });
+
+    it('reports a deleted part with its line path', async () => {
+      const partId = await makePart();
+      const filamentId = await makeFilament();
+      await request(app).delete(`/api/v1/parts/${partId}`);
+
+      const response = await request(app)
+        .post(PROJECTS)
+        .send({ lines: [{ partId, filamentId, quantity: 1 }] });
+
+      expect(response.status).toBe(400);
+      expect(problemSchema.parse(response.body).issues?.map((issue) => issue.path)).toEqual([
+        'lines.0.partId',
       ]);
     });
   });

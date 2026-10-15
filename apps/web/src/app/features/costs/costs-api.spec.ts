@@ -1,11 +1,11 @@
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import type { CostEstimate, CostSettings } from '@print3d/api-contracts';
+import type { CostEstimate, CostSettings, ProjectCostEstimate } from '@print3d/api-contracts';
 import { firstValueFrom } from 'rxjs';
 import { API_BASE_URL } from '../../core/api/api-config';
 import { apiErrorInterceptor } from '../../core/api/api-error.interceptor';
-import { CostsApi, isCostEstimate, isCostSettings } from './costs-api';
+import { CostsApi, isCostEstimate, isCostSettings, isProjectCostEstimate } from './costs-api';
 
 const SETTINGS_URL = 'http://api.test/api/v1/costs/settings';
 const ESTIMATE_URL = 'http://api.test/api/v1/costs/estimates';
@@ -31,6 +31,34 @@ const estimate: CostEstimate = {
   marginMinor: 103_560,
   totalMinor: 517_800,
   unitTotalMinor: 258_900,
+  warnings: [{ code: 'filament_insufficient' }],
+};
+
+const PROJECT_URL = 'http://api.test/api/v1/costs/project-estimates';
+
+const projectEstimate: ProjectCostEstimate = {
+  lines: [
+    {
+      partId: 'a',
+      quantity: 2,
+      printSeconds: 14_400,
+      filament: { grams: 200, costMinor: 400_000 },
+      electricity: null,
+      wear: { costMinor: 600 },
+      subtotalMinor: 400_600,
+      marginBasisPoints: 0,
+      marginMinor: 0,
+      totalMinor: 400_600,
+      unitTotalMinor: 200_300,
+      warnings: [],
+    },
+  ],
+  fixed: { costMinor: 5000 },
+  subtotalMinor: 405_600,
+  marginMinor: 0,
+  totalMinor: 405_600,
+  printSeconds: 14_400,
+  materials: [{ material: 'PETG', grams: 200 }],
   warnings: [{ code: 'filament_insufficient' }],
 };
 
@@ -131,6 +159,36 @@ describe('CostsApi', () => {
     await expect(result).rejects.toMatchObject({ code: 'unexpected_response' });
   });
 
+  it('posts the project lines once and returns the estimate', async () => {
+    const body = { lines: [{ partId: 'a', filamentId: 'b', quantity: 2 }] };
+    const result = firstValueFrom(api.estimateProject(body));
+
+    const request = http.expectOne({ method: 'POST', url: PROJECT_URL });
+    expect(request.request.body).toEqual(body);
+    request.flush(projectEstimate);
+
+    await expect(result).resolves.toEqual(projectEstimate);
+  });
+
+  it('never retries a failed project estimate', async () => {
+    const result = firstValueFrom(api.estimateProject({ lines: [] }));
+
+    http
+      .expectOne(PROJECT_URL)
+      .flush({ code: 'unavailable' }, { status: 503, statusText: 'Service Unavailable' });
+
+    await expect(result).rejects.toMatchObject({ status: 503 });
+    http.expectNone(PROJECT_URL);
+  });
+
+  it('rejects a project estimate of the wrong shape as an unexpected response', async () => {
+    const result = firstValueFrom(api.estimateProject({ lines: [] }));
+
+    http.expectOne(PROJECT_URL).flush({ ...projectEstimate, totalMinor: 1.5 });
+
+    await expect(result).rejects.toMatchObject({ code: 'unexpected_response' });
+  });
+
   it('rejects settings of the wrong shape as an unexpected response', async () => {
     const result = firstValueFrom(api.getSettings());
 
@@ -170,5 +228,30 @@ describe('type guards', () => {
     ['warnings that are not a list', { ...estimate, warnings: 'none' }],
   ])('rejects an estimate with %s', (_name, value) => {
     expect(isCostEstimate(value)).toBe(false);
+  });
+});
+
+describe('isProjectCostEstimate', () => {
+  it('accepts a project estimate with no lines needing electricity', () => {
+    expect(isProjectCostEstimate(projectEstimate)).toBe(true);
+  });
+
+  it.each([
+    ['a null body', null],
+    ['lines that are not a list', { ...projectEstimate, lines: 'x' }],
+    [
+      'a line without partId',
+      { ...projectEstimate, lines: [{ ...projectEstimate.lines[0], partId: 1 }] },
+    ],
+    [
+      'a line with a fractional total',
+      { ...projectEstimate, lines: [{ ...projectEstimate.lines[0], totalMinor: 0.5 }] },
+    ],
+    ['no fixed cost', { ...projectEstimate, fixed: undefined }],
+    ['an unknown material', { ...projectEstimate, materials: [{ material: 'GOLD', grams: 1 }] }],
+    ['text grams', { ...projectEstimate, materials: [{ material: 'PLA', grams: '1' }] }],
+    ['an unknown warning', { ...projectEstimate, warnings: [{ code: 'surprise' }] }],
+  ])('rejects an estimate with %s', (_name, value) => {
+    expect(isProjectCostEstimate(value)).toBe(false);
   });
 });

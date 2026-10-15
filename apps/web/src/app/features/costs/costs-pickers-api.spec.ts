@@ -41,6 +41,62 @@ describe('CostsPickersApi', () => {
     http.verify();
   });
 
+  describe('project', () => {
+    const body = {
+      id: 'p1',
+      name: 'Taller',
+      description: null,
+      items: [
+        { partId: 'a', quantity: 3, part: { name: 'Soporte', material: 'PETG' } },
+        { partId: 'b', quantity: 1, part: null },
+      ],
+    };
+
+    it('gets the project by id and keeps its lines, with null for a deleted part', async () => {
+      const result = firstValueFrom(api.project('p/1'));
+
+      http.expectOne({ method: 'GET', url: `${BASE}/projects/p%2F1` }).flush(body);
+
+      await expect(result).resolves.toEqual({
+        id: 'p1',
+        name: 'Taller',
+        items: [
+          { partId: 'a', quantity: 3, part: { name: 'Soporte', material: 'PETG' } },
+          { partId: 'b', quantity: 1, part: null },
+        ],
+      });
+    });
+
+    it.each([
+      ['no items list', { id: 'p1', name: 'x' }],
+      [
+        'a line with text quantity',
+        { ...body, items: [{ partId: 'a', quantity: '1', part: null }] },
+      ],
+      [
+        'an unknown material',
+        { ...body, items: [{ partId: 'a', quantity: 1, part: { name: 'x', material: 'GOLD' } }] },
+      ],
+      ['a null body', null],
+    ])('rejects a project with %s', async (_name, flushed) => {
+      const result = firstValueFrom(api.project('p1'));
+
+      http.expectOne(`${BASE}/projects/p1`).flush(flushed);
+
+      await expect(result).rejects.toMatchObject({ code: 'unexpected_response' });
+    });
+
+    it('maps a 404 to an ApiError', async () => {
+      const result = firstValueFrom(api.project('p1'));
+
+      http
+        .expectOne(`${BASE}/projects/p1`)
+        .flush({ code: 'not_found' }, { status: 404, statusText: 'Not Found' });
+
+      await expect(result).rejects.toMatchObject({ status: 404 });
+    });
+  });
+
   describe('parts', () => {
     it('asks for 100 parts sorted by name and keeps only id, name and material', async () => {
       const result = firstValueFrom(api.parts());

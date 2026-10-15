@@ -115,12 +115,22 @@ export function isIsoDate(value: unknown): value is string {
 }
 
 /**
- * "2026-10-01" becomes "01/10/2026" by splitting the text. `new Date('2026-10-01')` is midnight
+ * "2026-10-01" becomes "01-10-2026" (DD-MM-YYYY) by splitting the text. `new Date('2026-10-01')` is midnight
  * UTC, which a browser in Argentina (UTC-3) would show as the 30th of September.
  */
 export function formatDate(isoDate: string): string {
   const match = ISO_DATE.exec(isoDate);
-  return match === null ? isoDate : `${match[3]}/${match[2]}/${match[1]}`;
+  return match === null ? isoDate : `${match[3]}-${match[2]}-${match[1]}`;
+}
+
+const DMY_DATE = /^(\d{2})-(\d{2})-(\d{4})$/;
+
+/** What the user types, DD-MM-YYYY, back to the API's YYYY-MM-DD; null if it is not a real day. */
+export function parseDate(text: string): string | null {
+  const match = DMY_DATE.exec(text.trim());
+  if (match === null) return null;
+  const iso = `${match[3]}-${match[2]}-${match[1]}`;
+  return isIsoDate(iso) ? iso : null;
 }
 
 /** Today's UTC date as YYYY-MM-DD: the latest purchase date the API accepts (ADR 0011). */

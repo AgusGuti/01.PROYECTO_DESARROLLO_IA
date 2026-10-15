@@ -153,9 +153,11 @@
             <label for="field-date">Fecha de compra</label>
             <input
               id="field-date"
-              type="date"
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              placeholder="DD-MM-AAAA"
               formControlName="purchaseDate"
-              [attr.max]="today"
               [attr.aria-invalid]="dateError ? 'true' : null"
               [attr.aria-describedby]="describedBy('purchaseDate', null)"
             />

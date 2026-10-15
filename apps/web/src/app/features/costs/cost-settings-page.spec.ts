@@ -122,6 +122,24 @@ describe('CostSettingsPage', () => {
     expect(page.text()).not.toContain('Todavía no guardaste tus tarifas');
   });
 
+  it('explains how to fill each of the four values', async () => {
+    const page = await render();
+
+    await page.load(makeSettings());
+
+    const help = page.element.querySelector('.help');
+    expect(help?.querySelector('h2')?.textContent).toBe('Cómo cargar los valores');
+    expect(help?.querySelectorAll('li')).toHaveLength(5);
+    for (const name of [
+      'Precio del kWh',
+      'Desgaste por hora',
+      'Costo fijo por trabajo',
+      'Margen por defecto',
+    ]) {
+      expect(help?.textContent).toContain(name);
+    }
+  });
+
   it('tells the user the costs use zeros when the settings were never saved', async () => {
     const page = await render();
 

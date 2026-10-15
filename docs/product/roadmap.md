@@ -4,7 +4,7 @@ Source of requirements: [the project proposal](propuesta-proyecto-impresion-3d.m
 One item at a time, each through the `new-feature` workflow, each merged by pull request with
 green CI before the next starts.
 
-**Current:** M2.2 – CU04 Consultar costo total de un proyecto (not started). M1 and M2.1 (CU03 cost of one print) are merged.
+**Current:** M3 – Planificación (planning: open questions to settle with Agustín first, see M3). M1, M2.1 (CU03) and M2.2 (CU04 project cost) are merged.
 
 The session-start hook reads the line above. Update it when an item is merged.
 

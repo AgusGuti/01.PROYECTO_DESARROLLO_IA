@@ -176,8 +176,8 @@ describe('umToMmInput', () => {
 });
 
 describe('formatInstantDate', () => {
-  it('writes an instant as dd/mm/aaaa', () => {
-    expect(formatInstantDate('2026-10-15T15:00:00.000Z')).toMatch(/^1[45]\/10\/2026$/);
+  it('writes an instant as DD-MM-YYYY', () => {
+    expect(formatInstantDate('2026-10-15T15:00:00.000Z')).toMatch(/^1[45]-10-2026$/);
   });
 
   it('returns text it does not understand unchanged', () => {

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   calculateEstimate,
+  calculateProjectEstimate,
   DEFAULT_COST_SETTINGS,
   roundHalfUpDiv,
+  type CostSettings,
   type Estimate,
   type EstimateInput,
 } from './costs.domain.js';
@@ -543,5 +545,153 @@ describe('calculateEstimate: properties over 2000 seeded cases', () => {
       const base = total(raw);
       for (const change of grow) expect(total(change(raw))).toBeGreaterThanOrEqual(base);
     }
+  });
+});
+
+describe('calculateProjectEstimate', () => {
+  // Hand-computed. Line A is the CU03 worked example without the fixed cost:
+  // filament 400000 + electricity 8640 + wear 600 = 409240; margin 25 % = 102310; total 511550.
+  const lineA = {
+    part: { ...partData },
+    filament: { ...filamentData },
+    printer: { ...printerData },
+    quantity: 2,
+    marginBasisPoints: 2500,
+  };
+  // Line B: PLA 50 g, 7200 s, spool 500 g at 1000000, no printer, no margin:
+  // filament 100000 + wear 300 = 100300.
+  const lineB = {
+    part: { ...partData, id: 'e'.repeat(24), material: 'PLA' as const, estimatedWeightGrams: 50 },
+    filament: {
+      ...filamentData,
+      id: 'f'.repeat(24),
+      material: 'PLA' as const,
+      initialGrams: 500,
+      availableGrams: 500,
+      purchaseCostMinor: 1_000_000,
+    },
+    printer: null,
+    quantity: 1,
+    marginBasisPoints: 0,
+  };
+  const projectOf = (
+    lines: Parameters<typeof calculateProjectEstimate>[0],
+    rates: CostSettings = settings,
+  ) => {
+    const result = calculateProjectEstimate(lines, rates);
+    if (!result.ok) throw new Error('expected a project estimate');
+    return result.estimate;
+  };
+
+  it('costs one line without fixed and adds the fixed cost once, with no margin', () => {
+    const { lines, ...project } = projectOf([lineA]);
+
+    expect(lines[0]).toMatchObject({
+      subtotalMinor: 409_240,
+      marginMinor: 102_310,
+      totalMinor: 511_550,
+      fixed: { costMinor: 0 },
+    });
+    expect(project).toMatchObject({
+      fixed: { costMinor: 5000 },
+      subtotalMinor: 414_240,
+      marginMinor: 102_310,
+      totalMinor: 516_550,
+      printSeconds: 14_400,
+      materials: [{ material: 'PETG', grams: 200 }],
+      warnings: [],
+    });
+  });
+
+  it('sums two lines of two materials, sorted by material, and unions the warnings', () => {
+    const project = projectOf([lineB, lineA]);
+
+    expect(project.lines.map((line) => line.partId)).toEqual([lineB.part.id, partData.id]);
+    expect(project).toMatchObject({
+      subtotalMinor: 514_540, // 100300 + 409240 + 5000
+      marginMinor: 102_310,
+      totalMinor: 616_850,
+      printSeconds: 21_600,
+      materials: [
+        { material: 'PETG', grams: 200 },
+        { material: 'PLA', grams: 50 },
+      ],
+      warnings: ['electricity_printer_not_selected'],
+    });
+  });
+
+  it('allows the same part on two lines and sums their grams', () => {
+    const line = { ...lineA, quantity: 1, marginBasisPoints: 0 }; // 200000 + 4320 + 300 = 204620
+    const project = projectOf([line, line]);
+
+    expect(project).toMatchObject({
+      subtotalMinor: 414_240, // 2 x 204620 + 5000
+      totalMinor: 414_240,
+      materials: [{ material: 'PETG', grams: 200 }],
+    });
+  });
+
+  it('warns when lines sharing a spool together need more than it has, though each fits', () => {
+    // 600 g + 600 g = 1200 g against a spool with 1000 g left.
+    const heavy = { ...lineA, part: { ...partData, estimatedWeightGrams: 600 }, quantity: 1 };
+    const spoolOf = (availableGrams: number) => ({ ...filamentData, availableGrams });
+
+    const short = projectOf([
+      { ...heavy, filament: spoolOf(1000) },
+      { ...heavy, filament: spoolOf(1000) },
+    ]);
+    const enough = projectOf([
+      { ...heavy, filament: spoolOf(2000) },
+      { ...heavy, filament: spoolOf(2000) },
+    ]);
+
+    expect(short.lines.every((line) => !line.warnings.includes('filament_insufficient'))).toBe(
+      true,
+    );
+    expect(short.warnings).toEqual(['filament_insufficient']);
+    expect(enough.warnings).toEqual([]);
+  });
+
+  it('reports one warning once even when every line has it, and settings_not_configured', () => {
+    const project = projectOf([lineB, lineB], DEFAULT_COST_SETTINGS);
+
+    expect(project.warnings).toEqual([
+      'electricity_printer_not_selected',
+      'settings_not_configured',
+    ]);
+    expect(project.fixed.costMinor).toBe(0);
+  });
+
+  it('names the line whose own amounts overflow', () => {
+    const huge = {
+      ...lineA,
+      part: { ...partData, estimatedWeightGrams: 20_000 },
+      filament: { ...filamentData, initialGrams: 1, purchaseCostMinor: 1e9 },
+      quantity: 1000,
+    };
+
+    expect(calculateProjectEstimate([lineB, huge], settings)).toEqual({
+      ok: false,
+      reason: 'amount_too_large',
+      lineIndex: 1,
+    });
+  });
+
+  it('rejects a sum of safe lines that is not safe, naming no line', () => {
+    // 5e6 g x 1e9 / 1 g... = 5e15 per line (safe); two lines = 1e16 > MAX_SAFE_INTEGER.
+    const big = {
+      ...lineB,
+      part: { ...lineB.part, estimatedWeightGrams: 5000 },
+      filament: { ...lineB.filament, initialGrams: 1, availableGrams: 1, purchaseCostMinor: 1e9 },
+      quantity: 1000,
+    };
+    const zero = { ...settings, wearPerHourMinor: 0, fixedPerJobMinor: 0 };
+
+    expect(projectOf([big], zero).subtotalMinor).toBe(5e15);
+    expect(calculateProjectEstimate([big, big], zero)).toEqual({
+      ok: false,
+      reason: 'amount_too_large',
+      lineIndex: null,
+    });
   });
 });

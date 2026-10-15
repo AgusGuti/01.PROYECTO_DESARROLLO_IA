@@ -143,7 +143,7 @@ describe('ProjectsListPage', () => {
 
     expect(page.row()).toContain('Soportes para el taller');
     expect(page.row()).toContain('Urgente');
-    expect(page.row()).toContain('30/11/2026');
+    expect(page.row()).toContain('30-11-2026');
     expect(page.row()).toContain('3 líneas · 12 unidades');
     expect(page.text()).not.toContain('urgent');
   });
@@ -162,7 +162,7 @@ describe('ProjectsListPage', () => {
 
     await page.answer(0, pageOf([makeProject({ deadline: '2026-10-14' })]));
 
-    expect(page.row()).toContain('14/10/2026');
+    expect(page.row()).toContain('14-10-2026');
     expect(page.row()).toContain('Vencido');
     expect(page.element.querySelector('.overdue [aria-hidden="true"]')).not.toBeNull();
   });
@@ -395,6 +395,16 @@ describe('ProjectsListPage', () => {
     expect(row?.querySelector('button')?.getAttribute('aria-label')).toBe(
       'Eliminar Soportes para el taller',
     );
+  });
+
+  it('gives each row a Costo link to the project cost page named after the project', async () => {
+    const page = await render();
+
+    await page.answer(0, pageOf([makeProject({ id: 'abc' })]));
+
+    const link = page.element.querySelector('tbody tr a[href="/proyectos/abc/costo"]');
+    expect(link?.textContent).toBe('Costo');
+    expect(link?.getAttribute('aria-label')).toBe('Costo de Soportes para el taller');
   });
 
   describe('deleting a project', () => {

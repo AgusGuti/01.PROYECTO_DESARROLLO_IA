@@ -1144,6 +1144,196 @@ components:
         - partId
         - filamentId
       additionalProperties: false
+    ProjectCostEstimate:
+      type: object
+      properties:
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectCostLine"
+        fixed:
+          type: object
+          properties:
+            costMinor:
+              type: integer
+              description: Settings fixed cost, charged once, no margin.
+          required:
+            - costMinor
+        subtotalMinor:
+          type: integer
+          description: Sum of the line subtotals plus the fixed cost.
+        marginMinor:
+          type: integer
+          description: Sum of the line margins.
+        totalMinor:
+          type: integer
+          description: subtotalMinor + marginMinor.
+        printSeconds:
+          type: integer
+        materials:
+          type: array
+          items:
+            type: object
+            properties:
+              material:
+                type: string
+                enum:
+                  - PLA
+                  - PETG
+                  - ABS
+                  - ASA
+                  - TPU
+                  - PA
+                  - PC
+                  - HIPS
+                  - PVA
+                  - PP
+                  - PLA_CF
+                  - PETG_CF
+                  - PA_CF
+                  - PA_GF
+              grams:
+                type: integer
+            required:
+              - material
+              - grams
+        warnings:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                $ref: "#/components/schemas/CostWarningCode"
+            required:
+              - code
+      required:
+        - lines
+        - fixed
+        - subtotalMinor
+        - marginMinor
+        - totalMinor
+        - printSeconds
+        - materials
+        - warnings
+    ProjectCostLine:
+      type: object
+      properties:
+        quantity:
+          type: integer
+        printSeconds:
+          type: integer
+        filament:
+          type: object
+          properties:
+            grams:
+              type: integer
+            costMinor:
+              type: integer
+              description: Centavos of ARS, rounded once.
+          required:
+            - grams
+            - costMinor
+        electricity:
+          type:
+            - object
+            - "null"
+          properties:
+            watts:
+              type: integer
+            costMinor:
+              type: integer
+              description: Centavos of ARS.
+          required:
+            - watts
+            - costMinor
+          description: Null without a printer or without its power.
+        wear:
+          type: object
+          properties:
+            costMinor:
+              type: integer
+              description: Centavos of ARS.
+          required:
+            - costMinor
+        subtotalMinor:
+          type: integer
+          description: "Sum of the lines: the clean cost."
+        marginBasisPoints:
+          type: integer
+        marginMinor:
+          type: integer
+          description: Margin added on the subtotal; 0 when not a sale.
+        totalMinor:
+          type: integer
+          description: subtotalMinor + marginMinor.
+        unitTotalMinor:
+          type: integer
+          description: Average per unit; unit x quantity can differ by a few centavos.
+        warnings:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                $ref: "#/components/schemas/CostWarningCode"
+            required:
+              - code
+        partId:
+          type: string
+          pattern: ^[0-9a-f]{24}$/i
+          example: 66f0c0ffee0123456789abcd
+      required:
+        - quantity
+        - printSeconds
+        - filament
+        - electricity
+        - wear
+        - subtotalMinor
+        - marginBasisPoints
+        - marginMinor
+        - totalMinor
+        - unitTotalMinor
+        - warnings
+        - partId
+    ProjectCostEstimateRequest:
+      type: object
+      properties:
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              partId:
+                type: string
+                pattern: ^[0-9a-f]{24}$/i
+                example: 66f0c0ffee0123456789abcd
+              filamentId:
+                type: string
+                pattern: ^[0-9a-f]{24}$/i
+                example: 66f0c0ffee0123456789abcd
+              printerId:
+                type: string
+                pattern: ^[0-9a-f]{24}$/i
+                example: 66f0c0ffee0123456789abcd
+              quantity:
+                type: integer
+                minimum: 1
+                maximum: 1000
+              marginBasisPoints:
+                type: integer
+                minimum: 0
+                maximum: 100000
+                description: Present means this line is a sale. Absent means no margin.
+            required:
+              - partId
+              - filamentId
+              - quantity
+            additionalProperties: false
+          minItems: 1
+          maxItems: 100
+      required:
+        - lines
+      additionalProperties: false
     CostSettings:
       type: object
       properties:
@@ -2350,6 +2540,41 @@ paths:
         "400":
           description: Invalid input, an unknown part, spool or printer, a spool material that differs from
             the part material (issue path "filamentId"), or amounts too large (path "quantity").
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: The part, spool, printer or settings data is temporarily unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/costs/project-estimates:
+    post:
+      operationId: estimateProjectCost
+      tags:
+        - Costs
+      summary: Estimate the total cost of a project
+      description: "Stateless: nothing is stored. Each line is costed alone (spool, printer and margin per
+        line); the settings fixed cost is added once for the whole project and carries no margin.
+        Totals are sums of the rounded lines, in centavos of ARS."
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectCostEstimateRequest"
+      responses:
+        "200":
+          description: The project estimate.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectCostEstimate"
+        "400":
+          description: Invalid input; unknown part, spool or printer, or a material mismatch (paths
+            "lines.N.partId|filamentId|printerId"); amounts too large (path "lines.N.quantity", or
+            "lines" when only the sum overflows).
           content:
             application/problem+json:
               schema:

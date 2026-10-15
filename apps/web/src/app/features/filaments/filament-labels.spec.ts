@@ -2,6 +2,7 @@ import type { Material } from '@print3d/api-contracts';
 import { vi } from 'vitest';
 import {
   formatDate,
+  parseDate,
   formatMoney,
   isIsoDate,
   isMaterial,
@@ -151,10 +152,20 @@ describe('formatMoney', () => {
   });
 });
 
+describe('parseDate', () => {
+  it('turns DD-MM-YYYY into YYYY-MM-DD', () => {
+    expect(parseDate('01-10-2026')).toBe('2026-10-01');
+  });
+
+  it.each(['2026-10-01', '01/10/2026', '30-02-2026', '1-1-2026', ''])('rejects %j', (value) => {
+    expect(parseDate(value)).toBeNull();
+  });
+});
+
 describe('dates', () => {
-  it('writes a date as dd/mm/aaaa by splitting the text', () => {
-    expect(formatDate('2026-10-01')).toBe('01/10/2026');
-    expect(formatDate('2026-01-31')).toBe('31/01/2026');
+  it('writes a date as DD-MM-YYYY by splitting the text', () => {
+    expect(formatDate('2026-10-01')).toBe('01-10-2026');
+    expect(formatDate('2026-01-31')).toBe('31-01-2026');
   });
 
   it('shows the same day whatever the time zone of the browser is', () => {
@@ -166,7 +177,7 @@ describe('dates', () => {
     vi.spyOn(Date.prototype, 'getHours').mockReturnValue(22);
     vi.spyOn(Date.prototype, 'getTimezoneOffset').mockReturnValue(180);
     try {
-      expect(formatDate('2026-10-01')).toBe('01/10/2026');
+      expect(formatDate('2026-10-01')).toBe('01-10-2026');
       expect(todayUtc(new Date('2026-10-01T01:00:00.000Z'))).toBe('2026-10-01');
       expect(isIsoDate('2026-10-01')).toBe(true);
     } finally {
@@ -182,7 +193,7 @@ describe('dates', () => {
     expect(isIsoDate(value)).toBe(true);
   });
 
-  it.each(['2026-02-30', '2025-02-29', '2026-13-01', '2026-00-10', '2026-1-1', '', '01/10/2026'])(
+  it.each(['2026-02-30', '2025-02-29', '2026-13-01', '2026-00-10', '2026-1-1', '', '01-10-2026'])(
     'rejects %j',
     (value) => {
       expect(isIsoDate(value)).toBe(false);

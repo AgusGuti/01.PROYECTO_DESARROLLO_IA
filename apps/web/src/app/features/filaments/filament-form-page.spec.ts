@@ -5,7 +5,6 @@ import { Subject } from 'rxjs';
 import { vi } from 'vitest';
 import { ApiError, type ApiFieldIssue } from '../../core/api/api-error';
 import { FilamentFormPage } from './filament-form-page';
-import { todayUtc } from './filament-labels';
 import { FilamentsApi } from './filaments-api';
 
 const SENTINEL = 'SENTINEL-backend-detail-9f3a';
@@ -106,7 +105,7 @@ async function render(options: { editing?: boolean } = {}) {
       await view.type('field-color', 'Negro');
       await view.type('field-initial-grams', '1000');
       await view.type('field-cost', '15000,5');
-      await view.type('field-date', '2026-10-01');
+      await view.type('field-date', '01-10-2026');
     },
     async loadFilament(filament: Filament) {
       gets[gets.length - 1]?.next(filament);
@@ -167,8 +166,8 @@ describe('FilamentFormPage (create)', () => {
   it('limits the purchase date to today in UTC, so Argentina is never rejected for today', async () => {
     const page = await render();
 
-    expect(page.byId('field-date')?.getAttribute('max')).toBe(todayUtc());
-    expect(page.byId('field-date')?.getAttribute('type')).toBe('date');
+    expect(page.byId('field-date')?.getAttribute('placeholder')).toBe('DD-MM-AAAA');
+    expect(page.byId('field-date')?.getAttribute('type')).toBe('text');
   });
 
   it('asks for the cost as text with a decimal keyboard', async () => {
@@ -334,7 +333,7 @@ describe('FilamentFormPage (create)', () => {
     it('rejects a purchase date later than today', async () => {
       const page = await render();
       await page.fillValid();
-      await page.type('field-date', '2999-01-01');
+      await page.type('field-date', '01-01-2999');
 
       await page.submit();
 
@@ -556,7 +555,7 @@ describe('FilamentFormPage (edit)', () => {
     expect(page.byId('field-initial-grams')?.value).toBe('1000');
     expect(page.byId('field-available-grams')?.value).toBe('800');
     expect(page.byId('field-cost')?.value).toBe('15000,50');
-    expect(page.byId('field-date')?.value).toBe('2026-10-01');
+    expect(page.byId('field-date')?.value).toBe('01-10-2026');
     expect(
       page.element.querySelector('label[for="field-available-grams"]')?.textContent.trim(),
     ).toBe('Gramos disponibles (g)');
@@ -591,7 +590,7 @@ describe('FilamentFormPage (edit)', () => {
     await page.type('field-initial-grams', '2000');
     await page.type('field-available-grams', '1500');
     await page.type('field-cost', '0,01');
-    await page.type('field-date', '2026-09-30');
+    await page.type('field-date', '30-09-2026');
 
     await page.submit();
 
