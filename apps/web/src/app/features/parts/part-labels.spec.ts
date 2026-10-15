@@ -194,6 +194,12 @@ describe('toSourceFileName', () => {
     expect(toSourceFileName('a\u0000b\nc\u007fd\u009fe.gcode')).toBe('abcde.gcode');
   });
 
+  it('falls back to a fixed name when nothing printable is left', () => {
+    expect(toSourceFileName('')).toBe('archivo.gcode');
+    expect(toSourceFileName('   ')).toBe('archivo.gcode');
+    expect(toSourceFileName('\u0000 \n \u007f')).toBe('archivo.gcode');
+  });
+
   it('keeps exactly 255 code points and cuts a longer name by code point', () => {
     expect(Array.from(toSourceFileName('a'.repeat(255)))).toHaveLength(255);
     expect(Array.from(toSourceFileName('a'.repeat(300)))).toHaveLength(255);
