@@ -48,6 +48,7 @@ export function isPrinter(value: unknown): value is Printer {
     Array.isArray(compatibleMaterials) &&
     compatibleMaterials.every(isMaterial) &&
     (value['typicalSpeedMmS'] === null || isWholeNumber(value['typicalSpeedMmS'])) &&
+    (value['powerWatts'] === null || isWholeNumber(value['powerWatts'])) &&
     isPrinterStatus(value['status']) &&
     isWholeNumber(value['version']) &&
     (archivedAt === null || typeof archivedAt === 'string') &&

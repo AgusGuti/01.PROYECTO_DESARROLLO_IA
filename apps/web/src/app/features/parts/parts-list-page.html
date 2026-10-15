@@ -80,6 +80,12 @@
                   [attr.aria-label]="'Editar ' + part.name"
                   >Editar</a
                 >
+                <a
+                  routerLink="/costos"
+                  [queryParams]="{ piezaId: part.id }"
+                  [attr.aria-label]="'Calcular costo de ' + part.name"
+                  >Calcular costo</a
+                >
                 <button
                   type="button"
                   class="link-danger"

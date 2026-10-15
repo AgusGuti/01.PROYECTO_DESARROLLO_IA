@@ -18,6 +18,7 @@ function makePrinter(overrides: Partial<Printer> = {}): Printer {
     nozzle: { diameterMm: 0.2, material: 'brass' },
     compatibleMaterials: ['PLA', 'PETG'],
     typicalSpeedMmS: null,
+    powerWatts: null,
     status: 'available',
     version: 1,
     archivedAt: null,
@@ -122,6 +123,23 @@ describe('PrintersListPage', () => {
     expect(page.element.querySelectorAll('h1')).toHaveLength(1);
     expect(page.element.querySelector('h1')?.textContent).toBe('Impresoras');
     expect(page.text()).toContain('Cargando impresoras');
+  });
+
+  it('shows the power in watts, or a dash when it is unknown', async () => {
+    const page = await render();
+
+    await page.answer(
+      0,
+      pageOf([
+        makePrinter({ id: 'a', name: 'Con potencia', powerWatts: 270 }),
+        makePrinter({ id: 'b', name: 'Sin potencia', powerWatts: null }),
+      ]),
+    );
+
+    expect(page.element.querySelector('thead')?.textContent).toContain('Potencia');
+    const rows = page.element.querySelectorAll('tbody tr');
+    expect(rows[0]?.textContent).toContain('270 W');
+    expect(rows[1]?.textContent).toContain('—');
   });
 
   it('requests the first page of 20 without a status filter', async () => {

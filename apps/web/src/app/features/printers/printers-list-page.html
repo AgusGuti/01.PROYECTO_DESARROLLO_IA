@@ -45,6 +45,7 @@
             <th scope="col">Volumen de impresión</th>
             <th scope="col">Boquilla</th>
             <th scope="col">Materiales compatibles</th>
+            <th scope="col">Potencia</th>
             <th scope="col">Acciones</th>
           </tr>
         </thead>
@@ -64,6 +65,7 @@
               </td>
               <td>{{ nozzleText(printer) }}</td>
               <td>{{ materialsText(printer) }}</td>
+              <td>{{ printer.powerWatts === null ? '—' : printer.powerWatts + ' W' }}</td>
               <td class="actions">
                 @if (printer.archivedAt === null) {
                   <a
