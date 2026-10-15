@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { FILAMENT_DENSITY_G_CM3, MATERIALS } from '../../shared/catalog/materials.js';
 import { gramsFromFilamentLength, parseCuraHeader, type CuraHeader } from './gcode.domain.js';
-import { CURA_4_13_HEAD, CURA_5_7_HEAD, headWith } from './testing/cura-headers.js';
+import {
+  CURA_4_13_HEAD,
+  CURA_5_7_HEAD,
+  REAL_CURA_5_10_BEAR_HEAD,
+  REAL_CURA_5_10_VASE_HEAD,
+  REAL_CURA_5_11_PIN_HEAD,
+  headWith,
+} from './testing/cura-headers.js';
 
 function headerOf(head: string): CuraHeader {
   const result = parseCuraHeader(head);
@@ -19,6 +26,39 @@ function timeOf(head: string): { status: string; ms: number } {
   const status = statusOf(head);
   return { status, ms: performance.now() - started };
 }
+
+describe('parseCuraHeader: heads copied from real Cura 5.10 and 5.11 files', () => {
+  // Expected values were checked against the file names the author gave them (19 g and 3 g, with
+  // the same print times) and against the sizes in the files themselves.
+  it.each([
+    [
+      'a 13-hour bear',
+      REAL_CURA_5_10_BEAR_HEAD,
+      { seconds: 64_440, mm: 41_971, um: 200, dims: { x: 110, y: 203, z: 76 }, grams: 125 },
+    ],
+    [
+      'a vase at 0.12 mm',
+      REAL_CURA_5_10_VASE_HEAD,
+      { seconds: 12_973, mm: 6211, um: 120, dims: { x: 99, y: 98, z: 101 }, grams: 19 },
+    ],
+    [
+      'a flat pin whose bounds start at 0',
+      REAL_CURA_5_11_PIN_HEAD,
+      { seconds: 4421, mm: 1091, um: 120, dims: { x: 194, y: 93, z: 6 }, grams: 3 },
+    ],
+  ])('reads %s', (_label, head, expected) => {
+    const header = headerOf(head);
+
+    expect(header).toMatchObject({
+      estimatedPrintSeconds: expected.seconds,
+      filamentMm: expected.mm,
+      layerHeightUm: expected.um,
+      dimensionsMm: expected.dims,
+      targetMachineName: 'Creality Ender-3 v2 Neo',
+    });
+    expect(gramsFromFilamentLength(header.filamentMm, 'PLA')).toBe(expected.grams);
+  });
+});
 
 describe('parseCuraHeader: the two reconstructed Cura heads', () => {
   it('reads Cura 4.13.1', () => {
