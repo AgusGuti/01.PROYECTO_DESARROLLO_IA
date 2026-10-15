@@ -187,6 +187,161 @@ export type ConsumeFilamentRequest = {
     grams: number;
 };
 
+export type Part = {
+    id: string;
+    name: string;
+    description: string | null;
+    material: Material;
+    dimensionsMm: PartDimensions;
+    estimatedWeightGrams: number;
+    estimatedPrintSeconds: number;
+    /**
+     * Micrometres: 200 means 0.2 mm.
+     */
+    layerHeightUm: number;
+    suggestedPrinterName: string | null;
+    source: PartSource;
+    /**
+     * Send this back when editing.
+     */
+    version: number;
+    createdAt: string;
+    updatedAt: string;
+};
+
+/**
+ * Bounding box in whole millimetres. Replaced whole when edited.
+ */
+export type PartDimensions = {
+    x: number;
+    y: number;
+    z: number;
+};
+
+export type PartSource = ({
+    kind: 'manual';
+} & ManualPartSource) | ({
+    kind: 'gcode';
+} & GcodePartSource);
+
+export type ManualPartSource = {
+    kind: 'manual';
+};
+
+export type GcodePartSource = {
+    kind: 'gcode';
+    fileName: string;
+    slicer: 'cura';
+    /**
+     * When the part was saved with this source (set by the server).
+     */
+    analyzedAt: string;
+};
+
+export type CreatePartRequest = {
+    name: string;
+    description?: string;
+    material: Material;
+    dimensionsMm: PartDimensions;
+    /**
+     * Estimated weight in grams.
+     */
+    estimatedWeightGrams: number;
+    /**
+     * Estimated print time in seconds (up to 30 days).
+     */
+    estimatedPrintSeconds: number;
+    /**
+     * Layer height in micrometres: 200 means 0.2 mm.
+     */
+    layerHeightUm: number;
+    suggestedPrinterName?: string;
+    source?: PartSourceInput;
+};
+
+/**
+ * Defaults to {"kind":"manual"}.
+ */
+export type PartSourceInput = ({
+    kind: 'manual';
+} & ManualPartSource) | ({
+    kind: 'gcode';
+} & GcodePartSourceInput);
+
+export type GcodePartSourceInput = {
+    kind: 'gcode';
+    fileName: string;
+    slicer: 'cura';
+};
+
+export type PartList = {
+    items: Array<Part>;
+    page: number;
+    pageSize: number;
+    total: number;
+};
+
+export type UpdatePartRequest = {
+    version: number;
+    name?: string;
+    description?: string | null;
+    material?: Material;
+    dimensionsMm?: PartDimensions;
+    /**
+     * Estimated weight in grams.
+     */
+    estimatedWeightGrams?: number;
+    /**
+     * Estimated print time in seconds (up to 30 days).
+     */
+    estimatedPrintSeconds?: number;
+    /**
+     * Layer height in micrometres: 200 means 0.2 mm.
+     */
+    layerHeightUm?: number;
+    suggestedPrinterName?: string | null;
+    source?: PartSourceInput;
+};
+
+export type GcodeAnalysis = {
+    slicer: 'cura';
+    estimatedPrintSeconds: number;
+    /**
+     * Filament length, all extruders.
+     */
+    filamentMm: number;
+    /**
+     * Estimated from a density table (ADR 0015). Null without a material.
+     */
+    filamentGrams: number | null;
+    layerHeightUm: number | null;
+    /**
+     * Bounding box in whole millimetres, rounded up. Includes skirt and brim.
+     */
+    dimensionsMm: {
+        x: number;
+        y: number;
+        z: number;
+    } | null;
+    /**
+     * The slicer machine name, kept only if it is printable ASCII.
+     */
+    targetMachineName: string | null;
+    warnings: Array<{
+        code: GcodeWarningCode;
+    }>;
+};
+
+export type GcodeWarningCode = 'GRAMS_FROM_DENSITY_TABLE' | 'MATERIAL_NOT_SELECTED' | 'WEIGHT_OUT_OF_RANGE' | 'LAYER_HEIGHT_UNAVAILABLE' | 'DIMENSIONS_UNAVAILABLE' | 'DIMENSIONS_INCLUDE_SKIRT_OR_BRIM' | 'MULTIPLE_EXTRUDERS_SUMMED';
+
+export type AnalyzeGcodeRequest = {
+    /**
+     * The first 65536 characters of the .gcode file, exactly as read (not trimmed). It is never stored or logged.
+     */
+    head: string;
+    material?: Material & unknown;
+};
+
 export type GetLivenessData = {
     body?: never;
     path?: never;
@@ -611,3 +766,185 @@ export type ConsumeFilamentResponses = {
 };
 
 export type ConsumeFilamentResponse = ConsumeFilamentResponses[keyof ConsumeFilamentResponses];
+
+export type ListPartsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        page?: number;
+        pageSize?: number;
+        material?: Material;
+        sort?: 'name' | 'createdAt' | 'estimatedWeightGrams' | 'estimatedPrintSeconds';
+        order?: 'asc' | 'desc';
+    };
+    url: '/api/v1/parts';
+};
+
+export type ListPartsErrors = {
+    /**
+     * Unknown or invalid query parameter.
+     */
+    400: Problem;
+};
+
+export type ListPartsError = ListPartsErrors[keyof ListPartsErrors];
+
+export type ListPartsResponses = {
+    /**
+     * One page of parts. A page past the last one is empty.
+     */
+    200: PartList;
+};
+
+export type ListPartsResponse = ListPartsResponses[keyof ListPartsResponses];
+
+export type CreatePartData = {
+    body?: CreatePartRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/parts';
+};
+
+export type CreatePartErrors = {
+    /**
+     * Invalid input or an unknown field.
+     */
+    400: Problem;
+};
+
+export type CreatePartError = CreatePartErrors[keyof CreatePartErrors];
+
+export type CreatePartResponses = {
+    /**
+     * Created. The Location header points to the new part.
+     */
+    201: Part;
+};
+
+export type CreatePartResponse = CreatePartResponses[keyof CreatePartResponses];
+
+export type DeletePartData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/parts/{id}';
+};
+
+export type DeletePartErrors = {
+    /**
+     * Malformed id.
+     */
+    400: Problem;
+    /**
+     * No such part, or it was already removed.
+     */
+    404: Problem;
+};
+
+export type DeletePartError = DeletePartErrors[keyof DeletePartErrors];
+
+export type DeletePartResponses = {
+    /**
+     * Removed.
+     */
+    204: void;
+};
+
+export type DeletePartResponse = DeletePartResponses[keyof DeletePartResponses];
+
+export type GetPartData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/parts/{id}';
+};
+
+export type GetPartErrors = {
+    /**
+     * Malformed id.
+     */
+    400: Problem;
+    /**
+     * No such part, or it was removed.
+     */
+    404: Problem;
+};
+
+export type GetPartError = GetPartErrors[keyof GetPartErrors];
+
+export type GetPartResponses = {
+    /**
+     * The part.
+     */
+    200: Part;
+};
+
+export type GetPartResponse = GetPartResponses[keyof GetPartResponses];
+
+export type UpdatePartData = {
+    body?: UpdatePartRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/parts/{id}';
+};
+
+export type UpdatePartErrors = {
+    /**
+     * Invalid input or an unknown field.
+     */
+    400: Problem;
+    /**
+     * No such part, or it was removed.
+     */
+    404: Problem;
+    /**
+     * Stale version (issue path "version").
+     */
+    409: Problem;
+};
+
+export type UpdatePartError = UpdatePartErrors[keyof UpdatePartErrors];
+
+export type UpdatePartResponses = {
+    /**
+     * The updated part, with its new version.
+     */
+    200: Part;
+};
+
+export type UpdatePartResponse = UpdatePartResponses[keyof UpdatePartResponses];
+
+export type AnalyzeGcodeData = {
+    body?: AnalyzeGcodeRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/gcode-analyses';
+};
+
+export type AnalyzeGcodeErrors = {
+    /**
+     * Invalid input, or the head is not a supported Cura header (issue path "head").
+     */
+    400: Problem;
+    /**
+     * The request body is over the size limit.
+     */
+    413: Problem;
+};
+
+export type AnalyzeGcodeError = AnalyzeGcodeErrors[keyof AnalyzeGcodeErrors];
+
+export type AnalyzeGcodeResponses = {
+    /**
+     * The numbers found, with warning codes about how reliable they are.
+     */
+    200: GcodeAnalysis;
+};
+
+export type AnalyzeGcodeResponse = AnalyzeGcodeResponses[keyof AnalyzeGcodeResponses];

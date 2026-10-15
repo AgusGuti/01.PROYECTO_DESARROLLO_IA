@@ -3,6 +3,8 @@
 import { OpenApiGeneratorV31, OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { registerHealthPaths } from '../modules/health/index.js';
 import { registerFilamentsPaths } from '../modules/filaments/index.js';
+import { registerGcodePaths } from '../modules/gcode/index.js';
+import { registerPartsPaths } from '../modules/parts/index.js';
 import { registerPrintersPaths } from '../modules/printers/index.js';
 import { problemSchema } from '../shared/http/problem.js';
 
@@ -13,6 +15,8 @@ export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV31['generate
   registerHealthPaths(registry);
   registerPrintersPaths(registry);
   registerFilamentsPaths(registry);
+  registerPartsPaths(registry);
+  registerGcodePaths(registry);
   // Feature modules register their paths here as they are added.
 
   return new OpenApiGeneratorV31(registry.definitions).generateDocument({
