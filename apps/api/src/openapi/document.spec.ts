@@ -34,6 +34,20 @@ describe('the generated OpenAPI document', () => {
     expect(JSON.stringify(schemas['Filament'])).toMatch(/centavos/i);
   });
 
+  it('requires the version to edit a filament and documents its error answers', () => {
+    const document = buildOpenApiDocument();
+    const update = JSON.stringify(document.components?.schemas?.['UpdateFilamentRequest']);
+    const patch = document.paths?.['/api/v1/filaments/{id}']?.patch;
+
+    expect(update).toMatch(/"required":\[[^\]]*"version"/);
+    expect(Object.keys(patch?.responses ?? {})).toEqual(
+      expect.arrayContaining(['200', '400', '404', '409']),
+    );
+    expect(
+      Object.keys(document.paths?.['/api/v1/filaments/{id}/consume']?.post?.responses ?? {}),
+    ).toEqual(expect.arrayContaining(['200', '400', '404', '409']));
+  });
+
   it('keeps one Material component shared by printers and filaments', () => {
     const document = buildOpenApiDocument();
     const schemas = document.components?.schemas ?? {};
