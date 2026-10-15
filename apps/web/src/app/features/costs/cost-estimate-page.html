@@ -1,0 +1,293 @@
+<section aria-labelledby="estimate-title">
+  <div class="page-header">
+    <h1 id="estimate-title">Calcular costo</h1>
+    <a routerLink="/costos/ajustes">Ajustes de costos</a>
+  </div>
+
+  <p class="hint">El cálculo no se guarda: sirve para ver cuánto cuesta imprimir una pieza.</p>
+
+  @let partsState = parts();
+  @let printersState = printers();
+  @let spoolsState = spools();
+  @let status = result();
+  @let calculating = status.kind === 'calculating';
+
+  @if (partsState.kind === 'loading') {
+    <p class="status" role="status">Cargando las piezas…</p>
+  } @else if (partsState.kind === 'failed') {
+    <div class="status status--error" role="alert">
+      <p>{{ partsState.message }}</p>
+      <button type="button" (click)="retryParts()">Reintentar</button>
+    </div>
+  } @else if (partsState.items.length === 0) {
+    <div class="status">
+      <p>Todavía no registraste piezas. Agregá la primera para calcular su costo.</p>
+      <a class="button" routerLink="/piezas/nueva">Nueva pieza</a>
+    </div>
+  } @else {
+    <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+      @let partError = errorFor('part');
+      <div class="field">
+        <label for="field-part">Pieza</label>
+        <select
+          id="field-part"
+          formControlName="partId"
+          [attr.aria-invalid]="partError ? 'true' : null"
+          [attr.aria-describedby]="
+            partError ? 'part-error' : partsState.truncated ? 'part-cap' : null
+          "
+        >
+          <option value="">Elegí una pieza</option>
+          @for (part of partsState.items; track part.id) {
+            <option [value]="part.id">
+              {{ part.name }} · {{ materialLabelOf(part.material) }}
+            </option>
+          }
+        </select>
+        @if (partsState.truncated) {
+          <p id="part-cap" class="hint">
+            Se muestran solo las primeras {{ partsState.items.length }} piezas. Si no ves la que
+            buscás, calculá desde el listado de piezas.
+          </p>
+        }
+        @if (partError) {
+          <p id="part-error" class="field-error">{{ partError }}</p>
+        }
+      </div>
+
+      @let quantityError = errorFor('quantity');
+      <div class="field">
+        <label for="field-quantity">Cantidad</label>
+        <input
+          id="field-quantity"
+          type="number"
+          inputmode="numeric"
+          step="1"
+          min="1"
+          [max]="maxQuantity"
+          formControlName="quantity"
+          [attr.aria-invalid]="quantityError ? 'true' : null"
+          [attr.aria-describedby]="quantityError ? 'quantity-error' : null"
+        />
+        @if (quantityError) {
+          <p id="quantity-error" class="field-error">{{ quantityError }}</p>
+        }
+      </div>
+
+      @let spoolError = errorFor('spool');
+      <div class="field">
+        @switch (spoolsState.kind) {
+          @case ('idle') {
+            <label for="field-spool">Bobina</label>
+            <select id="field-spool" formControlName="filamentId" aria-describedby="spool-hint">
+              <option value="">Elegí primero una pieza</option>
+            </select>
+            <p id="spool-hint" class="hint">
+              Se listan las bobinas del mismo material que la pieza.
+            </p>
+          }
+          @case ('loading') {
+            <label for="field-spool">Bobina</label>
+            <select id="field-spool" formControlName="filamentId" aria-describedby="spool-status">
+              <option value="">Cargando…</option>
+            </select>
+            <p id="spool-status" class="hint" role="status">Cargando las bobinas…</p>
+          }
+          @case ('failed') {
+            <p id="spool-failed" class="status status--error" role="alert">
+              {{ spoolsState.message }}
+              <button type="button" (click)="retrySpools()">Reintentar</button>
+            </p>
+          }
+          @case ('ready') {
+            @if (spoolsState.items.length === 0) {
+              <p class="status" id="spool-empty">
+                No hay bobinas de este material ({{ materialLabel() }}).
+                <a routerLink="/filamentos/nuevo">Cargar una bobina</a>
+              </p>
+            } @else {
+              <label for="field-spool">Bobina</label>
+              <select
+                id="field-spool"
+                formControlName="filamentId"
+                [attr.aria-invalid]="spoolError ? 'true' : null"
+                [attr.aria-describedby]="
+                  spoolError ? 'spool-error' : spoolsState.truncated ? 'spool-cap' : null
+                "
+              >
+                <option value="">Elegí una bobina</option>
+                @for (spool of spoolsState.items; track spool.id) {
+                  <option [value]="spool.id">{{ spoolLabel(spool) }}</option>
+                }
+              </select>
+              @if (spoolsState.truncated) {
+                <p id="spool-cap" class="hint">
+                  Se muestran solo las primeras {{ spoolsState.items.length }} bobinas.
+                </p>
+              }
+            }
+          }
+        }
+        @if (spoolError) {
+          <p id="spool-error" class="field-error">{{ spoolError }}</p>
+        }
+      </div>
+
+      @let printerError = errorFor('printer');
+      <div class="field">
+        <label for="field-printer">Impresora</label>
+        <select
+          id="field-printer"
+          formControlName="printerId"
+          [attr.aria-invalid]="printerError ? 'true' : null"
+          [attr.aria-describedby]="
+            printerError
+              ? 'printer-error'
+              : printersState.kind !== 'ready'
+                ? 'printer-status'
+                : null
+          "
+        >
+          <option value="">Sin impresora (no se calcula electricidad)</option>
+          @if (printersState.kind === 'ready') {
+            @for (printer of printersState.items; track printer.id) {
+              <option [value]="printer.id">{{ printer.name }}</option>
+            }
+          }
+        </select>
+        @switch (printersState.kind) {
+          @case ('loading') {
+            <p id="printer-status" class="hint" role="status">Cargando las impresoras…</p>
+          }
+          @case ('failed') {
+            <p id="printer-status" class="field-error" role="alert">
+              {{ printersState.message }}
+              <button type="button" (click)="retryPrinters()">Reintentar</button>
+            </p>
+          }
+        }
+        @if (printersState.kind === 'ready' && printersState.truncated) {
+          <p class="hint">
+            Se muestran solo las primeras {{ printersState.items.length }} impresoras.
+          </p>
+        }
+        @if (printerError) {
+          <p id="printer-error" class="field-error">{{ printerError }}</p>
+        }
+      </div>
+
+      <div class="field">
+        <label class="check" for="field-sale">
+          <input id="field-sale" type="checkbox" formControlName="sale" />
+          ¿Venta?
+        </label>
+      </div>
+
+      @if (isSale()) {
+        @let marginError = errorFor('margin');
+        <div class="field">
+          <label for="field-margin">Margen</label>
+          <div class="percent">
+            <input
+              id="field-margin"
+              type="text"
+              inputmode="decimal"
+              autocomplete="off"
+              formControlName="margin"
+              [attr.aria-invalid]="marginError ? 'true' : null"
+              [attr.aria-describedby]="marginError ? 'margin-error' : null"
+            />
+            <span aria-hidden="true">%</span>
+          </div>
+          @if (marginError) {
+            <p id="margin-error" class="field-error">{{ marginError }}</p>
+          }
+        </div>
+      }
+
+      <div class="actions">
+        <button type="submit" [disabled]="calculating">
+          {{ calculating ? 'Calculando…' : 'Calcular' }}
+        </button>
+      </div>
+    </form>
+
+    <div class="result" aria-live="polite">
+      @if (calculating) {
+        <p class="status">Calculando el costo…</p>
+      }
+      @if (status.kind === 'done') {
+        @let estimate = status.estimate;
+        <h2>Resultado</h2>
+        <table>
+          <caption class="visually-hidden">
+            Detalle del costo
+          </caption>
+          <tbody>
+            <tr>
+              <th scope="row">Filamento ({{ formatGrams(estimate.filament.grams) }} g)</th>
+              <td>{{ formatMoney(estimate.filament.costMinor) }}</td>
+            </tr>
+            @if (estimate.electricity; as electricity) {
+              <tr>
+                <th scope="row">Electricidad ({{ electricity.watts }} W)</th>
+                <td>{{ formatMoney(electricity.costMinor) }}</td>
+              </tr>
+            }
+            <tr>
+              <th scope="row">Desgaste</th>
+              <td>{{ formatMoney(estimate.wear.costMinor) }}</td>
+            </tr>
+            <tr>
+              <th scope="row">Costo fijo</th>
+              <td>{{ formatMoney(estimate.fixed.costMinor) }}</td>
+            </tr>
+            <tr class="subtotal">
+              <th scope="row">Subtotal (costo)</th>
+              <td>{{ formatMoney(estimate.subtotalMinor) }}</td>
+            </tr>
+            @if (status.sale) {
+              <tr>
+                <th scope="row">Margen ({{ formatPercent(estimate.marginBasisPoints) }})</th>
+                <td>{{ formatMoney(estimate.marginMinor) }}</td>
+              </tr>
+              <tr class="total">
+                <th scope="row">Total con margen</th>
+                <td>{{ formatMoney(estimate.totalMinor) }}</td>
+              </tr>
+            } @else {
+              <tr class="total">
+                <th scope="row">Total</th>
+                <td>{{ formatMoney(estimate.totalMinor) }}</td>
+              </tr>
+            }
+            <tr>
+              <th scope="row">Costo por unidad (promedio)</th>
+              <td>{{ formatMoney(estimate.unitTotalMinor) }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        @if (estimate.warnings.length > 0) {
+          <ul class="warnings" aria-label="Avisos">
+            @for (warning of estimate.warnings; track warning.code) {
+              <li>
+                <span aria-hidden="true">⚠</span>
+                {{ warningText(warning.code) }}
+                @if (warning.code === 'settings_not_configured') {
+                  <a routerLink="/costos/ajustes">Cargar mis tarifas</a>
+                }
+              </li>
+            }
+          </ul>
+        }
+      }
+    </div>
+
+    @if (status.kind === 'failed') {
+      <div class="status status--error" role="alert">
+        <p>{{ status.message }}</p>
+      </div>
+    }
+  }
+</section>

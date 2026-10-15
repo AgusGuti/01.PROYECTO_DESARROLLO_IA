@@ -1,0 +1,342 @@
+<section aria-labelledby="form-title">
+  <h1 id="form-title">{{ partId === null ? 'Nueva pieza' : 'Editar pieza' }}</h1>
+
+  @let view = load();
+  @switch (view.kind) {
+    @case ('loading') {
+      <p class="status" role="status">Cargando la pieza…</p>
+    }
+    @case ('notFound') {
+      <div class="status status--error" role="alert">
+        <p>La pieza ya no existe.</p>
+        <a routerLink="/piezas">Volver al listado</a>
+      </div>
+    }
+    @case ('failed') {
+      <div class="status status--error" role="alert">
+        <p>{{ view.message }}</p>
+        <button type="button" (click)="reload()">Reintentar</button>
+      </div>
+    }
+    @case ('ready') {
+      @let saving = save().kind === 'saving';
+      @let importing = importStatus().kind === 'working';
+      @let nameError = errorFor('name');
+      @let descriptionError = errorFor('description');
+      @let materialError = errorFor('material');
+      @let dimXError = errorFor('dimX');
+      @let dimYError = errorFor('dimY');
+      @let dimZError = errorFor('dimZ');
+      @let weightError = errorFor('weight');
+      @let timeError = errorFor('time');
+      @let layerError = errorFor('layerHeight');
+      @let printerError = errorFor('printer');
+      @let current = view.part;
+      @let lastImport = imported();
+      @let importFailure = importStatus();
+
+      <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+        @let result = save();
+        @if (result.kind === 'failed') {
+          <div class="status status--error" role="alert">
+            <p>{{ result.message }}</p>
+            @if (result.stale) {
+              <button type="button" (click)="reload()">Recargar</button>
+            }
+          </div>
+        }
+
+        @if (current !== null) {
+          <p class="origin">
+            @if (lastImport === null) {
+              {{ originText(current) }}
+            } @else {
+              Origen: G-code «{{ lastImport.fileName }}» (Cura), se actualiza al guardar
+            }
+          </p>
+        }
+
+        <div class="field">
+          <label for="field-name">Nombre</label>
+          <input
+            id="field-name"
+            type="text"
+            formControlName="name"
+            autocomplete="off"
+            [attr.aria-invalid]="nameError ? 'true' : null"
+            [attr.aria-describedby]="describedBy('name', null)"
+          />
+          @if (nameError) {
+            <p id="error-name" class="field-error">{{ nameError }}</p>
+          }
+        </div>
+
+        <div class="field">
+          <label for="field-description">Descripción (opcional)</label>
+          <input
+            id="field-description"
+            type="text"
+            formControlName="description"
+            autocomplete="off"
+            [attr.aria-invalid]="descriptionError ? 'true' : null"
+            [attr.aria-describedby]="describedBy('description', null)"
+          />
+          @if (descriptionError) {
+            <p id="error-description" class="field-error">{{ descriptionError }}</p>
+          }
+        </div>
+
+        <div class="field">
+          <label for="field-material">Material</label>
+          <select
+            id="field-material"
+            formControlName="material"
+            [attr.aria-invalid]="materialError ? 'true' : null"
+            [attr.aria-describedby]="describedBy('material', null)"
+          >
+            @for (option of materialOptions; track option.value) {
+              <option [value]="option.value">{{ option.label }}</option>
+            }
+          </select>
+          @if (materialError) {
+            <p id="error-material" class="field-error">{{ materialError }}</p>
+          }
+          @if (lastImport !== null && showMaterialHint(lastImport)) {
+            <p class="hint">
+              Cambiaste el material: reimportá el archivo para recalcular los gramos
+            </p>
+          }
+        </div>
+
+        <div class="import">
+          <label for="field-gcode">
+            {{
+              lastImport !== null || current?.source.kind === 'gcode'
+                ? 'Reimportar desde G-code'
+                : 'Importar desde G-code'
+            }}
+          </label>
+          <input
+            id="field-gcode"
+            type="file"
+            accept=".gcode"
+            aria-describedby="gcode-hint"
+            [disabled]="importing || saving"
+            (change)="onFileChosen($event)"
+          />
+          <p id="gcode-hint" class="hint">
+            Elegí primero el material. Solo leemos archivos de Cura; los valores se cargan como
+            sugerencia y podés corregirlos.
+          </p>
+          <div class="import-live" aria-live="polite">
+            @if (importing) {
+              <p>Leyendo el archivo…</p>
+            }
+            @if (lastImport !== null) {
+              <p>
+                Importamos los datos de «{{ lastImport.fileName }}». Revisalos antes de guardar.
+              </p>
+              @if (lastImport.warnings.length > 0) {
+                <ul class="warnings">
+                  @for (code of lastImport.warnings; track code) {
+                    <li>{{ warningText(code) }}</li>
+                  }
+                </ul>
+              }
+            }
+          </div>
+          @if (importFailure.kind === 'failed') {
+            <p class="field-error" role="alert">{{ importFailure.message }}</p>
+          }
+        </div>
+
+        <fieldset>
+          <legend>
+            Dimensiones (mm)
+            @if (prefilled().has('dimensions')) {
+              <span id="badge-dimensions" class="badge">importado</span>
+            }
+          </legend>
+          <div class="row">
+            <div class="field">
+              <label for="field-dim-x">Ancho (X)</label>
+              <input
+                id="field-dim-x"
+                type="number"
+                inputmode="numeric"
+                step="1"
+                formControlName="dimX"
+                [attr.aria-invalid]="dimXError ? 'true' : null"
+                [attr.aria-describedby]="describedBy('dimX', null)"
+                (input)="clearBadge('dimensions')"
+              />
+              @if (dimXError) {
+                <p id="error-dimX" class="field-error">{{ dimXError }}</p>
+              }
+            </div>
+            <div class="field">
+              <label for="field-dim-y">Largo (Y)</label>
+              <input
+                id="field-dim-y"
+                type="number"
+                inputmode="numeric"
+                step="1"
+                formControlName="dimY"
+                [attr.aria-invalid]="dimYError ? 'true' : null"
+                [attr.aria-describedby]="describedBy('dimY', null)"
+                (input)="clearBadge('dimensions')"
+              />
+              @if (dimYError) {
+                <p id="error-dimY" class="field-error">{{ dimYError }}</p>
+              }
+            </div>
+            <div class="field">
+              <label for="field-dim-z">Alto (Z)</label>
+              <input
+                id="field-dim-z"
+                type="number"
+                inputmode="numeric"
+                step="1"
+                formControlName="dimZ"
+                [attr.aria-invalid]="dimZError ? 'true' : null"
+                [attr.aria-describedby]="describedBy('dimZ', null)"
+                (input)="clearBadge('dimensions')"
+              />
+              @if (dimZError) {
+                <p id="error-dimZ" class="field-error">{{ dimZError }}</p>
+              }
+            </div>
+          </div>
+        </fieldset>
+
+        <div class="field">
+          <div class="label-row">
+            <label for="field-weight">Peso estimado (g)</label>
+            @if (prefilled().has('weight')) {
+              <span id="badge-weight" class="badge">importado</span>
+            }
+          </div>
+          <input
+            id="field-weight"
+            type="number"
+            inputmode="numeric"
+            step="1"
+            formControlName="weight"
+            [attr.aria-invalid]="weightError ? 'true' : null"
+            [attr.aria-describedby]="describedBy('weight', 'weight-hint')"
+            (input)="clearBadge('weight')"
+          />
+          <p id="weight-hint" class="hint">Es una estimación: puede variar según tu filamento.</p>
+          @if (weightError) {
+            <p id="error-weight" class="field-error">{{ weightError }}</p>
+          }
+        </div>
+
+        <fieldset>
+          <legend>
+            Tiempo de impresión estimado
+            @if (prefilled().has('time')) {
+              <span id="badge-time" class="badge">importado</span>
+            }
+          </legend>
+          <div class="row" formGroupName="time">
+            <div class="field">
+              <label for="field-hours">Horas</label>
+              <input
+                id="field-hours"
+                type="number"
+                inputmode="numeric"
+                step="1"
+                formControlName="hours"
+                [attr.aria-invalid]="timeError ? 'true' : null"
+                [attr.aria-describedby]="describedBy('time', 'time-hint')"
+                (input)="clearBadge('time')"
+              />
+            </div>
+            <div class="field">
+              <label for="field-minutes">Minutos</label>
+              <input
+                id="field-minutes"
+                type="number"
+                inputmode="numeric"
+                step="1"
+                formControlName="minutes"
+                [attr.aria-invalid]="timeError ? 'true' : null"
+                [attr.aria-describedby]="describedBy('time', 'time-hint')"
+                (input)="clearBadge('time')"
+              />
+            </div>
+            <div class="field">
+              <label for="field-seconds">Segundos</label>
+              <input
+                id="field-seconds"
+                type="number"
+                inputmode="numeric"
+                step="1"
+                formControlName="seconds"
+                [attr.aria-invalid]="timeError ? 'true' : null"
+                [attr.aria-describedby]="describedBy('time', 'time-hint')"
+                (input)="clearBadge('time')"
+              />
+            </div>
+          </div>
+          <p id="time-hint" class="hint">Es una estimación del laminador (Cura).</p>
+          @if (timeError) {
+            <p id="error-time" class="field-error">{{ timeError }}</p>
+          }
+        </fieldset>
+
+        <div class="field">
+          <div class="label-row">
+            <label for="field-layer">Altura de capa (mm)</label>
+            @if (prefilled().has('layerHeight')) {
+              <span id="badge-layerHeight" class="badge">importado</span>
+            }
+          </div>
+          <input
+            id="field-layer"
+            type="text"
+            inputmode="decimal"
+            autocomplete="off"
+            formControlName="layerHeight"
+            [attr.aria-invalid]="layerError ? 'true' : null"
+            [attr.aria-describedby]="describedBy('layerHeight', 'layer-hint')"
+            (input)="clearBadge('layerHeight')"
+          />
+          <p id="layer-hint" class="hint">En milímetros, con coma: por ejemplo 0,2 o 0,16.</p>
+          @if (layerError) {
+            <p id="error-layerHeight" class="field-error">{{ layerError }}</p>
+          }
+        </div>
+
+        <div class="field">
+          <div class="label-row">
+            <label for="field-printer">Impresora sugerida (opcional)</label>
+            @if (prefilled().has('printer')) {
+              <span id="badge-printer" class="badge">importado</span>
+            }
+          </div>
+          <input
+            id="field-printer"
+            type="text"
+            formControlName="printer"
+            autocomplete="off"
+            [attr.aria-invalid]="printerError ? 'true' : null"
+            [attr.aria-describedby]="describedBy('printer', null)"
+            (input)="clearBadge('printer')"
+          />
+          @if (printerError) {
+            <p id="error-printer" class="field-error">{{ printerError }}</p>
+          }
+        </div>
+
+        <div class="actions">
+          <button type="submit" [disabled]="saving || importing">
+            {{ saving ? 'Guardando…' : 'Guardar' }}
+          </button>
+          <a routerLink="/piezas">Cancelar</a>
+        </div>
+      </form>
+    }
+  }
+</section>

@@ -104,6 +104,1383 @@ components:
         - status
         - checks
         - timestamp
+    Printer:
+      type: object
+      properties:
+        id:
+          type: string
+          example: 66f0c0ffee0123456789abcd
+        name:
+          type: string
+        buildVolume:
+          $ref: "#/components/schemas/PrinterBuildVolume"
+        nozzle:
+          $ref: "#/components/schemas/PrinterNozzle"
+        compatibleMaterials:
+          type: array
+          items:
+            $ref: "#/components/schemas/Material"
+        typicalSpeedMmS:
+          type:
+            - integer
+            - "null"
+        powerWatts:
+          type:
+            - integer
+            - "null"
+          description: Average power while printing, in watts; null when unknown.
+        status:
+          $ref: "#/components/schemas/PrinterStatus"
+        version:
+          type: integer
+          description: Send this back when editing.
+        archivedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+          description: Set while the printer waits to be removed ("Pendiente de eliminar").
+        createdAt:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+        updatedAt:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+      required:
+        - id
+        - name
+        - buildVolume
+        - nozzle
+        - compatibleMaterials
+        - typicalSpeedMmS
+        - powerWatts
+        - status
+        - version
+        - archivedAt
+        - createdAt
+        - updatedAt
+    PrinterBuildVolume:
+      type: object
+      properties:
+        x:
+          type: integer
+          minimum: 1
+          maximum: 2000
+        y:
+          type: integer
+          minimum: 1
+          maximum: 2000
+        z:
+          type: integer
+          minimum: 1
+          maximum: 2000
+      required:
+        - x
+        - y
+        - z
+      additionalProperties: false
+      description: Usable print volume in millimetres.
+    PrinterNozzle:
+      type: object
+      properties:
+        diameterMm:
+          anyOf:
+            - type: number
+              enum:
+                - 0.2
+            - type: number
+              enum:
+                - 0.25
+            - type: number
+              enum:
+                - 0.4
+            - type: number
+              enum:
+                - 0.6
+            - type: number
+              enum:
+                - 0.8
+            - type: number
+              enum:
+                - 1
+        material:
+          type: string
+          enum:
+            - brass
+            - hardened_steel
+            - stainless_steel
+      required:
+        - diameterMm
+        - material
+      additionalProperties: false
+    Material:
+      type: string
+      enum:
+        - PLA
+        - PETG
+        - ABS
+        - ASA
+        - TPU
+        - PA
+        - PC
+        - HIPS
+        - PVA
+        - PP
+        - PLA_CF
+        - PETG_CF
+        - PA_CF
+        - PA_GF
+    PrinterStatus:
+      type: string
+      enum:
+        - available
+        - in_use
+        - maintenance
+    CreatePrinterRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Ender 3 Pro
+        buildVolume:
+          $ref: "#/components/schemas/PrinterBuildVolume"
+        nozzle:
+          $ref: "#/components/schemas/PrinterNozzle"
+        compatibleMaterials:
+          type: array
+          items:
+            $ref: "#/components/schemas/Material"
+          minItems: 1
+          maxItems: 14
+        status:
+          $ref: "#/components/schemas/PrinterStatus"
+        typicalSpeedMmS:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        powerWatts:
+          type: integer
+          minimum: 1
+          maximum: 5000
+        restoreIfDeleted:
+          type: boolean
+          default: false
+          description: Set to true to restore a deleted printer that holds this name, replacing its data with
+            the submitted data. Without it, that name answers 409 (issue path "restoreIfDeleted").
+      required:
+        - name
+        - buildVolume
+        - nozzle
+        - compatibleMaterials
+      additionalProperties: false
+    PrinterList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Printer"
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+      required:
+        - items
+        - page
+        - pageSize
+        - total
+    UpdatePrinterRequest:
+      type: object
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Ender 3 Pro
+        buildVolume:
+          $ref: "#/components/schemas/PrinterBuildVolume"
+        nozzle:
+          $ref: "#/components/schemas/PrinterNozzle"
+        compatibleMaterials:
+          type: array
+          items:
+            $ref: "#/components/schemas/Material"
+          minItems: 1
+          maxItems: 14
+        typicalSpeedMmS:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+          maximum: 1000
+        powerWatts:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+          maximum: 5000
+        status:
+          $ref: "#/components/schemas/PrinterStatus"
+      required:
+        - version
+      additionalProperties: false
+    Filament:
+      type: object
+      properties:
+        id:
+          type: string
+          example: 66f0c0ffee0123456789abcd
+        brand:
+          type: string
+        material:
+          $ref: "#/components/schemas/Material"
+        colorName:
+          type: string
+        initialGrams:
+          type: integer
+        availableGrams:
+          type: integer
+        purchaseCostMinor:
+          type: integer
+          description: Centavos of ARS. 1500000 means $15.000,00.
+        purchaseDate:
+          type: string
+          format: date
+          example: 2026-03-15
+          description: YYYY-MM-DD, a calendar day (no time zone).
+        version:
+          type: integer
+          description: Send this back when editing.
+        createdAt:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+        updatedAt:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+      required:
+        - id
+        - brand
+        - material
+        - colorName
+        - initialGrams
+        - availableGrams
+        - purchaseCostMinor
+        - purchaseDate
+        - version
+        - createdAt
+        - updatedAt
+    CreateFilamentRequest:
+      type: object
+      properties:
+        brand:
+          type: string
+          minLength: 1
+          maxLength: 60
+          example: Grilon3
+        material:
+          $ref: "#/components/schemas/Material"
+        colorName:
+          type: string
+          minLength: 1
+          maxLength: 40
+          example: Negro
+        initialGrams:
+          type: integer
+          minimum: 1
+          maximum: 20000
+          description: Weight of the spool when bought, in grams.
+        availableGrams:
+          type: integer
+          minimum: 0
+          maximum: 20000
+          description: Defaults to initialGrams (a new, unused spool).
+        purchaseCostMinor:
+          type: integer
+          minimum: 0
+          maximum: 1000000000
+          description: Purchase cost in centavos of Argentine pesos (ARS), an integer. 1500000 means $15.000,00.
+        purchaseDate:
+          type: string
+          format: date
+          example: 2026-03-15
+          description: Calendar day of the purchase, YYYY-MM-DD (UTC). It cannot be later than today (UTC).
+      required:
+        - brand
+        - material
+        - colorName
+        - initialGrams
+        - purchaseCostMinor
+        - purchaseDate
+      additionalProperties: false
+    FilamentList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Filament"
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+      required:
+        - items
+        - page
+        - pageSize
+        - total
+    UpdateFilamentRequest:
+      type: object
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        brand:
+          type: string
+          minLength: 1
+          maxLength: 60
+          example: Grilon3
+        material:
+          $ref: "#/components/schemas/Material"
+        colorName:
+          type: string
+          minLength: 1
+          maxLength: 40
+          example: Negro
+        initialGrams:
+          type: integer
+          minimum: 1
+          maximum: 20000
+          description: Weight of the spool when bought, in grams.
+        availableGrams:
+          type: integer
+          minimum: 0
+          maximum: 20000
+          description: Grams left on the spool. Never more than initialGrams.
+        purchaseCostMinor:
+          type: integer
+          minimum: 0
+          maximum: 1000000000
+          description: Purchase cost in centavos of Argentine pesos (ARS), an integer. 1500000 means $15.000,00.
+        purchaseDate:
+          type: string
+          format: date
+          example: 2026-03-15
+          description: Calendar day of the purchase, YYYY-MM-DD (UTC). It cannot be later than today (UTC).
+      required:
+        - version
+      additionalProperties: false
+    ConsumeFilamentRequest:
+      type: object
+      properties:
+        grams:
+          type: integer
+          minimum: 1
+          maximum: 20000
+          description: Grams to take from the spool.
+      required:
+        - grams
+      additionalProperties: false
+    Part:
+      type: object
+      properties:
+        id:
+          type: string
+          example: 66f0c0ffee0123456789abcd
+        name:
+          type: string
+        description:
+          type:
+            - string
+            - "null"
+        material:
+          $ref: "#/components/schemas/Material"
+        dimensionsMm:
+          $ref: "#/components/schemas/PartDimensions"
+        estimatedWeightGrams:
+          type: integer
+        estimatedPrintSeconds:
+          type: integer
+        layerHeightUm:
+          type: integer
+          description: "Micrometres: 200 means 0.2 mm."
+        suggestedPrinterName:
+          type:
+            - string
+            - "null"
+        source:
+          $ref: "#/components/schemas/PartSource"
+        version:
+          type: integer
+          description: Send this back when editing.
+        createdAt:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+        updatedAt:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+      required:
+        - id
+        - name
+        - description
+        - material
+        - dimensionsMm
+        - estimatedWeightGrams
+        - estimatedPrintSeconds
+        - layerHeightUm
+        - suggestedPrinterName
+        - source
+        - version
+        - createdAt
+        - updatedAt
+    PartDimensions:
+      type: object
+      properties:
+        x:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        y:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        z:
+          type: integer
+          minimum: 1
+          maximum: 1000
+      required:
+        - x
+        - y
+        - z
+      additionalProperties: false
+      description: Bounding box in whole millimetres. Replaced whole when edited.
+    PartSource:
+      oneOf:
+        - $ref: "#/components/schemas/ManualPartSource"
+        - $ref: "#/components/schemas/GcodePartSource"
+      discriminator:
+        propertyName: kind
+        mapping:
+          manual: "#/components/schemas/ManualPartSource"
+          gcode: "#/components/schemas/GcodePartSource"
+    ManualPartSource:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum:
+            - manual
+      required:
+        - kind
+      additionalProperties: false
+    GcodePartSource:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum:
+            - gcode
+        fileName:
+          type: string
+        slicer:
+          type: string
+          enum:
+            - cura
+        analyzedAt:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+          description: When the part was saved with this source (set by the server).
+      required:
+        - kind
+        - fileName
+        - slicer
+        - analyzedAt
+    CreatePartRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Soporte de estante en L
+        description:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          example: Soporte para estantes de 18 mm.
+        material:
+          $ref: "#/components/schemas/Material"
+        dimensionsMm:
+          $ref: "#/components/schemas/PartDimensions"
+        estimatedWeightGrams:
+          type: integer
+          minimum: 1
+          maximum: 20000
+          description: Estimated weight in grams.
+        estimatedPrintSeconds:
+          type: integer
+          minimum: 1
+          maximum: 2592000
+          description: Estimated print time in seconds (up to 30 days).
+        layerHeightUm:
+          type: integer
+          minimum: 10
+          maximum: 2000
+          description: "Layer height in micrometres: 200 means 0.2 mm."
+        suggestedPrinterName:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Creality Ender-3 Pro
+        source:
+          $ref: "#/components/schemas/PartSourceInput"
+      required:
+        - name
+        - material
+        - dimensionsMm
+        - estimatedWeightGrams
+        - estimatedPrintSeconds
+        - layerHeightUm
+      additionalProperties: false
+    PartSourceInput:
+      oneOf:
+        - $ref: "#/components/schemas/ManualPartSource"
+        - $ref: "#/components/schemas/GcodePartSourceInput"
+      discriminator:
+        propertyName: kind
+        mapping:
+          manual: "#/components/schemas/ManualPartSource"
+          gcode: "#/components/schemas/GcodePartSourceInput"
+      default:
+        kind: manual
+      description: Defaults to {"kind":"manual"}.
+    GcodePartSourceInput:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum:
+            - gcode
+        fileName:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: soporte-celular.gcode
+        slicer:
+          type: string
+          enum:
+            - cura
+      required:
+        - kind
+        - fileName
+        - slicer
+      additionalProperties: false
+    PartList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Part"
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+      required:
+        - items
+        - page
+        - pageSize
+        - total
+    UpdatePartRequest:
+      type: object
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Soporte de estante en L
+        description:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 1000
+          example: Soporte para estantes de 18 mm.
+        material:
+          $ref: "#/components/schemas/Material"
+        dimensionsMm:
+          $ref: "#/components/schemas/PartDimensions"
+        estimatedWeightGrams:
+          type: integer
+          minimum: 1
+          maximum: 20000
+          description: Estimated weight in grams.
+        estimatedPrintSeconds:
+          type: integer
+          minimum: 1
+          maximum: 2592000
+          description: Estimated print time in seconds (up to 30 days).
+        layerHeightUm:
+          type: integer
+          minimum: 10
+          maximum: 2000
+          description: "Layer height in micrometres: 200 means 0.2 mm."
+        suggestedPrinterName:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 100
+          example: Creality Ender-3 Pro
+        source:
+          $ref: "#/components/schemas/PartSourceInput"
+      required:
+        - version
+      additionalProperties: false
+    PartUsage:
+      type: object
+      properties:
+        total:
+          type: integer
+          description: All live projects that use the part.
+        projects:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              quantity:
+                type: integer
+            required:
+              - id
+              - name
+              - quantity
+          description: At most 50, sorted by name then id.
+      required:
+        - total
+        - projects
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+          example: 66f0c0ffee0123456789abcd
+        name:
+          type: string
+        description:
+          type:
+            - string
+            - "null"
+        priority:
+          type: string
+          enum:
+            - low
+            - normal
+            - high
+            - urgent
+          description: "From the least to the most urgent: low, normal, high, urgent."
+        deadline:
+          type: &a1
+            - string
+            - "null"
+          format: date
+          example: 2026-11-30
+          description: YYYY-MM-DD, a calendar day (no time zone), or null.
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectItem"
+        version:
+          type: integer
+          description: Send this back when editing.
+        createdAt:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+        updatedAt:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+      required:
+        - id
+        - name
+        - description
+        - priority
+        - deadline
+        - items
+        - version
+        - createdAt
+        - updatedAt
+    ProjectItem:
+      type: object
+      properties:
+        partId:
+          type: string
+          example: 66f0c0ffee0123456789abcd
+        quantity:
+          type: integer
+        part:
+          type:
+            - object
+            - "null"
+          properties:
+            name:
+              type: string
+            material:
+              $ref: "#/components/schemas/Material"
+          required:
+            - name
+            - material
+          description: The part as it is now, or null when it is no longer live ("deleted").
+      required:
+        - partId
+        - quantity
+        - part
+    CreateProjectRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Soportes para el taller
+        description:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          example: Estantes y herramientas del taller.
+        priority:
+          type: string
+          enum:
+            - low
+            - normal
+            - high
+            - urgent
+          default: normal
+          description: "From the least to the most urgent: low, normal, high, urgent."
+        deadline:
+          type: string
+          format: date
+          example: 2026-11-30
+          description: YYYY-MM-DD, a calendar day (no time zone), years 2000..2099. A past day is allowed.
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectItemInput"
+          maxItems: 100
+          default: []
+          description: Up to 100 lines, each part at most once, every part must exist. Replaced whole on edit.
+      required:
+        - name
+      additionalProperties: false
+    ProjectItemInput:
+      type: object
+      properties:
+        partId:
+          type: string
+          pattern: ^[0-9a-f]{24}$/i
+          example: 66f0c0ffee0123456789abcd
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 1000
+      required:
+        - partId
+        - quantity
+      additionalProperties: false
+    ProjectList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectSummary"
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+      required:
+        - items
+        - page
+        - pageSize
+        - total
+    ProjectSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          example: 66f0c0ffee0123456789abcd
+        name:
+          type: string
+        description:
+          type:
+            - string
+            - "null"
+        priority:
+          type: string
+          enum:
+            - low
+            - normal
+            - high
+            - urgent
+          description: "From the least to the most urgent: low, normal, high, urgent."
+        deadline:
+          type: *a1
+          format: date
+          example: 2026-11-30
+          description: YYYY-MM-DD, a calendar day (no time zone), or null.
+        itemCount:
+          type: integer
+          description: Number of lines.
+        unitCount:
+          type: integer
+          description: Sum of the quantities.
+        createdAt:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+        updatedAt:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+      required:
+        - id
+        - name
+        - description
+        - priority
+        - deadline
+        - itemCount
+        - unitCount
+        - createdAt
+        - updatedAt
+    UpdateProjectRequest:
+      type: object
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Soportes para el taller
+        description:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 1000
+          example: Estantes y herramientas del taller.
+        priority:
+          type: string
+          enum:
+            - low
+            - normal
+            - high
+            - urgent
+          description: "From the least to the most urgent: low, normal, high, urgent."
+        deadline:
+          type:
+            - string
+            - "null"
+          format: date
+          example: 2026-11-30
+          description: YYYY-MM-DD, a calendar day (no time zone), years 2000..2099. A past day is allowed.
+            null clears it.
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectItemInput"
+          maxItems: 100
+          description: Up to 100 lines, each part at most once, every part must exist. Replaced whole on edit.
+      required:
+        - version
+      additionalProperties: false
+    CostEstimate:
+      type: object
+      properties:
+        quantity:
+          type: integer
+        printSeconds:
+          type: integer
+        filament:
+          type: object
+          properties:
+            grams:
+              type: integer
+            costMinor:
+              type: integer
+              description: Centavos of ARS, rounded once.
+          required:
+            - grams
+            - costMinor
+        electricity:
+          type:
+            - object
+            - "null"
+          properties:
+            watts:
+              type: integer
+            costMinor:
+              type: integer
+              description: Centavos of ARS.
+          required:
+            - watts
+            - costMinor
+          description: Null without a printer or without its power.
+        wear:
+          type: object
+          properties:
+            costMinor:
+              type: integer
+              description: Centavos of ARS.
+          required:
+            - costMinor
+        fixed:
+          type: object
+          properties:
+            costMinor:
+              type: integer
+              description: Charged once per estimate.
+          required:
+            - costMinor
+        subtotalMinor:
+          type: integer
+          description: "Sum of the lines: the clean cost."
+        marginBasisPoints:
+          type: integer
+        marginMinor:
+          type: integer
+          description: Margin added on the subtotal; 0 when not a sale.
+        totalMinor:
+          type: integer
+          description: subtotalMinor + marginMinor.
+        unitTotalMinor:
+          type: integer
+          description: Average per unit; unit x quantity can differ by a few centavos.
+        warnings:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                $ref: "#/components/schemas/CostWarningCode"
+            required:
+              - code
+      required:
+        - quantity
+        - printSeconds
+        - filament
+        - electricity
+        - wear
+        - fixed
+        - subtotalMinor
+        - marginBasisPoints
+        - marginMinor
+        - totalMinor
+        - unitTotalMinor
+        - warnings
+    CostWarningCode:
+      type: string
+      enum:
+        - filament_insufficient
+        - electricity_printer_not_selected
+        - electricity_printer_power_unknown
+        - settings_not_configured
+    CostEstimateRequest:
+      type: object
+      properties:
+        partId:
+          type: string
+          pattern: ^[0-9a-f]{24}$/i
+          example: 66f0c0ffee0123456789abcd
+        filamentId:
+          type: string
+          pattern: ^[0-9a-f]{24}$/i
+          example: 66f0c0ffee0123456789abcd
+        printerId:
+          type: string
+          pattern: ^[0-9a-f]{24}$/i
+          example: 66f0c0ffee0123456789abcd
+          description: Optional. Without a printer (or without its power) electricity is omitted.
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 1
+        marginBasisPoints:
+          type: integer
+          minimum: 0
+          maximum: 100000
+          description: "Present means a sale: this margin (12.5 % is 1250) is added on the subtotal. Absent
+            means no margin. The default margin of the settings is never applied here."
+      required:
+        - partId
+        - filamentId
+      additionalProperties: false
+    ProjectCostEstimate:
+      type: object
+      properties:
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectCostLine"
+        fixed:
+          type: object
+          properties:
+            costMinor:
+              type: integer
+              description: Settings fixed cost, charged once, no margin.
+          required:
+            - costMinor
+        subtotalMinor:
+          type: integer
+          description: Sum of the line subtotals plus the fixed cost.
+        marginMinor:
+          type: integer
+          description: Sum of the line margins.
+        totalMinor:
+          type: integer
+          description: subtotalMinor + marginMinor.
+        printSeconds:
+          type: integer
+        materials:
+          type: array
+          items:
+            type: object
+            properties:
+              material:
+                type: string
+                enum:
+                  - PLA
+                  - PETG
+                  - ABS
+                  - ASA
+                  - TPU
+                  - PA
+                  - PC
+                  - HIPS
+                  - PVA
+                  - PP
+                  - PLA_CF
+                  - PETG_CF
+                  - PA_CF
+                  - PA_GF
+              grams:
+                type: integer
+            required:
+              - material
+              - grams
+        warnings:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                $ref: "#/components/schemas/CostWarningCode"
+            required:
+              - code
+      required:
+        - lines
+        - fixed
+        - subtotalMinor
+        - marginMinor
+        - totalMinor
+        - printSeconds
+        - materials
+        - warnings
+    ProjectCostLine:
+      type: object
+      properties:
+        quantity:
+          type: integer
+        printSeconds:
+          type: integer
+        filament:
+          type: object
+          properties:
+            grams:
+              type: integer
+            costMinor:
+              type: integer
+              description: Centavos of ARS, rounded once.
+          required:
+            - grams
+            - costMinor
+        electricity:
+          type:
+            - object
+            - "null"
+          properties:
+            watts:
+              type: integer
+            costMinor:
+              type: integer
+              description: Centavos of ARS.
+          required:
+            - watts
+            - costMinor
+          description: Null without a printer or without its power.
+        wear:
+          type: object
+          properties:
+            costMinor:
+              type: integer
+              description: Centavos of ARS.
+          required:
+            - costMinor
+        subtotalMinor:
+          type: integer
+          description: "Sum of the lines: the clean cost."
+        marginBasisPoints:
+          type: integer
+        marginMinor:
+          type: integer
+          description: Margin added on the subtotal; 0 when not a sale.
+        totalMinor:
+          type: integer
+          description: subtotalMinor + marginMinor.
+        unitTotalMinor:
+          type: integer
+          description: Average per unit; unit x quantity can differ by a few centavos.
+        warnings:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                $ref: "#/components/schemas/CostWarningCode"
+            required:
+              - code
+        partId:
+          type: string
+          pattern: ^[0-9a-f]{24}$/i
+          example: 66f0c0ffee0123456789abcd
+      required:
+        - quantity
+        - printSeconds
+        - filament
+        - electricity
+        - wear
+        - subtotalMinor
+        - marginBasisPoints
+        - marginMinor
+        - totalMinor
+        - unitTotalMinor
+        - warnings
+        - partId
+    ProjectCostEstimateRequest:
+      type: object
+      properties:
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              partId:
+                type: string
+                pattern: ^[0-9a-f]{24}$/i
+                example: 66f0c0ffee0123456789abcd
+              filamentId:
+                type: string
+                pattern: ^[0-9a-f]{24}$/i
+                example: 66f0c0ffee0123456789abcd
+              printerId:
+                type: string
+                pattern: ^[0-9a-f]{24}$/i
+                example: 66f0c0ffee0123456789abcd
+              quantity:
+                type: integer
+                minimum: 1
+                maximum: 1000
+              marginBasisPoints:
+                type: integer
+                minimum: 0
+                maximum: 100000
+                description: Present means this line is a sale. Absent means no margin.
+            required:
+              - partId
+              - filamentId
+              - quantity
+            additionalProperties: false
+          minItems: 1
+          maxItems: 100
+      required:
+        - lines
+      additionalProperties: false
+    CostSettings:
+      type: object
+      properties:
+        kwhPriceMinor:
+          type: integer
+        wearPerHourMinor:
+          type: integer
+        fixedPerJobMinor:
+          type: integer
+        defaultMarginBasisPoints:
+          type: integer
+        version:
+          type: integer
+          description: 0 until the settings are first saved.
+        updatedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+      required:
+        - kwhPriceMinor
+        - wearPerHourMinor
+        - fixedPerJobMinor
+        - defaultMarginBasisPoints
+        - version
+        - updatedAt
+    UpdateCostSettingsRequest:
+      type: object
+      properties:
+        kwhPriceMinor:
+          type: integer
+          minimum: 0
+          maximum: 1000000000
+          description: Price of one kWh, in centavos.
+        wearPerHourMinor:
+          type: integer
+          minimum: 0
+          maximum: 1000000000
+          description: Machine wear per print hour, centavos.
+        fixedPerJobMinor:
+          type: integer
+          minimum: 0
+          maximum: 1000000000
+          description: Fixed cost charged once per estimate.
+        defaultMarginBasisPoints:
+          type: integer
+          minimum: 0
+          maximum: 100000
+          description: Value the form pre-fills for a sale. The API never applies it by itself.
+        version:
+          type: integer
+          minimum: 0
+          description: 0 for the first save, otherwise the version last seen (ADR 0021).
+      required:
+        - kwhPriceMinor
+        - wearPerHourMinor
+        - fixedPerJobMinor
+        - defaultMarginBasisPoints
+        - version
+      additionalProperties: false
+    GcodeAnalysis:
+      type: object
+      properties:
+        slicer:
+          type: string
+          enum:
+            - cura
+        estimatedPrintSeconds:
+          type: integer
+        filamentMm:
+          type: integer
+          description: Filament length, all extruders.
+        filamentGrams:
+          type:
+            - integer
+            - "null"
+          description: Estimated from a density table (ADR 0015). Null without a material.
+        layerHeightUm:
+          type:
+            - integer
+            - "null"
+        dimensionsMm:
+          type:
+            - object
+            - "null"
+          properties:
+            x:
+              type: integer
+            y:
+              type: integer
+            z:
+              type: integer
+          required:
+            - x
+            - y
+            - z
+          description: Bounding box in whole millimetres, rounded up. Includes skirt and brim.
+        targetMachineName:
+          type:
+            - string
+            - "null"
+          description: The slicer machine name, kept only if it is printable ASCII.
+        warnings:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                $ref: "#/components/schemas/GcodeWarningCode"
+            required:
+              - code
+      required:
+        - slicer
+        - estimatedPrintSeconds
+        - filamentMm
+        - filamentGrams
+        - layerHeightUm
+        - dimensionsMm
+        - targetMachineName
+        - warnings
+    GcodeWarningCode:
+      type: string
+      enum:
+        - GRAMS_FROM_DENSITY_TABLE
+        - MATERIAL_NOT_SELECTED
+        - WEIGHT_OUT_OF_RANGE
+        - LAYER_HEIGHT_UNAVAILABLE
+        - DIMENSIONS_UNAVAILABLE
+        - DIMENSIONS_INCLUDE_SKIRT_OR_BRIM
+        - MULTIPLE_EXTRUDERS_SUMMED
+    AnalyzeGcodeRequest:
+      type: object
+      properties:
+        head:
+          type: string
+          minLength: 1
+          maxLength: 65536
+          description: The first 65536 characters of the .gcode file, exactly as read (not trimmed). It is
+            never stored or logged.
+        material:
+          allOf:
+            - $ref: "#/components/schemas/Material"
+            - description: Needed to estimate the weight in grams.
+      required:
+        - head
+      additionalProperties: false
   parameters: {}
 paths:
   /health/live:
@@ -140,4 +1517,1160 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Readiness"
+  /api/v1/printers:
+    post:
+      operationId: createPrinter
+      tags:
+        - Printers
+      summary: Register a printer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePrinterRequest"
+      responses:
+        "200":
+          description: Restored. A deleted printer with this name was revived with the submitted data (only
+            with restoreIfDeleted true). The Location header points to it.
+          headers:
+            Location:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Printer"
+        "201":
+          description: Created. The Location header points to the new printer.
+          headers:
+            Location:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Printer"
+        "400":
+          description: Invalid input, or a reinforced material without a hardened_steel nozzle.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: 'The name is taken. Issue path "name": a live or pending-removal printer holds it.
+            Issue path "restoreIfDeleted": a deleted printer holds it; resend with restoreIfDeleted
+            true to restore it.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    get:
+      operationId: listPrinters
+      tags:
+        - Printers
+      summary: List printers
+      description: Includes printers pending removal (archivedAt set). Removed printers are not listed.
+      parameters:
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 1
+          required: false
+          name: page
+          in: query
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          required: false
+          name: pageSize
+          in: query
+        - schema:
+            type: string
+            enum:
+              - available
+              - in_use
+              - maintenance
+          required: false
+          name: status
+          in: query
+        - schema:
+            type: string
+            enum:
+              - name
+              - createdAt
+            default: name
+          required: false
+          name: sort
+          in: query
+        - schema:
+            type: string
+            enum:
+              - asc
+              - desc
+            default: asc
+          required: false
+          name: order
+          in: query
+      responses:
+        "200":
+          description: One page of printers. A page past the last one is empty.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrinterList"
+        "400":
+          description: Unknown or invalid query parameter.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/printers/{id}/unarchive:
+    post:
+      operationId: unarchivePrinter
+      tags:
+        - Printers
+      summary: Cancel the pending removal of a printer
+      description: Clears archivedAt so the printer can be edited again. Repeating it on a printer that is
+        not pending removal is a 200 with no change.
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      responses:
+        "200":
+          description: The printer, no longer pending removal.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Printer"
+        "400":
+          description: Malformed id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such printer, or it was removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/printers/{id}:
+    get:
+      operationId: getPrinter
+      tags:
+        - Printers
+      summary: Get one printer
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      responses:
+        "200":
+          description: The printer (also when it is pending removal).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Printer"
+        "400":
+          description: Malformed id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such printer, or it was removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    patch:
+      operationId: updatePrinter
+      tags:
+        - Printers
+      summary: Edit a printer
+      description: "Send the `version` you last saw plus the fields to change. Nested objects and
+        `compatibleMaterials` are replaced whole; `typicalSpeedMmS: null` and `powerWatts: null`
+        clear those values."
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePrinterRequest"
+      responses:
+        "200":
+          description: The updated printer, with its new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Printer"
+        "400":
+          description: Invalid input, or the merged state breaks a rule.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such printer, or it was removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Stale version (issue path "version"), duplicate name (path "name"), or the printer is
+            pending removal.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    delete:
+      operationId: deletePrinter
+      tags:
+        - Printers
+      summary: Remove a printer
+      description: Never physical. An idle printer is removed; one in use or with assignments becomes
+        pending removal (archivedAt set). Repeating the request on a pending printer is a 204.
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      responses:
+        "204":
+          description: Removed, or pending removal.
+        "400":
+          description: Malformed id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such printer, or it was already removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/filaments:
+    post:
+      operationId: createFilament
+      tags:
+        - Filaments
+      summary: Register a filament spool
+      description: "Two identical spools are allowed: there is no uniqueness rule."
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFilamentRequest"
+      responses:
+        "201":
+          description: Created. The Location header points to the new filament.
+          headers:
+            Location:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Filament"
+        "400":
+          description: Invalid input, availableGrams above initialGrams, or a purchase date in the future.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    get:
+      operationId: listFilaments
+      tags:
+        - Filaments
+      summary: List filaments
+      description: Removed filaments are not listed.
+      parameters:
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 1
+          required: false
+          name: page
+          in: query
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          required: false
+          name: pageSize
+          in: query
+        - schema:
+            $ref: "#/components/schemas/Material"
+          required: false
+          name: material
+          in: query
+        - schema:
+            type: string
+            enum:
+              - "true"
+              - "false"
+            description: "true: only spools with grams left. false: only empty spools."
+          required: false
+          description: "true: only spools with grams left. false: only empty spools."
+          name: inStock
+          in: query
+        - schema:
+            type: string
+            enum:
+              - purchaseDate
+              - brand
+              - availableGrams
+              - createdAt
+            default: createdAt
+          required: false
+          name: sort
+          in: query
+        - schema:
+            type: string
+            enum:
+              - asc
+              - desc
+            default: desc
+          required: false
+          name: order
+          in: query
+      responses:
+        "200":
+          description: One page of filaments. A page past the last one is empty.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FilamentList"
+        "400":
+          description: Unknown or invalid query parameter.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/filaments/{id}:
+    get:
+      operationId: getFilament
+      tags:
+        - Filaments
+      summary: Get one filament
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      responses:
+        "200":
+          description: The filament.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Filament"
+        "400":
+          description: Malformed id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such filament, or it was removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    patch:
+      operationId: updateFilament
+      tags:
+        - Filaments
+      summary: Edit a filament
+      description: Send the `version` you last saw plus the fields to change.
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateFilamentRequest"
+      responses:
+        "200":
+          description: The updated filament, with its new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Filament"
+        "400":
+          description: Invalid input, or the merged state breaks a rule (availableGrams above initialGrams, or
+            a purchase date in the future).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such filament, or it was removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Stale version (issue path "version").
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    delete:
+      operationId: deleteFilament
+      tags:
+        - Filaments
+      summary: Remove a filament
+      description: "Logical removal: the document is kept but no longer listed or readable."
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      responses:
+        "204":
+          description: Removed.
+        "400":
+          description: Malformed id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such filament, or it was already removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/filaments/{id}/consume:
+    post:
+      operationId: consumeFilament
+      tags:
+        - Filaments
+      summary: Take grams from a spool
+      description: "One atomic decrement. It needs no version: it does not conflict with edits, only with
+        the stock left."
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsumeFilamentRequest"
+      responses:
+        "200":
+          description: The filament with the grams taken off.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Filament"
+        "400":
+          description: Invalid input or malformed id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such filament, or it was removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Not enough material (issue path "grams"). The filament is unchanged.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/parts:
+    post:
+      operationId: createPart
+      tags:
+        - Parts
+      summary: Register a part
+      description: "Two parts may share a name: there is no uniqueness rule. A gcode `source` is stamped
+        with `analyzedAt` by the server; sending it is a 400."
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePartRequest"
+      responses:
+        "201":
+          description: Created. The Location header points to the new part.
+          headers:
+            Location:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Part"
+        "400":
+          description: Invalid input or an unknown field.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    get:
+      operationId: listParts
+      tags:
+        - Parts
+      summary: List parts
+      description: Removed parts are not listed.
+      parameters:
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 1
+          required: false
+          name: page
+          in: query
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          required: false
+          name: pageSize
+          in: query
+        - schema:
+            $ref: "#/components/schemas/Material"
+          required: false
+          name: material
+          in: query
+        - schema:
+            type: string
+            enum:
+              - name
+              - createdAt
+              - estimatedWeightGrams
+              - estimatedPrintSeconds
+            default: name
+          required: false
+          name: sort
+          in: query
+        - schema:
+            type: string
+            enum:
+              - asc
+              - desc
+            default: asc
+          required: false
+          name: order
+          in: query
+      responses:
+        "200":
+          description: One page of parts. A page past the last one is empty.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartList"
+        "400":
+          description: Unknown or invalid query parameter.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/parts/{id}:
+    get:
+      operationId: getPart
+      tags:
+        - Parts
+      summary: Get one part
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      responses:
+        "200":
+          description: The part.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Part"
+        "400":
+          description: Malformed id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such part, or it was removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    patch:
+      operationId: updatePart
+      tags:
+        - Parts
+      summary: Edit a part
+      description: Send the `version` you last saw plus the fields to change. `dimensionsMm` is replaced
+        whole. `null` clears `description` or `suggestedPrinterName`. `analyzedAt` is stamped again
+        only when the body carries a `source`.
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePartRequest"
+      responses:
+        "200":
+          description: The updated part, with its new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Part"
+        "400":
+          description: Invalid input or an unknown field.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such part, or it was removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Stale version (issue path "version").
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    delete:
+      operationId: deletePart
+      tags:
+        - Parts
+      summary: Remove a part
+      description: 'Logical removal: the document is kept but no longer listed or readable. A part that
+        live projects use is refused with 409 (issue path "projects"); ask `GET /parts/{id}/usage`
+        and repeat with `removeFromProjects=true` to pull it from those projects first and then
+        remove it.'
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+        - schema:
+            type: string
+            enum:
+              - "true"
+              - "false"
+            default: "false"
+            description: "true confirms the removal of a part that projects use: it is pulled from them first."
+          required: false
+          description: "true confirms the removal of a part that projects use: it is pulled from them first."
+          name: removeFromProjects
+          in: query
+      responses:
+        "204":
+          description: Removed.
+        "400":
+          description: Malformed id or unknown query parameter.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such part, or it was already removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Live projects use the part and removal was not confirmed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: The project data is temporarily unavailable; nothing was removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/parts/{id}/usage:
+    get:
+      operationId: getPartUsage
+      tags:
+        - Parts
+      summary: Which live projects use a part
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      responses:
+        "200":
+          description: The true total and at most 50 projects, sorted by name then id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartUsage"
+        "400":
+          description: Malformed id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such part, or it was removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: The project data is temporarily unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/projects:
+    post:
+      operationId: createProject
+      tags:
+        - Projects
+      summary: Register a project
+      description: Two projects may share a name. A past deadline is allowed and a project may have no
+        lines. Every line must reference a live part (issue path "items.N.partId").
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectRequest"
+      responses:
+        "201":
+          description: Created. The Location header points to the new project.
+          headers:
+            Location:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          description: Invalid input, an unknown field, a repeated part or a part that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: The part data is temporarily unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    get:
+      operationId: listProjects
+      tags:
+        - Projects
+      summary: List projects
+      description: Removed projects are not listed. Sorting by priority goes low, normal, high, urgent.
+        Projects without a deadline come last in both directions.
+      parameters:
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 1
+          required: false
+          name: page
+          in: query
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          required: false
+          name: pageSize
+          in: query
+        - schema:
+            type: string
+            enum:
+              - low
+              - normal
+              - high
+              - urgent
+            description: "From the least to the most urgent: low, normal, high, urgent."
+          required: false
+          description: "From the least to the most urgent: low, normal, high, urgent."
+          name: priority
+          in: query
+        - schema:
+            type: string
+            enum:
+              - deadline
+              - priority
+              - name
+              - createdAt
+            default: createdAt
+            description: A project without a deadline comes last in both directions when sorting by it.
+          required: false
+          description: A project without a deadline comes last in both directions when sorting by it.
+          name: sort
+          in: query
+        - schema:
+            type: string
+            enum:
+              - asc
+              - desc
+            default: desc
+          required: false
+          name: order
+          in: query
+      responses:
+        "200":
+          description: One page of project summaries. A page past the last one is empty.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectList"
+        "400":
+          description: Unknown or invalid query parameter.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/projects/{id}:
+    get:
+      operationId: getProject
+      tags:
+        - Projects
+      summary: Get one project
+      description: "Each line carries the part as it is now, or `part: null` when it was deleted."
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      responses:
+        "200":
+          description: The project.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          description: Malformed id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such project, or it was removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: The part data is temporarily unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    patch:
+      operationId: updateProject
+      tags:
+        - Projects
+      summary: Edit a project
+      description: Send the `version` you last saw plus the fields to change. `items` is replaced whole
+        (`[]` empties it). `null` clears `description` or `deadline`.
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectRequest"
+      responses:
+        "200":
+          description: The updated project, with its new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          description: Invalid input, an unknown field, a repeated part or a part that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such project, or it was removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Stale version (issue path "version").
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: The part data is temporarily unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    delete:
+      operationId: deleteProject
+      tags:
+        - Projects
+      summary: Remove a project
+      description: "Logical removal: the document is kept but no longer listed or readable."
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      responses:
+        "204":
+          description: Removed.
+        "400":
+          description: Malformed id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such project, or it was already removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/costs/estimates:
+    post:
+      operationId: estimateCost
+      tags:
+        - Costs
+      summary: Estimate the cost of printing a part
+      description: "Stateless: nothing is stored. Every amount is an integer in centavos of ARS and the
+        lines add up to the total. A margin is added only when marginBasisPoints is sent. Unknown
+        ids are reported together as issues on partId, filamentId and printerId."
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CostEstimateRequest"
+      responses:
+        "200":
+          description: The estimate.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CostEstimate"
+        "400":
+          description: Invalid input, an unknown part, spool or printer, a spool material that differs from
+            the part material (issue path "filamentId"), or amounts too large (path "quantity").
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: The part, spool, printer or settings data is temporarily unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/costs/project-estimates:
+    post:
+      operationId: estimateProjectCost
+      tags:
+        - Costs
+      summary: Estimate the total cost of a project
+      description: "Stateless: nothing is stored. Each line is costed alone (spool, printer and margin per
+        line); the settings fixed cost is added once for the whole project and carries no margin.
+        Totals are sums of the rounded lines, in centavos of ARS."
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectCostEstimateRequest"
+      responses:
+        "200":
+          description: The project estimate.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectCostEstimate"
+        "400":
+          description: Invalid input; unknown part, spool or printer, or a material mismatch (paths
+            "lines.N.partId|filamentId|printerId"); amounts too large (path "lines.N.quantity", or
+            "lines" when only the sum overflows).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: The part, spool, printer or settings data is temporarily unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/costs/settings:
+    get:
+      operationId: getCostSettings
+      tags:
+        - Costs
+      summary: Get the cost settings
+      description: Before the first save it answers zeros with version 0. It never writes.
+      responses:
+        "200":
+          description: The settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CostSettings"
+        "503":
+          description: The settings are temporarily unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    put:
+      operationId: saveCostSettings
+      tags:
+        - Costs
+      summary: Save the cost settings
+      description: Send all four numbers and the version last seen (0 for the first save).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCostSettingsRequest"
+      responses:
+        "200":
+          description: The saved settings, with the new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CostSettings"
+        "400":
+          description: Invalid input or an unknown field.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Stale version (issue path "version").
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: The settings are temporarily unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/gcode-analyses:
+    post:
+      operationId: analyzeGcode
+      tags:
+        - G-code
+      summary: Read the estimates from the head of a Cura G-code file
+      description: "Stateless: nothing is stored and the text is never logged or returned. It answers 200
+        because it creates no resource. Only Cura (Marlin or RepRap flavour) is recognised."
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalyzeGcodeRequest"
+      responses:
+        "200":
+          description: The numbers found, with warning codes about how reliable they are.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GcodeAnalysis"
+        "400":
+          description: Invalid input, or the head is not a supported Cura header (issue path "head").
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "413":
+          description: The request body is over the size limit.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
 webhooks: {}

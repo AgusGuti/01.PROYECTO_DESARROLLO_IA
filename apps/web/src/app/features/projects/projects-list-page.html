@@ -1,0 +1,149 @@
+<section aria-labelledby="projects-title">
+  <div class="page-header">
+    <h1 id="projects-title" #heading tabindex="-1">Proyectos</h1>
+    <a class="button" routerLink="/proyectos/nuevo">Nuevo proyecto</a>
+  </div>
+
+  <div class="notices" aria-live="polite">
+    @if (notice(); as notice) {
+      <p
+        class="notice"
+        [class.notice--success]="notice.kind === 'success'"
+        [class.notice--error]="notice.kind === 'error'"
+      >
+        {{ notice.text }}
+      </p>
+    }
+  </div>
+
+  <div class="filter">
+    <label for="priority-filter">Prioridad</label>
+    <select id="priority-filter" #priorityFilter (change)="changePriority(priorityFilter.value)">
+      <option value="">Todas</option>
+      @for (option of priorityOptions; track option.value) {
+        <option [value]="option.value">{{ option.label }}</option>
+      }
+    </select>
+
+    <label for="sort-field">Ordenar por</label>
+    <select id="sort-field" #sortField (change)="changeSort(sortField.value)">
+      @for (option of sortOptions; track option.value) {
+        <option [value]="option.value" [selected]="option.value === query().sort">
+          {{ option.label }}
+        </option>
+      }
+    </select>
+
+    <label for="sort-order">Orden</label>
+    <select id="sort-order" #sortOrder (change)="changeOrder(sortOrder.value)">
+      @for (option of orderOptions; track option.value) {
+        <option [value]="option.value" [selected]="option.value === query().order">
+          {{ option.label }}
+        </option>
+      }
+    </select>
+  </div>
+
+  @let view = state();
+  @let list = shownList(view);
+  @let busy = view.kind === 'loading';
+  @let today = currentDay();
+
+  @if (list) {
+    @if (list.items.length === 0) {
+      <p>No hay proyectos en esta página.</p>
+    } @else {
+      <table [attr.aria-busy]="busy">
+        <caption class="visually-hidden">
+          Lista de proyectos
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Nombre</th>
+            <th scope="col">Prioridad</th>
+            <th scope="col">Fecha límite</th>
+            <th scope="col">Piezas</th>
+            <th scope="col">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (project of list.items; track project.id) {
+            <tr>
+              <th scope="row">{{ project.name }}</th>
+              <td>{{ priorityLabel(project.priority) }}</td>
+              <td>
+                {{ deadlineText(project) }}
+                @if (overdue(project, today)) {
+                  <span class="overdue"><span aria-hidden="true">⚠</span> Vencido</span>
+                }
+              </td>
+              <td>{{ piecesText(project) }}</td>
+              <td class="actions">
+                <a
+                  [routerLink]="['/proyectos', project.id, 'editar']"
+                  [attr.aria-label]="'Editar ' + project.name"
+                  >Editar</a
+                >
+                <a
+                  [routerLink]="['/proyectos', project.id, 'costo']"
+                  [attr.aria-label]="'Costo de ' + project.name"
+                  >Costo</a
+                >
+                <button
+                  type="button"
+                  class="link-danger"
+                  [attr.aria-label]="'Eliminar ' + project.name"
+                  [disabled]="busy"
+                  (click)="askToDelete(project, $event)"
+                >
+                  Eliminar
+                </button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+
+    <nav class="pager" aria-label="Paginación">
+      <button type="button" [disabled]="busy || list.page <= 1" (click)="goToPage(list.page - 1)">
+        Anterior
+      </button>
+      <span>{{ rangeText(list) }}</span>
+      <button type="button" [disabled]="busy || !hasNext(list)" (click)="goToPage(list.page + 1)">
+        Siguiente
+      </button>
+    </nav>
+  }
+
+  @switch (view.kind) {
+    @case ('loading') {
+      <p class="status" role="status">Cargando proyectos…</p>
+    }
+    @case ('empty') {
+      @if (view.filtered) {
+        <p class="status">No hay proyectos con esa prioridad. Probá con otra.</p>
+      } @else {
+        <div class="status">
+          <p>Todavía no tenés proyectos. Creá el primero.</p>
+          <a class="button" routerLink="/proyectos/nuevo">Nuevo proyecto</a>
+        </div>
+      }
+    }
+    @case ('failed') {
+      <div class="status status--error" role="alert">
+        <p>{{ view.message }}</p>
+        <button type="button" (click)="retry()">Reintentar</button>
+      </div>
+    }
+  }
+
+  @if (deleteTarget(); as target) {
+    <app-project-delete-dialog
+      [projectName]="target.name"
+      [busy]="deleting()"
+      (confirmed)="confirmDelete()"
+      (cancelled)="cancelDelete()"
+    />
+  }
+</section>

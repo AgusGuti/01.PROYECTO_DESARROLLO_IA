@@ -1,0 +1,240 @@
+<section aria-labelledby="form-title">
+  <h1 id="form-title">{{ printerId === null ? 'Nueva impresora' : 'Editar impresora' }}</h1>
+
+  @let view = load();
+  @switch (view.kind) {
+    @case ('loading') {
+      <p class="status" role="status">Cargando la impresora…</p>
+    }
+    @case ('notFound') {
+      <div class="status status--error" role="alert">
+        <p>La impresora ya no existe.</p>
+        <a routerLink="/impresoras">Volver al listado</a>
+      </div>
+    }
+    @case ('archived') {
+      <div class="status status--warn" role="status">
+        <p>
+          Esta impresora está pendiente de eliminar y ya no se puede editar. Se va a quitar cuando
+          termine sus trabajos.
+        </p>
+        <a routerLink="/impresoras">Volver al listado</a>
+      </div>
+    }
+    @case ('failed') {
+      <div class="status status--error" role="alert">
+        <p>{{ view.message }}</p>
+        <button type="button" (click)="reload()">Reintentar</button>
+      </div>
+    }
+    @case ('ready') {
+      @let saving = save().kind === 'saving';
+      @let nameError = errorFor('name');
+      @let xError = errorFor('x');
+      @let yError = errorFor('y');
+      @let zError = errorFor('z');
+      @let materialsError = errorFor('materials');
+      @let speedError = errorFor('speed');
+
+      <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+        @let result = save();
+        @if (result.kind === 'failed') {
+          <div class="status status--error" role="alert">
+            <p>{{ result.message }}</p>
+            @if (result.stale) {
+              <button type="button" (click)="reload()">Recargar</button>
+            }
+          </div>
+        }
+
+        <div class="field">
+          <label for="field-name">Nombre</label>
+          <input
+            id="field-name"
+            type="text"
+            formControlName="name"
+            autocomplete="off"
+            [attr.aria-invalid]="nameError ? 'true' : null"
+            [attr.aria-describedby]="
+              nameError ? 'name-error' : restoreHint() ? 'name-restore-hint' : null
+            "
+            (input)="restoreHint.set(false)"
+          />
+          @if (nameError) {
+            <p id="name-error" class="field-error">{{ nameError }}</p>
+          } @else if (restoreHint()) {
+            <p id="name-restore-hint" class="hint">
+              Ese nombre pertenece a una impresora eliminada. Cambialo o restaurala.
+            </p>
+          }
+        </div>
+
+        <fieldset>
+          <legend>Volumen de impresión</legend>
+          <div class="row">
+            <div class="field">
+              <label for="field-x">Ancho (mm)</label>
+              <input
+                id="field-x"
+                type="number"
+                inputmode="numeric"
+                step="1"
+                formControlName="x"
+                [attr.aria-invalid]="xError ? 'true' : null"
+                [attr.aria-describedby]="xError ? 'x-error' : null"
+              />
+              @if (xError) {
+                <p id="x-error" class="field-error">{{ xError }}</p>
+              }
+            </div>
+            <div class="field">
+              <label for="field-y">Fondo (mm)</label>
+              <input
+                id="field-y"
+                type="number"
+                inputmode="numeric"
+                step="1"
+                formControlName="y"
+                [attr.aria-invalid]="yError ? 'true' : null"
+                [attr.aria-describedby]="yError ? 'y-error' : null"
+              />
+              @if (yError) {
+                <p id="y-error" class="field-error">{{ yError }}</p>
+              }
+            </div>
+            <div class="field">
+              <label for="field-z">Alto (mm)</label>
+              <input
+                id="field-z"
+                type="number"
+                inputmode="numeric"
+                step="1"
+                formControlName="z"
+                [attr.aria-invalid]="zError ? 'true' : null"
+                [attr.aria-describedby]="zError ? 'z-error' : null"
+              />
+              @if (zError) {
+                <p id="z-error" class="field-error">{{ zError }}</p>
+              }
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Boquilla</legend>
+          <div class="row">
+            <div class="field">
+              <label for="field-diameter">Diámetro</label>
+              <select id="field-diameter" formControlName="diameterMm">
+                @for (option of diameterOptions; track option.value) {
+                  <option [ngValue]="option.value">{{ option.label }}</option>
+                }
+              </select>
+            </div>
+            <div class="field">
+              <label for="field-nozzle-material">Material de la boquilla</label>
+              <select id="field-nozzle-material" formControlName="nozzleMaterial">
+                @for (option of nozzleMaterialOptions; track option.value) {
+                  <option [value]="option.value">{{ option.label }}</option>
+                }
+              </select>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset [attr.aria-describedby]="materialsDescribedBy(materialsError)">
+          <legend>Materiales compatibles</legend>
+          @if (nozzleMaterial() !== 'hardened_steel') {
+            <p id="materials-hint" class="hint">
+              Los materiales con fibra (CF o GF) necesitan una boquilla de acero endurecido.
+            </p>
+          }
+          @if (fibreMaterialsRemoved()) {
+            <p class="notice" role="status">
+              Se quitaron los materiales con fibra porque la boquilla no es de acero endurecido.
+            </p>
+          }
+          <div class="materials">
+            @for (option of materialOptions; track option.value) {
+              <label class="check">
+                <input
+                  #box
+                  type="checkbox"
+                  [id]="'material-' + option.value"
+                  [checked]="selectedMaterials().includes(option.value)"
+                  [disabled]="isMaterialDisabled(option.value)"
+                  (change)="toggleMaterial(option.value, box.checked)"
+                />
+                {{ option.label }}
+              </label>
+            }
+          </div>
+          @if (materialsError) {
+            <p id="materials-error" class="field-error">{{ materialsError }}</p>
+          }
+        </fieldset>
+
+        <div class="field">
+          <label for="field-speed">Velocidad típica (mm/s), opcional</label>
+          <input
+            id="field-speed"
+            type="number"
+            inputmode="numeric"
+            step="1"
+            formControlName="speed"
+            [attr.aria-invalid]="speedError ? 'true' : null"
+            [attr.aria-describedby]="speedError ? 'speed-error' : null"
+          />
+          @if (speedError) {
+            <p id="speed-error" class="field-error">{{ speedError }}</p>
+          }
+        </div>
+
+        @let powerError = errorFor('power');
+        <div class="field">
+          <label for="field-power">Potencia promedio (W), opcional</label>
+          <input
+            id="field-power"
+            type="number"
+            inputmode="numeric"
+            step="1"
+            formControlName="power"
+            [attr.aria-invalid]="powerError ? 'true' : null"
+            [attr.aria-describedby]="powerError ? 'power-hint power-error' : 'power-hint'"
+          />
+          <p id="power-hint" class="hint">
+            Consumo medio mientras imprime, no el máximo de la fuente
+          </p>
+          @if (powerError) {
+            <p id="power-error" class="field-error">{{ powerError }}</p>
+          }
+        </div>
+
+        <div class="field">
+          <label for="field-status">Estado</label>
+          <select id="field-status" formControlName="status">
+            @for (option of statusOptions; track option.value) {
+              <option [value]="option.value">{{ option.label }}</option>
+            }
+          </select>
+        </div>
+
+        <div class="actions">
+          <button type="submit" [disabled]="saving">
+            {{ saving ? 'Guardando…' : 'Guardar' }}
+          </button>
+          <a routerLink="/impresoras">Cancelar</a>
+        </div>
+      </form>
+
+      @if (restorePrompt(); as prompt) {
+        <app-printer-restore-dialog
+          [printerName]="prompt.name"
+          [busy]="saving"
+          (confirmed)="confirmRestore()"
+          (cancelled)="cancelRestore()"
+        />
+      }
+    }
+  }
+</section>

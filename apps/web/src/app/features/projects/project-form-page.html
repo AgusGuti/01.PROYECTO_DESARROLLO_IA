@@ -1,0 +1,253 @@
+<section aria-labelledby="form-title">
+  <h1 id="form-title">{{ projectId === null ? 'Nuevo proyecto' : 'Editar proyecto' }}</h1>
+
+  @let view = load();
+  @switch (view.kind) {
+    @case ('loading') {
+      <p class="status" role="status">Cargando el proyecto…</p>
+    }
+    @case ('notFound') {
+      <div class="status status--error" role="alert">
+        <p>El proyecto ya no existe.</p>
+        <a routerLink="/proyectos">Volver al listado</a>
+      </div>
+    }
+    @case ('failed') {
+      <div class="status status--error" role="alert">
+        <p>{{ view.message }}</p>
+        <button type="button" (click)="reload()">Reintentar</button>
+      </div>
+    }
+    @case ('ready') {
+      @let saving = save().kind === 'saving';
+      @let nameError = errorFor('name');
+      @let descriptionError = errorFor('description');
+      @let priorityError = errorFor('priority');
+      @let deadlineError = errorFor('deadline');
+      @let catalogue = picker();
+      @let lineList = lines();
+      @let full = lineList.length >= maxLines;
+      @let addProblem = addError();
+      @let itemsProblem = itemsIssue();
+
+      <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+        @let result = save();
+        @if (result.kind === 'failed') {
+          <div class="status status--error" role="alert">
+            <p>{{ result.message }}</p>
+            @if (result.stale) {
+              <button type="button" (click)="reload()">Recargar</button>
+            }
+          </div>
+        }
+
+        <div class="field">
+          <label for="field-name">Nombre</label>
+          <input
+            id="field-name"
+            type="text"
+            formControlName="name"
+            autocomplete="off"
+            [attr.aria-invalid]="nameError ? 'true' : null"
+            [attr.aria-describedby]="describedBy('name', null)"
+          />
+          @if (nameError) {
+            <p id="error-name" class="field-error">{{ nameError }}</p>
+          }
+        </div>
+
+        <div class="field">
+          <label for="field-description">Descripción (opcional)</label>
+          <input
+            id="field-description"
+            type="text"
+            formControlName="description"
+            autocomplete="off"
+            [attr.aria-invalid]="descriptionError ? 'true' : null"
+            [attr.aria-describedby]="describedBy('description', null)"
+          />
+          @if (descriptionError) {
+            <p id="error-description" class="field-error">{{ descriptionError }}</p>
+          }
+        </div>
+
+        <div class="field">
+          <label for="field-priority">Prioridad</label>
+          <select
+            id="field-priority"
+            formControlName="priority"
+            [attr.aria-invalid]="priorityError ? 'true' : null"
+            [attr.aria-describedby]="describedBy('priority', null)"
+          >
+            @for (option of priorityOptions; track option.value) {
+              <option [value]="option.value">{{ option.label }}</option>
+            }
+          </select>
+          @if (priorityError) {
+            <p id="error-priority" class="field-error">{{ priorityError }}</p>
+          }
+        </div>
+
+        <div class="field">
+          <label for="field-deadline">Fecha límite (opcional)</label>
+          <input
+            id="field-deadline"
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
+            placeholder="DD-MM-AAAA"
+            formControlName="deadline"
+            [attr.aria-invalid]="deadlineError ? 'true' : null"
+            [attr.aria-describedby]="describedBy('deadline', 'deadline-hint')"
+          />
+          <p id="deadline-hint" class="hint">Formato DD-MM-AAAA. Puede ser una fecha pasada.</p>
+          @if (deadlineError) {
+            <p id="error-deadline" class="field-error">{{ deadlineError }}</p>
+          }
+        </div>
+
+        <fieldset class="items">
+          <legend>Piezas del proyecto</legend>
+
+          @switch (catalogue.kind) {
+            @case ('loading') {
+              <p class="status" role="status">Cargando las piezas disponibles…</p>
+            }
+            @case ('failed') {
+              <div class="status status--error" role="alert">
+                <p>{{ catalogue.message }}</p>
+                <button type="button" (click)="retryPicker()">Reintentar</button>
+              </div>
+            }
+            @case ('ready') {
+              @if (catalogue.parts.length === 0) {
+                <p class="hint">
+                  Todavía no hay piezas cargadas.
+                  <a routerLink="/piezas/nueva">Creá una pieza</a>
+                  para poder agregarla al proyecto.
+                </p>
+              }
+              @if (catalogue.truncated) {
+                <p class="hint">
+                  El catálogo tiene demasiadas piezas para este selector: se muestran solo las
+                  primeras, por orden alfabético.
+                </p>
+              }
+            }
+          }
+
+          <div class="add-row">
+            <div class="field">
+              <label for="field-part">Pieza</label>
+              <select
+                id="field-part"
+                [formControl]="partControl"
+                [attr.aria-invalid]="addProblem ? 'true' : null"
+                [attr.aria-describedby]="addProblem ? 'error-add' : null"
+              >
+                <option value="">Elegí una pieza</option>
+                @for (option of partOptions(); track option.id) {
+                  <option [value]="option.id">{{ option.label }}</option>
+                }
+              </select>
+            </div>
+            <div class="field">
+              <label for="field-add-quantity">Cantidad</label>
+              <input
+                id="field-add-quantity"
+                type="number"
+                inputmode="numeric"
+                step="1"
+                min="1"
+                max="1000"
+                [formControl]="addQuantity"
+                (keydown.enter)="$event.preventDefault(); addLine()"
+              />
+            </div>
+            <button type="button" [disabled]="full || saving" (click)="addLine()">Agregar</button>
+          </div>
+          @if (addProblem) {
+            <p id="error-add" class="field-error">{{ addProblem }}</p>
+          }
+          @if (full) {
+            <p class="hint">Llegaste al máximo de {{ maxLines }} piezas por proyecto.</p>
+          }
+          @if (itemsProblem) {
+            <p id="error-items" class="field-error">{{ itemsProblem }}</p>
+          }
+          @if (hasDeletedLine()) {
+            <p id="deleted-hint" class="field-error">
+              Hay piezas eliminadas. Quitalas para poder guardar.
+            </p>
+          }
+
+          <div class="live" aria-live="polite">{{ announcement() }}</div>
+
+          @if (lineList.length === 0) {
+            <p class="hint">Todavía no agregaste piezas.</p>
+          } @else {
+            <table>
+              <caption class="visually-hidden">
+                Piezas del proyecto
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Pieza</th>
+                  <th scope="col">Cantidad</th>
+                  <th scope="col">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (line of lineList; track line.partId; let i = $index) {
+                  @let problem = lineError(line, i);
+                  <tr>
+                    <th scope="row">{{ lineName(line) }}</th>
+                    <td>
+                      <label class="visually-hidden" [for]="'line-qty-' + i">
+                        Cantidad de «{{ lineName(line) }}»
+                      </label>
+                      <input
+                        [id]="'line-qty-' + i"
+                        type="number"
+                        inputmode="numeric"
+                        step="1"
+                        min="1"
+                        max="1000"
+                        [formControl]="line.quantity"
+                        [attr.aria-invalid]="problem ? 'true' : null"
+                        [attr.aria-describedby]="problem ? 'line-error-' + i : null"
+                        (input)="clearLineIssues()"
+                      />
+                      @if (problem) {
+                        <p [id]="'line-error-' + i" class="field-error">{{ problem }}</p>
+                      }
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        class="link-danger"
+                        [id]="'line-remove-' + i"
+                        [attr.aria-label]="'Quitar «' + lineName(line) + '»'"
+                        [disabled]="saving"
+                        (click)="removeLine(i)"
+                      >
+                        Quitar
+                      </button>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+        </fieldset>
+
+        <div class="actions">
+          <button type="submit" [disabled]="saving">
+            {{ saving ? 'Guardando…' : 'Guardar' }}
+          </button>
+          <a routerLink="/proyectos">Cancelar</a>
+        </div>
+      </form>
+    }
+  }
+</section>

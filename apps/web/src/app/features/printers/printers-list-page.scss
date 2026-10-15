@@ -1,0 +1,88 @@
+.page-header {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.button {
+  background: var(--color-accent);
+  border-radius: 0.375rem;
+  color: #ffffff;
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  text-decoration: none;
+}
+
+.visually-hidden {
+  block-size: 1px;
+  clip-path: inset(50%);
+  inline-size: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+}
+
+.notice,
+.status {
+  border-inline-start: 0.25rem solid var(--color-border);
+  margin-block: 1rem;
+  padding: 0.75rem 1rem;
+
+  &--success {
+    border-color: var(--color-ok);
+  }
+
+  &--error {
+    border-color: var(--color-error);
+  }
+}
+
+.filter {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  margin-block: 1rem;
+}
+
+table {
+  border-collapse: collapse;
+  inline-size: 100%;
+}
+
+th,
+td {
+  border-block-end: 1px solid var(--color-border);
+  padding: 0.5rem;
+  text-align: start;
+  vertical-align: top;
+}
+
+.badge {
+  background: var(--color-warn);
+  border-radius: 0.25rem;
+  color: #ffffff;
+  display: inline-block;
+  font-size: 0.85rem;
+  margin-inline-start: 0.5rem;
+  padding: 0.125rem 0.5rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.link-danger {
+  background: none;
+  color: var(--color-error);
+  padding: 0;
+  text-decoration: underline;
+}
+
+.pager {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  margin-block-start: 1rem;
+}

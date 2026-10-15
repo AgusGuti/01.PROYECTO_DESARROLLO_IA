@@ -37,6 +37,633 @@ export type Readiness = {
     timestamp: string;
 };
 
+export type Printer = {
+    id: string;
+    name: string;
+    buildVolume: PrinterBuildVolume;
+    nozzle: PrinterNozzle;
+    compatibleMaterials: Array<Material>;
+    typicalSpeedMmS: number | null;
+    /**
+     * Average power while printing, in watts; null when unknown.
+     */
+    powerWatts: number | null;
+    status: PrinterStatus;
+    /**
+     * Send this back when editing.
+     */
+    version: number;
+    /**
+     * Set while the printer waits to be removed ("Pendiente de eliminar").
+     */
+    archivedAt: string | null;
+    createdAt: string;
+    updatedAt: string;
+};
+
+/**
+ * Usable print volume in millimetres.
+ */
+export type PrinterBuildVolume = {
+    x: number;
+    y: number;
+    z: number;
+};
+
+export type PrinterNozzle = {
+    diameterMm: 0.2 | 0.25 | 0.4 | 0.6 | 0.8 | 1;
+    material: 'brass' | 'hardened_steel' | 'stainless_steel';
+};
+
+export type Material = 'PLA' | 'PETG' | 'ABS' | 'ASA' | 'TPU' | 'PA' | 'PC' | 'HIPS' | 'PVA' | 'PP' | 'PLA_CF' | 'PETG_CF' | 'PA_CF' | 'PA_GF';
+
+export type PrinterStatus = 'available' | 'in_use' | 'maintenance';
+
+export type CreatePrinterRequest = {
+    name: string;
+    buildVolume: PrinterBuildVolume;
+    nozzle: PrinterNozzle;
+    compatibleMaterials: Array<Material>;
+    status?: PrinterStatus;
+    typicalSpeedMmS?: number;
+    powerWatts?: number;
+    /**
+     * Set to true to restore a deleted printer that holds this name, replacing its data with the submitted data. Without it, that name answers 409 (issue path "restoreIfDeleted").
+     */
+    restoreIfDeleted?: boolean;
+};
+
+export type PrinterList = {
+    items: Array<Printer>;
+    page: number;
+    pageSize: number;
+    total: number;
+};
+
+export type UpdatePrinterRequest = {
+    version: number;
+    name?: string;
+    buildVolume?: PrinterBuildVolume;
+    nozzle?: PrinterNozzle;
+    compatibleMaterials?: Array<Material>;
+    typicalSpeedMmS?: number | null;
+    powerWatts?: number | null;
+    status?: PrinterStatus;
+};
+
+export type Filament = {
+    id: string;
+    brand: string;
+    material: Material;
+    colorName: string;
+    initialGrams: number;
+    availableGrams: number;
+    /**
+     * Centavos of ARS. 1500000 means $15.000,00.
+     */
+    purchaseCostMinor: number;
+    /**
+     * YYYY-MM-DD, a calendar day (no time zone).
+     */
+    purchaseDate: string;
+    /**
+     * Send this back when editing.
+     */
+    version: number;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type CreateFilamentRequest = {
+    brand: string;
+    material: Material;
+    colorName: string;
+    /**
+     * Weight of the spool when bought, in grams.
+     */
+    initialGrams: number;
+    /**
+     * Defaults to initialGrams (a new, unused spool).
+     */
+    availableGrams?: number;
+    /**
+     * Purchase cost in centavos of Argentine pesos (ARS), an integer. 1500000 means $15.000,00.
+     */
+    purchaseCostMinor: number;
+    /**
+     * Calendar day of the purchase, YYYY-MM-DD (UTC). It cannot be later than today (UTC).
+     */
+    purchaseDate: string;
+};
+
+export type FilamentList = {
+    items: Array<Filament>;
+    page: number;
+    pageSize: number;
+    total: number;
+};
+
+export type UpdateFilamentRequest = {
+    version: number;
+    brand?: string;
+    material?: Material;
+    colorName?: string;
+    /**
+     * Weight of the spool when bought, in grams.
+     */
+    initialGrams?: number;
+    /**
+     * Grams left on the spool. Never more than initialGrams.
+     */
+    availableGrams?: number;
+    /**
+     * Purchase cost in centavos of Argentine pesos (ARS), an integer. 1500000 means $15.000,00.
+     */
+    purchaseCostMinor?: number;
+    /**
+     * Calendar day of the purchase, YYYY-MM-DD (UTC). It cannot be later than today (UTC).
+     */
+    purchaseDate?: string;
+};
+
+export type ConsumeFilamentRequest = {
+    /**
+     * Grams to take from the spool.
+     */
+    grams: number;
+};
+
+export type Part = {
+    id: string;
+    name: string;
+    description: string | null;
+    material: Material;
+    dimensionsMm: PartDimensions;
+    estimatedWeightGrams: number;
+    estimatedPrintSeconds: number;
+    /**
+     * Micrometres: 200 means 0.2 mm.
+     */
+    layerHeightUm: number;
+    suggestedPrinterName: string | null;
+    source: PartSource;
+    /**
+     * Send this back when editing.
+     */
+    version: number;
+    createdAt: string;
+    updatedAt: string;
+};
+
+/**
+ * Bounding box in whole millimetres. Replaced whole when edited.
+ */
+export type PartDimensions = {
+    x: number;
+    y: number;
+    z: number;
+};
+
+export type PartSource = ({
+    kind: 'manual';
+} & ManualPartSource) | ({
+    kind: 'gcode';
+} & GcodePartSource);
+
+export type ManualPartSource = {
+    kind: 'manual';
+};
+
+export type GcodePartSource = {
+    kind: 'gcode';
+    fileName: string;
+    slicer: 'cura';
+    /**
+     * When the part was saved with this source (set by the server).
+     */
+    analyzedAt: string;
+};
+
+export type CreatePartRequest = {
+    name: string;
+    description?: string;
+    material: Material;
+    dimensionsMm: PartDimensions;
+    /**
+     * Estimated weight in grams.
+     */
+    estimatedWeightGrams: number;
+    /**
+     * Estimated print time in seconds (up to 30 days).
+     */
+    estimatedPrintSeconds: number;
+    /**
+     * Layer height in micrometres: 200 means 0.2 mm.
+     */
+    layerHeightUm: number;
+    suggestedPrinterName?: string;
+    source?: PartSourceInput;
+};
+
+/**
+ * Defaults to {"kind":"manual"}.
+ */
+export type PartSourceInput = ({
+    kind: 'manual';
+} & ManualPartSource) | ({
+    kind: 'gcode';
+} & GcodePartSourceInput);
+
+export type GcodePartSourceInput = {
+    kind: 'gcode';
+    fileName: string;
+    slicer: 'cura';
+};
+
+export type PartList = {
+    items: Array<Part>;
+    page: number;
+    pageSize: number;
+    total: number;
+};
+
+export type UpdatePartRequest = {
+    version: number;
+    name?: string;
+    description?: string | null;
+    material?: Material;
+    dimensionsMm?: PartDimensions;
+    /**
+     * Estimated weight in grams.
+     */
+    estimatedWeightGrams?: number;
+    /**
+     * Estimated print time in seconds (up to 30 days).
+     */
+    estimatedPrintSeconds?: number;
+    /**
+     * Layer height in micrometres: 200 means 0.2 mm.
+     */
+    layerHeightUm?: number;
+    suggestedPrinterName?: string | null;
+    source?: PartSourceInput;
+};
+
+export type PartUsage = {
+    /**
+     * All live projects that use the part.
+     */
+    total: number;
+    /**
+     * At most 50, sorted by name then id.
+     */
+    projects: Array<{
+        id: string;
+        name: string;
+        quantity: number;
+    }>;
+};
+
+export type Project = {
+    id: string;
+    name: string;
+    description: string | null;
+    /**
+     * From the least to the most urgent: low, normal, high, urgent.
+     */
+    priority: 'low' | 'normal' | 'high' | 'urgent';
+    /**
+     * YYYY-MM-DD, a calendar day (no time zone), or null.
+     */
+    deadline: string | null;
+    items: Array<ProjectItem>;
+    /**
+     * Send this back when editing.
+     */
+    version: number;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type ProjectItem = {
+    partId: string;
+    quantity: number;
+    /**
+     * The part as it is now, or null when it is no longer live ("deleted").
+     */
+    part: {
+        name: string;
+        material: Material;
+    } | null;
+};
+
+export type CreateProjectRequest = {
+    name: string;
+    description?: string;
+    /**
+     * From the least to the most urgent: low, normal, high, urgent.
+     */
+    priority?: 'low' | 'normal' | 'high' | 'urgent';
+    /**
+     * YYYY-MM-DD, a calendar day (no time zone), years 2000..2099. A past day is allowed.
+     */
+    deadline?: string;
+    /**
+     * Up to 100 lines, each part at most once, every part must exist. Replaced whole on edit.
+     */
+    items?: Array<ProjectItemInput>;
+};
+
+export type ProjectItemInput = {
+    partId: string;
+    quantity: number;
+};
+
+export type ProjectList = {
+    items: Array<ProjectSummary>;
+    page: number;
+    pageSize: number;
+    total: number;
+};
+
+export type ProjectSummary = {
+    id: string;
+    name: string;
+    description: string | null;
+    /**
+     * From the least to the most urgent: low, normal, high, urgent.
+     */
+    priority: 'low' | 'normal' | 'high' | 'urgent';
+    /**
+     * YYYY-MM-DD, a calendar day (no time zone), or null.
+     */
+    deadline: string | null;
+    /**
+     * Number of lines.
+     */
+    itemCount: number;
+    /**
+     * Sum of the quantities.
+     */
+    unitCount: number;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type UpdateProjectRequest = {
+    version: number;
+    name?: string;
+    description?: string | null;
+    /**
+     * From the least to the most urgent: low, normal, high, urgent.
+     */
+    priority?: 'low' | 'normal' | 'high' | 'urgent';
+    /**
+     * YYYY-MM-DD, a calendar day (no time zone), years 2000..2099. A past day is allowed. null clears it.
+     */
+    deadline?: string | null;
+    /**
+     * Up to 100 lines, each part at most once, every part must exist. Replaced whole on edit.
+     */
+    items?: Array<ProjectItemInput>;
+};
+
+export type CostEstimate = {
+    quantity: number;
+    printSeconds: number;
+    filament: {
+        grams: number;
+        /**
+         * Centavos of ARS, rounded once.
+         */
+        costMinor: number;
+    };
+    /**
+     * Null without a printer or without its power.
+     */
+    electricity: {
+        watts: number;
+        /**
+         * Centavos of ARS.
+         */
+        costMinor: number;
+    } | null;
+    wear: {
+        /**
+         * Centavos of ARS.
+         */
+        costMinor: number;
+    };
+    fixed: {
+        /**
+         * Charged once per estimate.
+         */
+        costMinor: number;
+    };
+    /**
+     * Sum of the lines: the clean cost.
+     */
+    subtotalMinor: number;
+    marginBasisPoints: number;
+    /**
+     * Margin added on the subtotal; 0 when not a sale.
+     */
+    marginMinor: number;
+    /**
+     * subtotalMinor + marginMinor.
+     */
+    totalMinor: number;
+    /**
+     * Average per unit; unit x quantity can differ by a few centavos.
+     */
+    unitTotalMinor: number;
+    warnings: Array<{
+        code: CostWarningCode;
+    }>;
+};
+
+export type CostWarningCode = 'filament_insufficient' | 'electricity_printer_not_selected' | 'electricity_printer_power_unknown' | 'settings_not_configured';
+
+export type CostEstimateRequest = {
+    partId: string;
+    filamentId: string;
+    /**
+     * Optional. Without a printer (or without its power) electricity is omitted.
+     */
+    printerId?: string;
+    quantity?: number;
+    /**
+     * Present means a sale: this margin (12.5 % is 1250) is added on the subtotal. Absent means no margin. The default margin of the settings is never applied here.
+     */
+    marginBasisPoints?: number;
+};
+
+export type ProjectCostEstimate = {
+    lines: Array<ProjectCostLine>;
+    fixed: {
+        /**
+         * Settings fixed cost, charged once, no margin.
+         */
+        costMinor: number;
+    };
+    /**
+     * Sum of the line subtotals plus the fixed cost.
+     */
+    subtotalMinor: number;
+    /**
+     * Sum of the line margins.
+     */
+    marginMinor: number;
+    /**
+     * subtotalMinor + marginMinor.
+     */
+    totalMinor: number;
+    printSeconds: number;
+    materials: Array<{
+        material: 'PLA' | 'PETG' | 'ABS' | 'ASA' | 'TPU' | 'PA' | 'PC' | 'HIPS' | 'PVA' | 'PP' | 'PLA_CF' | 'PETG_CF' | 'PA_CF' | 'PA_GF';
+        grams: number;
+    }>;
+    warnings: Array<{
+        code: CostWarningCode;
+    }>;
+};
+
+export type ProjectCostLine = {
+    quantity: number;
+    printSeconds: number;
+    filament: {
+        grams: number;
+        /**
+         * Centavos of ARS, rounded once.
+         */
+        costMinor: number;
+    };
+    /**
+     * Null without a printer or without its power.
+     */
+    electricity: {
+        watts: number;
+        /**
+         * Centavos of ARS.
+         */
+        costMinor: number;
+    } | null;
+    wear: {
+        /**
+         * Centavos of ARS.
+         */
+        costMinor: number;
+    };
+    /**
+     * Sum of the lines: the clean cost.
+     */
+    subtotalMinor: number;
+    marginBasisPoints: number;
+    /**
+     * Margin added on the subtotal; 0 when not a sale.
+     */
+    marginMinor: number;
+    /**
+     * subtotalMinor + marginMinor.
+     */
+    totalMinor: number;
+    /**
+     * Average per unit; unit x quantity can differ by a few centavos.
+     */
+    unitTotalMinor: number;
+    warnings: Array<{
+        code: CostWarningCode;
+    }>;
+    partId: string;
+};
+
+export type ProjectCostEstimateRequest = {
+    lines: Array<{
+        partId: string;
+        filamentId: string;
+        printerId?: string;
+        quantity: number;
+        /**
+         * Present means this line is a sale. Absent means no margin.
+         */
+        marginBasisPoints?: number;
+    }>;
+};
+
+export type CostSettings = {
+    kwhPriceMinor: number;
+    wearPerHourMinor: number;
+    fixedPerJobMinor: number;
+    defaultMarginBasisPoints: number;
+    /**
+     * 0 until the settings are first saved.
+     */
+    version: number;
+    updatedAt: string | null;
+};
+
+export type UpdateCostSettingsRequest = {
+    /**
+     * Price of one kWh, in centavos.
+     */
+    kwhPriceMinor: number;
+    /**
+     * Machine wear per print hour, centavos.
+     */
+    wearPerHourMinor: number;
+    /**
+     * Fixed cost charged once per estimate.
+     */
+    fixedPerJobMinor: number;
+    /**
+     * Value the form pre-fills for a sale. The API never applies it by itself.
+     */
+    defaultMarginBasisPoints: number;
+    /**
+     * 0 for the first save, otherwise the version last seen (ADR 0021).
+     */
+    version: number;
+};
+
+export type GcodeAnalysis = {
+    slicer: 'cura';
+    estimatedPrintSeconds: number;
+    /**
+     * Filament length, all extruders.
+     */
+    filamentMm: number;
+    /**
+     * Estimated from a density table (ADR 0015). Null without a material.
+     */
+    filamentGrams: number | null;
+    layerHeightUm: number | null;
+    /**
+     * Bounding box in whole millimetres, rounded up. Includes skirt and brim.
+     */
+    dimensionsMm: {
+        x: number;
+        y: number;
+        z: number;
+    } | null;
+    /**
+     * The slicer machine name, kept only if it is printable ASCII.
+     */
+    targetMachineName: string | null;
+    warnings: Array<{
+        code: GcodeWarningCode;
+    }>;
+};
+
+export type GcodeWarningCode = 'GRAMS_FROM_DENSITY_TABLE' | 'MATERIAL_NOT_SELECTED' | 'WEIGHT_OUT_OF_RANGE' | 'LAYER_HEIGHT_UNAVAILABLE' | 'DIMENSIONS_UNAVAILABLE' | 'DIMENSIONS_INCLUDE_SKIRT_OR_BRIM' | 'MULTIPLE_EXTRUDERS_SUMMED';
+
+export type AnalyzeGcodeRequest = {
+    /**
+     * The first 65536 characters of the .gcode file, exactly as read (not trimmed). It is never stored or logged.
+     */
+    head: string;
+    material?: Material & unknown;
+};
+
 export type GetLivenessData = {
     body?: never;
     path?: never;
@@ -77,3 +704,904 @@ export type GetReadinessResponses = {
 };
 
 export type GetReadinessResponse = GetReadinessResponses[keyof GetReadinessResponses];
+
+export type ListPrintersData = {
+    body?: never;
+    path?: never;
+    query?: {
+        page?: number;
+        pageSize?: number;
+        status?: 'available' | 'in_use' | 'maintenance';
+        sort?: 'name' | 'createdAt';
+        order?: 'asc' | 'desc';
+    };
+    url: '/api/v1/printers';
+};
+
+export type ListPrintersErrors = {
+    /**
+     * Unknown or invalid query parameter.
+     */
+    400: Problem;
+};
+
+export type ListPrintersError = ListPrintersErrors[keyof ListPrintersErrors];
+
+export type ListPrintersResponses = {
+    /**
+     * One page of printers. A page past the last one is empty.
+     */
+    200: PrinterList;
+};
+
+export type ListPrintersResponse = ListPrintersResponses[keyof ListPrintersResponses];
+
+export type CreatePrinterData = {
+    body?: CreatePrinterRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/printers';
+};
+
+export type CreatePrinterErrors = {
+    /**
+     * Invalid input, or a reinforced material without a hardened_steel nozzle.
+     */
+    400: Problem;
+    /**
+     * The name is taken. Issue path "name": a live or pending-removal printer holds it. Issue path "restoreIfDeleted": a deleted printer holds it; resend with restoreIfDeleted true to restore it.
+     */
+    409: Problem;
+};
+
+export type CreatePrinterError = CreatePrinterErrors[keyof CreatePrinterErrors];
+
+export type CreatePrinterResponses = {
+    /**
+     * Restored. A deleted printer with this name was revived with the submitted data (only with restoreIfDeleted true). The Location header points to it.
+     */
+    200: Printer;
+    /**
+     * Created. The Location header points to the new printer.
+     */
+    201: Printer;
+};
+
+export type CreatePrinterResponse = CreatePrinterResponses[keyof CreatePrinterResponses];
+
+export type UnarchivePrinterData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/printers/{id}/unarchive';
+};
+
+export type UnarchivePrinterErrors = {
+    /**
+     * Malformed id.
+     */
+    400: Problem;
+    /**
+     * No such printer, or it was removed.
+     */
+    404: Problem;
+};
+
+export type UnarchivePrinterError = UnarchivePrinterErrors[keyof UnarchivePrinterErrors];
+
+export type UnarchivePrinterResponses = {
+    /**
+     * The printer, no longer pending removal.
+     */
+    200: Printer;
+};
+
+export type UnarchivePrinterResponse = UnarchivePrinterResponses[keyof UnarchivePrinterResponses];
+
+export type DeletePrinterData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/printers/{id}';
+};
+
+export type DeletePrinterErrors = {
+    /**
+     * Malformed id.
+     */
+    400: Problem;
+    /**
+     * No such printer, or it was already removed.
+     */
+    404: Problem;
+};
+
+export type DeletePrinterError = DeletePrinterErrors[keyof DeletePrinterErrors];
+
+export type DeletePrinterResponses = {
+    /**
+     * Removed, or pending removal.
+     */
+    204: void;
+};
+
+export type DeletePrinterResponse = DeletePrinterResponses[keyof DeletePrinterResponses];
+
+export type GetPrinterData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/printers/{id}';
+};
+
+export type GetPrinterErrors = {
+    /**
+     * Malformed id.
+     */
+    400: Problem;
+    /**
+     * No such printer, or it was removed.
+     */
+    404: Problem;
+};
+
+export type GetPrinterError = GetPrinterErrors[keyof GetPrinterErrors];
+
+export type GetPrinterResponses = {
+    /**
+     * The printer (also when it is pending removal).
+     */
+    200: Printer;
+};
+
+export type GetPrinterResponse = GetPrinterResponses[keyof GetPrinterResponses];
+
+export type UpdatePrinterData = {
+    body?: UpdatePrinterRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/printers/{id}';
+};
+
+export type UpdatePrinterErrors = {
+    /**
+     * Invalid input, or the merged state breaks a rule.
+     */
+    400: Problem;
+    /**
+     * No such printer, or it was removed.
+     */
+    404: Problem;
+    /**
+     * Stale version (issue path "version"), duplicate name (path "name"), or the printer is pending removal.
+     */
+    409: Problem;
+};
+
+export type UpdatePrinterError = UpdatePrinterErrors[keyof UpdatePrinterErrors];
+
+export type UpdatePrinterResponses = {
+    /**
+     * The updated printer, with its new version.
+     */
+    200: Printer;
+};
+
+export type UpdatePrinterResponse = UpdatePrinterResponses[keyof UpdatePrinterResponses];
+
+export type ListFilamentsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        page?: number;
+        pageSize?: number;
+        material?: Material;
+        /**
+         * true: only spools with grams left. false: only empty spools.
+         */
+        inStock?: 'true' | 'false';
+        sort?: 'purchaseDate' | 'brand' | 'availableGrams' | 'createdAt';
+        order?: 'asc' | 'desc';
+    };
+    url: '/api/v1/filaments';
+};
+
+export type ListFilamentsErrors = {
+    /**
+     * Unknown or invalid query parameter.
+     */
+    400: Problem;
+};
+
+export type ListFilamentsError = ListFilamentsErrors[keyof ListFilamentsErrors];
+
+export type ListFilamentsResponses = {
+    /**
+     * One page of filaments. A page past the last one is empty.
+     */
+    200: FilamentList;
+};
+
+export type ListFilamentsResponse = ListFilamentsResponses[keyof ListFilamentsResponses];
+
+export type CreateFilamentData = {
+    body?: CreateFilamentRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/filaments';
+};
+
+export type CreateFilamentErrors = {
+    /**
+     * Invalid input, availableGrams above initialGrams, or a purchase date in the future.
+     */
+    400: Problem;
+};
+
+export type CreateFilamentError = CreateFilamentErrors[keyof CreateFilamentErrors];
+
+export type CreateFilamentResponses = {
+    /**
+     * Created. The Location header points to the new filament.
+     */
+    201: Filament;
+};
+
+export type CreateFilamentResponse = CreateFilamentResponses[keyof CreateFilamentResponses];
+
+export type DeleteFilamentData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/filaments/{id}';
+};
+
+export type DeleteFilamentErrors = {
+    /**
+     * Malformed id.
+     */
+    400: Problem;
+    /**
+     * No such filament, or it was already removed.
+     */
+    404: Problem;
+};
+
+export type DeleteFilamentError = DeleteFilamentErrors[keyof DeleteFilamentErrors];
+
+export type DeleteFilamentResponses = {
+    /**
+     * Removed.
+     */
+    204: void;
+};
+
+export type DeleteFilamentResponse = DeleteFilamentResponses[keyof DeleteFilamentResponses];
+
+export type GetFilamentData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/filaments/{id}';
+};
+
+export type GetFilamentErrors = {
+    /**
+     * Malformed id.
+     */
+    400: Problem;
+    /**
+     * No such filament, or it was removed.
+     */
+    404: Problem;
+};
+
+export type GetFilamentError = GetFilamentErrors[keyof GetFilamentErrors];
+
+export type GetFilamentResponses = {
+    /**
+     * The filament.
+     */
+    200: Filament;
+};
+
+export type GetFilamentResponse = GetFilamentResponses[keyof GetFilamentResponses];
+
+export type UpdateFilamentData = {
+    body?: UpdateFilamentRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/filaments/{id}';
+};
+
+export type UpdateFilamentErrors = {
+    /**
+     * Invalid input, or the merged state breaks a rule (availableGrams above initialGrams, or a purchase date in the future).
+     */
+    400: Problem;
+    /**
+     * No such filament, or it was removed.
+     */
+    404: Problem;
+    /**
+     * Stale version (issue path "version").
+     */
+    409: Problem;
+};
+
+export type UpdateFilamentError = UpdateFilamentErrors[keyof UpdateFilamentErrors];
+
+export type UpdateFilamentResponses = {
+    /**
+     * The updated filament, with its new version.
+     */
+    200: Filament;
+};
+
+export type UpdateFilamentResponse = UpdateFilamentResponses[keyof UpdateFilamentResponses];
+
+export type ConsumeFilamentData = {
+    body?: ConsumeFilamentRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/filaments/{id}/consume';
+};
+
+export type ConsumeFilamentErrors = {
+    /**
+     * Invalid input or malformed id.
+     */
+    400: Problem;
+    /**
+     * No such filament, or it was removed.
+     */
+    404: Problem;
+    /**
+     * Not enough material (issue path "grams"). The filament is unchanged.
+     */
+    409: Problem;
+};
+
+export type ConsumeFilamentError = ConsumeFilamentErrors[keyof ConsumeFilamentErrors];
+
+export type ConsumeFilamentResponses = {
+    /**
+     * The filament with the grams taken off.
+     */
+    200: Filament;
+};
+
+export type ConsumeFilamentResponse = ConsumeFilamentResponses[keyof ConsumeFilamentResponses];
+
+export type ListPartsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        page?: number;
+        pageSize?: number;
+        material?: Material;
+        sort?: 'name' | 'createdAt' | 'estimatedWeightGrams' | 'estimatedPrintSeconds';
+        order?: 'asc' | 'desc';
+    };
+    url: '/api/v1/parts';
+};
+
+export type ListPartsErrors = {
+    /**
+     * Unknown or invalid query parameter.
+     */
+    400: Problem;
+};
+
+export type ListPartsError = ListPartsErrors[keyof ListPartsErrors];
+
+export type ListPartsResponses = {
+    /**
+     * One page of parts. A page past the last one is empty.
+     */
+    200: PartList;
+};
+
+export type ListPartsResponse = ListPartsResponses[keyof ListPartsResponses];
+
+export type CreatePartData = {
+    body?: CreatePartRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/parts';
+};
+
+export type CreatePartErrors = {
+    /**
+     * Invalid input or an unknown field.
+     */
+    400: Problem;
+};
+
+export type CreatePartError = CreatePartErrors[keyof CreatePartErrors];
+
+export type CreatePartResponses = {
+    /**
+     * Created. The Location header points to the new part.
+     */
+    201: Part;
+};
+
+export type CreatePartResponse = CreatePartResponses[keyof CreatePartResponses];
+
+export type DeletePartData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: {
+        /**
+         * true confirms the removal of a part that projects use: it is pulled from them first.
+         */
+        removeFromProjects?: 'true' | 'false';
+    };
+    url: '/api/v1/parts/{id}';
+};
+
+export type DeletePartErrors = {
+    /**
+     * Malformed id or unknown query parameter.
+     */
+    400: Problem;
+    /**
+     * No such part, or it was already removed.
+     */
+    404: Problem;
+    /**
+     * Live projects use the part and removal was not confirmed.
+     */
+    409: Problem;
+    /**
+     * The project data is temporarily unavailable; nothing was removed.
+     */
+    503: Problem;
+};
+
+export type DeletePartError = DeletePartErrors[keyof DeletePartErrors];
+
+export type DeletePartResponses = {
+    /**
+     * Removed.
+     */
+    204: void;
+};
+
+export type DeletePartResponse = DeletePartResponses[keyof DeletePartResponses];
+
+export type GetPartData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/parts/{id}';
+};
+
+export type GetPartErrors = {
+    /**
+     * Malformed id.
+     */
+    400: Problem;
+    /**
+     * No such part, or it was removed.
+     */
+    404: Problem;
+};
+
+export type GetPartError = GetPartErrors[keyof GetPartErrors];
+
+export type GetPartResponses = {
+    /**
+     * The part.
+     */
+    200: Part;
+};
+
+export type GetPartResponse = GetPartResponses[keyof GetPartResponses];
+
+export type UpdatePartData = {
+    body?: UpdatePartRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/parts/{id}';
+};
+
+export type UpdatePartErrors = {
+    /**
+     * Invalid input or an unknown field.
+     */
+    400: Problem;
+    /**
+     * No such part, or it was removed.
+     */
+    404: Problem;
+    /**
+     * Stale version (issue path "version").
+     */
+    409: Problem;
+};
+
+export type UpdatePartError = UpdatePartErrors[keyof UpdatePartErrors];
+
+export type UpdatePartResponses = {
+    /**
+     * The updated part, with its new version.
+     */
+    200: Part;
+};
+
+export type UpdatePartResponse = UpdatePartResponses[keyof UpdatePartResponses];
+
+export type GetPartUsageData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/parts/{id}/usage';
+};
+
+export type GetPartUsageErrors = {
+    /**
+     * Malformed id.
+     */
+    400: Problem;
+    /**
+     * No such part, or it was removed.
+     */
+    404: Problem;
+    /**
+     * The project data is temporarily unavailable.
+     */
+    503: Problem;
+};
+
+export type GetPartUsageError = GetPartUsageErrors[keyof GetPartUsageErrors];
+
+export type GetPartUsageResponses = {
+    /**
+     * The true total and at most 50 projects, sorted by name then id.
+     */
+    200: PartUsage;
+};
+
+export type GetPartUsageResponse = GetPartUsageResponses[keyof GetPartUsageResponses];
+
+export type ListProjectsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        page?: number;
+        pageSize?: number;
+        /**
+         * From the least to the most urgent: low, normal, high, urgent.
+         */
+        priority?: 'low' | 'normal' | 'high' | 'urgent';
+        /**
+         * A project without a deadline comes last in both directions when sorting by it.
+         */
+        sort?: 'deadline' | 'priority' | 'name' | 'createdAt';
+        order?: 'asc' | 'desc';
+    };
+    url: '/api/v1/projects';
+};
+
+export type ListProjectsErrors = {
+    /**
+     * Unknown or invalid query parameter.
+     */
+    400: Problem;
+};
+
+export type ListProjectsError = ListProjectsErrors[keyof ListProjectsErrors];
+
+export type ListProjectsResponses = {
+    /**
+     * One page of project summaries. A page past the last one is empty.
+     */
+    200: ProjectList;
+};
+
+export type ListProjectsResponse = ListProjectsResponses[keyof ListProjectsResponses];
+
+export type CreateProjectData = {
+    body?: CreateProjectRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/projects';
+};
+
+export type CreateProjectErrors = {
+    /**
+     * Invalid input, an unknown field, a repeated part or a part that does not exist.
+     */
+    400: Problem;
+    /**
+     * The part data is temporarily unavailable.
+     */
+    503: Problem;
+};
+
+export type CreateProjectError = CreateProjectErrors[keyof CreateProjectErrors];
+
+export type CreateProjectResponses = {
+    /**
+     * Created. The Location header points to the new project.
+     */
+    201: Project;
+};
+
+export type CreateProjectResponse = CreateProjectResponses[keyof CreateProjectResponses];
+
+export type DeleteProjectData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/projects/{id}';
+};
+
+export type DeleteProjectErrors = {
+    /**
+     * Malformed id.
+     */
+    400: Problem;
+    /**
+     * No such project, or it was already removed.
+     */
+    404: Problem;
+};
+
+export type DeleteProjectError = DeleteProjectErrors[keyof DeleteProjectErrors];
+
+export type DeleteProjectResponses = {
+    /**
+     * Removed.
+     */
+    204: void;
+};
+
+export type DeleteProjectResponse = DeleteProjectResponses[keyof DeleteProjectResponses];
+
+export type GetProjectData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/projects/{id}';
+};
+
+export type GetProjectErrors = {
+    /**
+     * Malformed id.
+     */
+    400: Problem;
+    /**
+     * No such project, or it was removed.
+     */
+    404: Problem;
+    /**
+     * The part data is temporarily unavailable.
+     */
+    503: Problem;
+};
+
+export type GetProjectError = GetProjectErrors[keyof GetProjectErrors];
+
+export type GetProjectResponses = {
+    /**
+     * The project.
+     */
+    200: Project;
+};
+
+export type GetProjectResponse = GetProjectResponses[keyof GetProjectResponses];
+
+export type UpdateProjectData = {
+    body?: UpdateProjectRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/projects/{id}';
+};
+
+export type UpdateProjectErrors = {
+    /**
+     * Invalid input, an unknown field, a repeated part or a part that does not exist.
+     */
+    400: Problem;
+    /**
+     * No such project, or it was removed.
+     */
+    404: Problem;
+    /**
+     * Stale version (issue path "version").
+     */
+    409: Problem;
+    /**
+     * The part data is temporarily unavailable.
+     */
+    503: Problem;
+};
+
+export type UpdateProjectError = UpdateProjectErrors[keyof UpdateProjectErrors];
+
+export type UpdateProjectResponses = {
+    /**
+     * The updated project, with its new version.
+     */
+    200: Project;
+};
+
+export type UpdateProjectResponse = UpdateProjectResponses[keyof UpdateProjectResponses];
+
+export type EstimateCostData = {
+    body?: CostEstimateRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/costs/estimates';
+};
+
+export type EstimateCostErrors = {
+    /**
+     * Invalid input, an unknown part, spool or printer, a spool material that differs from the part material (issue path "filamentId"), or amounts too large (path "quantity").
+     */
+    400: Problem;
+    /**
+     * The part, spool, printer or settings data is temporarily unavailable.
+     */
+    503: Problem;
+};
+
+export type EstimateCostError = EstimateCostErrors[keyof EstimateCostErrors];
+
+export type EstimateCostResponses = {
+    /**
+     * The estimate.
+     */
+    200: CostEstimate;
+};
+
+export type EstimateCostResponse = EstimateCostResponses[keyof EstimateCostResponses];
+
+export type EstimateProjectCostData = {
+    body?: ProjectCostEstimateRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/costs/project-estimates';
+};
+
+export type EstimateProjectCostErrors = {
+    /**
+     * Invalid input; unknown part, spool or printer, or a material mismatch (paths "lines.N.partId|filamentId|printerId"); amounts too large (path "lines.N.quantity", or "lines" when only the sum overflows).
+     */
+    400: Problem;
+    /**
+     * The part, spool, printer or settings data is temporarily unavailable.
+     */
+    503: Problem;
+};
+
+export type EstimateProjectCostError = EstimateProjectCostErrors[keyof EstimateProjectCostErrors];
+
+export type EstimateProjectCostResponses = {
+    /**
+     * The project estimate.
+     */
+    200: ProjectCostEstimate;
+};
+
+export type EstimateProjectCostResponse = EstimateProjectCostResponses[keyof EstimateProjectCostResponses];
+
+export type GetCostSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/costs/settings';
+};
+
+export type GetCostSettingsErrors = {
+    /**
+     * The settings are temporarily unavailable.
+     */
+    503: Problem;
+};
+
+export type GetCostSettingsError = GetCostSettingsErrors[keyof GetCostSettingsErrors];
+
+export type GetCostSettingsResponses = {
+    /**
+     * The settings.
+     */
+    200: CostSettings;
+};
+
+export type GetCostSettingsResponse = GetCostSettingsResponses[keyof GetCostSettingsResponses];
+
+export type SaveCostSettingsData = {
+    body?: UpdateCostSettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/costs/settings';
+};
+
+export type SaveCostSettingsErrors = {
+    /**
+     * Invalid input or an unknown field.
+     */
+    400: Problem;
+    /**
+     * Stale version (issue path "version").
+     */
+    409: Problem;
+    /**
+     * The settings are temporarily unavailable.
+     */
+    503: Problem;
+};
+
+export type SaveCostSettingsError = SaveCostSettingsErrors[keyof SaveCostSettingsErrors];
+
+export type SaveCostSettingsResponses = {
+    /**
+     * The saved settings, with the new version.
+     */
+    200: CostSettings;
+};
+
+export type SaveCostSettingsResponse = SaveCostSettingsResponses[keyof SaveCostSettingsResponses];
+
+export type AnalyzeGcodeData = {
+    body?: AnalyzeGcodeRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/gcode-analyses';
+};
+
+export type AnalyzeGcodeErrors = {
+    /**
+     * Invalid input, or the head is not a supported Cura header (issue path "head").
+     */
+    400: Problem;
+    /**
+     * The request body is over the size limit.
+     */
+    413: Problem;
+};
+
+export type AnalyzeGcodeError = AnalyzeGcodeErrors[keyof AnalyzeGcodeErrors];
+
+export type AnalyzeGcodeResponses = {
+    /**
+     * The numbers found, with warning codes about how reliable they are.
+     */
+    200: GcodeAnalysis;
+};
+
+export type AnalyzeGcodeResponse = AnalyzeGcodeResponses[keyof AnalyzeGcodeResponses];
