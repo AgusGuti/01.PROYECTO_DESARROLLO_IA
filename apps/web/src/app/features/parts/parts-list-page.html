@@ -1,0 +1,140 @@
+<section aria-labelledby="parts-title">
+  <div class="page-header">
+    <h1 id="parts-title" #heading tabindex="-1">Piezas</h1>
+    <a class="button" routerLink="/piezas/nueva">Nueva pieza</a>
+  </div>
+
+  <div class="notices" aria-live="polite">
+    @if (notice(); as notice) {
+      <p
+        class="notice"
+        [class.notice--success]="notice.kind === 'success'"
+        [class.notice--error]="notice.kind === 'error'"
+      >
+        {{ notice.text }}
+      </p>
+    }
+  </div>
+
+  <div class="filter">
+    <label for="material-filter">Material</label>
+    <select id="material-filter" #materialFilter (change)="changeMaterial(materialFilter.value)">
+      <option value="">Todos</option>
+      @for (option of materialOptions; track option.value) {
+        <option [value]="option.value">{{ option.label }}</option>
+      }
+    </select>
+
+    <label for="sort-field">Ordenar por</label>
+    <select id="sort-field" #sortField (change)="changeSort(sortField.value)">
+      @for (option of sortOptions; track option.value) {
+        <option [value]="option.value">{{ option.label }}</option>
+      }
+    </select>
+
+    <label for="sort-order">Orden</label>
+    <select id="sort-order" #sortOrder (change)="changeOrder(sortOrder.value)">
+      @for (option of orderOptions; track option.value) {
+        <option [value]="option.value">{{ option.label }}</option>
+      }
+    </select>
+  </div>
+
+  @let view = state();
+  @let list = shownList(view);
+  @let busy = view.kind === 'loading';
+
+  @if (list) {
+    @if (list.items.length === 0) {
+      <p>No hay piezas en esta página.</p>
+    } @else {
+      <table [attr.aria-busy]="busy">
+        <caption class="visually-hidden">
+          Lista de piezas
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Nombre</th>
+            <th scope="col">Material</th>
+            <th scope="col">Dimensiones</th>
+            <th scope="col">Peso estimado</th>
+            <th scope="col">Tiempo estimado</th>
+            <th scope="col">Altura de capa</th>
+            <th scope="col">Origen</th>
+            <th scope="col">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (part of list.items; track part.id) {
+            <tr>
+              <th scope="row">{{ part.name }}</th>
+              <td>{{ materialLabel(part.material) }}</td>
+              <td>{{ dimensions(part) }}</td>
+              <td>{{ part.estimatedWeightGrams }} g</td>
+              <td>{{ duration(part.estimatedPrintSeconds) }}</td>
+              <td>{{ layerHeight(part.layerHeightUm) }}</td>
+              <td>{{ origin(part) }}</td>
+              <td class="actions">
+                <a
+                  [routerLink]="['/piezas', part.id, 'editar']"
+                  [attr.aria-label]="'Editar ' + part.name"
+                  >Editar</a
+                >
+                <button
+                  type="button"
+                  class="link-danger"
+                  [attr.aria-label]="'Eliminar ' + part.name"
+                  [disabled]="busy"
+                  (click)="askToDelete(part, $event)"
+                >
+                  Eliminar
+                </button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+
+    <nav class="pager" aria-label="Paginación">
+      <button type="button" [disabled]="busy || list.page <= 1" (click)="goToPage(list.page - 1)">
+        Anterior
+      </button>
+      <span>{{ rangeText(list) }}</span>
+      <button type="button" [disabled]="busy || !hasNext(list)" (click)="goToPage(list.page + 1)">
+        Siguiente
+      </button>
+    </nav>
+  }
+
+  @switch (view.kind) {
+    @case ('loading') {
+      <p class="status" role="status">Cargando piezas…</p>
+    }
+    @case ('empty') {
+      @if (view.filtered) {
+        <p class="status">No hay piezas con ese material. Probá con otro.</p>
+      } @else {
+        <div class="status">
+          <p>Todavía no registraste piezas. Agregá la primera.</p>
+          <a class="button" routerLink="/piezas/nueva">Nueva pieza</a>
+        </div>
+      }
+    }
+    @case ('failed') {
+      <div class="status status--error" role="alert">
+        <p>{{ view.message }}</p>
+        <button type="button" (click)="retry()">Reintentar</button>
+      </div>
+    }
+  }
+
+  @if (deleteTarget(); as target) {
+    <app-part-delete-dialog
+      [partName]="target.name"
+      [busy]="deleting()"
+      (confirmed)="confirmDelete()"
+      (cancelled)="cancelDelete()"
+    />
+  }
+</section>

@@ -47,6 +47,24 @@ export const routes: Routes = [
       import('./features/filaments/filament-form-page').then((module) => module.FilamentFormPage),
   },
   {
+    path: 'piezas',
+    title: 'Piezas · Print3D Planner',
+    loadComponent: () =>
+      import('./features/parts/parts-list-page').then((module) => module.PartsListPage),
+  },
+  {
+    path: 'piezas/nueva',
+    title: 'Nueva pieza · Print3D Planner',
+    loadComponent: () =>
+      import('./features/parts/part-form-page').then((module) => module.PartFormPage),
+  },
+  {
+    path: 'piezas/:id/editar',
+    title: 'Editar pieza · Print3D Planner',
+    loadComponent: () =>
+      import('./features/parts/part-form-page').then((module) => module.PartFormPage),
+  },
+  {
     path: '**',
     title: 'Página no encontrada · Print3D Planner',
     loadComponent: () =>
