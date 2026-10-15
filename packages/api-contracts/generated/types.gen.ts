@@ -498,6 +498,98 @@ export type CostEstimateRequest = {
     marginBasisPoints?: number;
 };
 
+export type ProjectCostEstimate = {
+    lines: Array<ProjectCostLine>;
+    fixed: {
+        /**
+         * Settings fixed cost, charged once, no margin.
+         */
+        costMinor: number;
+    };
+    /**
+     * Sum of the line subtotals plus the fixed cost.
+     */
+    subtotalMinor: number;
+    /**
+     * Sum of the line margins.
+     */
+    marginMinor: number;
+    /**
+     * subtotalMinor + marginMinor.
+     */
+    totalMinor: number;
+    printSeconds: number;
+    materials: Array<{
+        material: 'PLA' | 'PETG' | 'ABS' | 'ASA' | 'TPU' | 'PA' | 'PC' | 'HIPS' | 'PVA' | 'PP' | 'PLA_CF' | 'PETG_CF' | 'PA_CF' | 'PA_GF';
+        grams: number;
+    }>;
+    warnings: Array<{
+        code: CostWarningCode;
+    }>;
+};
+
+export type ProjectCostLine = {
+    quantity: number;
+    printSeconds: number;
+    filament: {
+        grams: number;
+        /**
+         * Centavos of ARS, rounded once.
+         */
+        costMinor: number;
+    };
+    /**
+     * Null without a printer or without its power.
+     */
+    electricity: {
+        watts: number;
+        /**
+         * Centavos of ARS.
+         */
+        costMinor: number;
+    } | null;
+    wear: {
+        /**
+         * Centavos of ARS.
+         */
+        costMinor: number;
+    };
+    /**
+     * Sum of the lines: the clean cost.
+     */
+    subtotalMinor: number;
+    marginBasisPoints: number;
+    /**
+     * Margin added on the subtotal; 0 when not a sale.
+     */
+    marginMinor: number;
+    /**
+     * subtotalMinor + marginMinor.
+     */
+    totalMinor: number;
+    /**
+     * Average per unit; unit x quantity can differ by a few centavos.
+     */
+    unitTotalMinor: number;
+    warnings: Array<{
+        code: CostWarningCode;
+    }>;
+    partId: string;
+};
+
+export type ProjectCostEstimateRequest = {
+    lines: Array<{
+        partId: string;
+        filamentId: string;
+        printerId?: string;
+        quantity: number;
+        /**
+         * Present means this line is a sale. Absent means no margin.
+         */
+        marginBasisPoints?: number;
+    }>;
+};
+
 export type CostSettings = {
     kwhPriceMinor: number;
     wearPerHourMinor: number;
@@ -1397,6 +1489,35 @@ export type EstimateCostResponses = {
 };
 
 export type EstimateCostResponse = EstimateCostResponses[keyof EstimateCostResponses];
+
+export type EstimateProjectCostData = {
+    body?: ProjectCostEstimateRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/costs/project-estimates';
+};
+
+export type EstimateProjectCostErrors = {
+    /**
+     * Invalid input; unknown part, spool or printer, or a material mismatch (paths "lines.N.partId|filamentId|printerId"); amounts too large (path "lines.N.quantity", or "lines" when only the sum overflows).
+     */
+    400: Problem;
+    /**
+     * The part, spool, printer or settings data is temporarily unavailable.
+     */
+    503: Problem;
+};
+
+export type EstimateProjectCostError = EstimateProjectCostErrors[keyof EstimateProjectCostErrors];
+
+export type EstimateProjectCostResponses = {
+    /**
+     * The project estimate.
+     */
+    200: ProjectCostEstimate;
+};
+
+export type EstimateProjectCostResponse = EstimateProjectCostResponses[keyof EstimateProjectCostResponses];
 
 export type GetCostSettingsData = {
     body?: never;

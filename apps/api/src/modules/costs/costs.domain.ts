@@ -156,3 +156,97 @@ export function calculateEstimate(input: EstimateInput): EstimateResult {
     },
   };
 }
+
+export interface ProjectLineInput {
+  readonly part: PartCostData;
+  readonly filament: FilamentCostData;
+  readonly printer: PrinterCostData | null;
+  readonly quantity: number;
+  readonly marginBasisPoints: number;
+}
+
+/** A line's estimate (its `fixed` is always 0: the project pays the fixed cost once). */
+export interface ProjectLineEstimate extends Estimate {
+  readonly partId: string;
+}
+
+export interface ProjectEstimate {
+  readonly lines: readonly ProjectLineEstimate[];
+  readonly fixed: { readonly costMinor: number };
+  readonly subtotalMinor: number;
+  readonly marginMinor: number;
+  readonly totalMinor: number;
+  readonly printSeconds: number;
+  readonly materials: readonly { readonly material: Material; readonly grams: number }[];
+  readonly warnings: readonly CostWarningCode[];
+}
+
+/** `lineIndex` is the offending line, or null when only the sum over all lines overflows. */
+export type ProjectEstimateResult =
+  | { readonly ok: true; readonly estimate: ProjectEstimate }
+  | { readonly ok: false; readonly reason: 'amount_too_large'; readonly lineIndex: number | null };
+
+/**
+ * Rule (CU04, ADR 0023): cost each line alone with the fixed cost removed, add the settings'
+ * fixed cost ONCE after summing (no margin on it), and total by summing already rounded lines.
+ */
+export function calculateProjectEstimate(
+  lines: readonly ProjectLineInput[],
+  settings: CostSettings,
+): ProjectEstimateResult {
+  const perLine = { ...settings, fixedPerJobMinor: 0 };
+  const estimates: ProjectLineEstimate[] = [];
+  for (const [index, line] of lines.entries()) {
+    const result = calculateEstimate({ ...line, settings: perLine });
+    if (!result.ok) return { ok: false, reason: 'amount_too_large', lineIndex: index };
+    estimates.push({ partId: line.part.id, ...result.estimate });
+  }
+
+  const fixed = BigInt(settings.fixedPerJobMinor);
+  let subtotal = fixed;
+  let margin = 0n;
+  let seconds = 0n;
+  const grams = new Map<Material, bigint>();
+  const perSpool = new Map<string, bigint>();
+  for (const [index, estimate] of estimates.entries()) {
+    subtotal += BigInt(estimate.subtotalMinor);
+    margin += BigInt(estimate.marginMinor);
+    seconds += BigInt(estimate.printSeconds);
+    const spool = lines[index]?.filament;
+    if (spool !== undefined) {
+      perSpool.set(spool.id, (perSpool.get(spool.id) ?? 0n) + BigInt(estimate.filament.grams));
+    }
+    const material = lines[index]?.part.material;
+    if (material !== undefined) {
+      grams.set(material, (grams.get(material) ?? 0n) + BigInt(estimate.filament.grams));
+    }
+  }
+  const total = subtotal + margin;
+  const sums = [subtotal, margin, total, seconds, ...grams.values()];
+  if (sums.some((value) => value > MAX_SAFE)) {
+    return { ok: false, reason: 'amount_too_large', lineIndex: null };
+  }
+
+  const present = new Set(estimates.flatMap((estimate) => estimate.warnings));
+  // Lines may share a spool: each fits alone, yet together they can exceed what is left.
+  for (const line of lines) {
+    if ((perSpool.get(line.filament.id) ?? 0n) > BigInt(line.filament.availableGrams)) {
+      present.add('filament_insufficient');
+    }
+  }
+  return {
+    ok: true,
+    estimate: {
+      lines: estimates,
+      fixed: { costMinor: Number(fixed) },
+      subtotalMinor: Number(subtotal),
+      marginMinor: Number(margin),
+      totalMinor: Number(total),
+      printSeconds: Number(seconds),
+      materials: [...grams.entries()]
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        .map(([material, amount]) => ({ material, grams: Number(amount) })),
+      warnings: COST_WARNING_CODES.filter((code) => present.has(code)),
+    },
+  };
+}

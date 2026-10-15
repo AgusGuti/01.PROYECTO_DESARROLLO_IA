@@ -1,0 +1,143 @@
+.page-header {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+form {
+  display: grid;
+  gap: 1.25rem;
+  max-inline-size: 40rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.25rem;
+}
+
+input[type='text'],
+input[type='number'],
+select {
+  border: 1px solid var(--color-muted);
+  border-radius: 0.375rem;
+  font: inherit;
+  padding: 0.5rem;
+
+  &[aria-invalid='true'] {
+    border-color: var(--color-error);
+  }
+}
+
+.check {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.percent {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.field-error {
+  color: var(--color-error);
+  margin: 0;
+}
+
+.hint {
+  color: var(--color-muted);
+  margin-block: 0 0.5rem;
+}
+
+.status {
+  border-inline-start: 0.25rem solid var(--color-border);
+  margin-block: 0 1rem;
+  padding: 0.75rem 1rem;
+
+  &--error {
+    border-color: var(--color-error);
+  }
+}
+
+.actions {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+}
+
+.result {
+  margin-block-start: 1.5rem;
+
+  table {
+    border-collapse: collapse;
+    max-inline-size: 60rem;
+    inline-size: 100%;
+  }
+
+  th,
+  td {
+    border-block-end: 1px solid var(--color-border);
+    padding: 0.5rem;
+    text-align: start;
+  }
+
+  td {
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+  }
+
+  .total th,
+  .total td {
+    font-weight: 700;
+  }
+}
+
+.warnings {
+  list-style: none;
+  margin-block: 1rem 0;
+  padding: 0;
+
+  li {
+    border-inline-start: 0.25rem solid var(--color-warn);
+    margin-block-end: 0.5rem;
+    padding: 0.5rem 1rem;
+  }
+}
+
+.lines {
+  display: grid;
+  gap: 1rem;
+}
+
+.line {
+  border: 1px solid var(--color-border);
+  border-radius: 0.375rem;
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+
+  legend {
+    font-weight: 700;
+    padding-inline: 0.25rem;
+  }
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.detail {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+.result .summary {
+  margin-block-start: 1rem;
+}
+
+.materials {
+  margin-block: 0.5rem 0;
+}

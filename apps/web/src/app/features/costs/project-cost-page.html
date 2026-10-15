@@ -1,0 +1,338 @@
+<section aria-labelledby="project-cost-title">
+  <div class="page-header">
+    <h1 id="project-cost-title">Costo del proyecto</h1>
+    <a routerLink="/proyectos">Volver a proyectos</a>
+  </div>
+
+  @let state = project();
+  @let printersState = printers();
+  @let status = result();
+  @let calculating = status.kind === 'calculating';
+
+  @switch (state.kind) {
+    @case ('loading') {
+      <p class="status" role="status">Cargando el proyecto…</p>
+    }
+    @case ('failed') {
+      <div class="status status--error" role="alert">
+        <p>{{ state.message }}</p>
+        <button type="button" (click)="retryProject()">Reintentar</button>
+      </div>
+    }
+    @case ('empty') {
+      <p class="hint">Proyecto: {{ state.name }}</p>
+      <div class="status" id="project-empty">
+        <p>Este proyecto todavía no tiene piezas. Agregale piezas para calcular su costo.</p>
+        <a class="button" [routerLink]="['/proyectos', state.projectId, 'editar']"
+          >Editar proyecto</a
+        >
+      </div>
+    }
+    @case ('ready') {
+      <p class="hint">
+        Proyecto: {{ state.name }}. El cálculo no se guarda: la bobina, la impresora y el margen se
+        eligen por línea.
+      </p>
+
+      @if (deletedCount() > 0) {
+        <p class="status" id="deleted-note">
+          {{ deletedCount() }} línea(s) con pieza eliminada no se incluyen en el cálculo.
+          <a [routerLink]="['/proyectos', state.projectId, 'editar']">Editar proyecto</a>
+        </p>
+      }
+
+      @if (printersState.kind === 'failed') {
+        <p class="status status--error" id="printers-failed" role="alert">
+          {{ printersState.message }}
+          <button type="button" (click)="retryPrinters()">Reintentar impresoras</button>
+        </p>
+      } @else if (printersState.kind === 'loading') {
+        <p class="hint" id="printers-status" role="status">Cargando las impresoras…</p>
+      }
+
+      <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+        <div formArrayName="lines" class="lines">
+          @for (row of state.rows; track $index) {
+            @if (row.kind === 'deleted') {
+              <fieldset class="line line--deleted">
+                <legend>Pieza eliminada × {{ row.quantity }}</legend>
+                <p class="hint">Esta pieza ya no existe, así que no entra en el cálculo.</p>
+              </fieldset>
+            } @else {
+              @let group = lines.at(row.index);
+              @let spoolsState = spoolsOf(row.material);
+              @let spoolError = errorFor(row.index, 'spool');
+              @let printerError = errorFor(row.index, 'printer');
+              @let rowError = rejectedRows().get(row.index);
+              <fieldset class="line" [formGroupName]="row.index">
+                <legend
+                  [id]="'line-' + row.index + '-title'"
+                  tabindex="-1"
+                  [attr.aria-describedby]="rowError ? 'line-' + row.index + '-row-error' : null"
+                >
+                  {{ row.name }} × {{ row.quantity }} · {{ materialLabelOf(row.material) }}
+                </legend>
+                @if (rowError) {
+                  <p class="field-error" [id]="'line-' + row.index + '-row-error'">
+                    {{ rowError }}
+                  </p>
+                }
+
+                <div class="field">
+                  @switch (spoolsState.kind) {
+                    @case ('loading') {
+                      <label [for]="'line-' + row.index + '-spool'">Bobina</label>
+                      <select
+                        [id]="'line-' + row.index + '-spool'"
+                        formControlName="filamentId"
+                        [attr.aria-describedby]="'line-' + row.index + '-spool-status'"
+                      >
+                        <option value="">Cargando…</option>
+                      </select>
+                      <p class="hint" [id]="'line-' + row.index + '-spool-status'" role="status">
+                        Cargando las bobinas…
+                      </p>
+                    }
+                    @case ('failed') {
+                      <p class="status status--error" role="alert">
+                        {{ spoolsState.message }}
+                        <button type="button" (click)="retrySpools()">Reintentar</button>
+                      </p>
+                    }
+                    @case ('ready') {
+                      @if (spoolsState.items.length === 0) {
+                        <p class="status" [id]="'line-' + row.index + '-spool-empty'">
+                          No hay bobinas de este material ({{ materialLabelOf(row.material) }}).
+                          <a routerLink="/filamentos/nuevo">Cargar una bobina</a>
+                        </p>
+                      } @else {
+                        <label [for]="'line-' + row.index + '-spool'">Bobina</label>
+                        <select
+                          [id]="'line-' + row.index + '-spool'"
+                          formControlName="filamentId"
+                          [attr.aria-invalid]="spoolError ? 'true' : null"
+                          [attr.aria-describedby]="
+                            spoolError ? 'line-' + row.index + '-spool-error' : null
+                          "
+                        >
+                          <option value="">Elegí una bobina</option>
+                          @for (spool of spoolsState.items; track spool.id) {
+                            <option [value]="spool.id">{{ spoolLabel(spool) }}</option>
+                          }
+                        </select>
+                        @if (spoolsState.truncated) {
+                          <p class="hint">
+                            Se muestran solo las primeras {{ spoolsState.items.length }} bobinas.
+                          </p>
+                        }
+                      }
+                    }
+                  }
+                  @if (spoolError) {
+                    <p class="field-error" [id]="'line-' + row.index + '-spool-error'">
+                      {{ spoolError }}
+                    </p>
+                  }
+                </div>
+
+                <div class="field">
+                  <label [for]="'line-' + row.index + '-printer'">Impresora</label>
+                  <select
+                    [id]="'line-' + row.index + '-printer'"
+                    formControlName="printerId"
+                    [attr.aria-invalid]="printerError ? 'true' : null"
+                    [attr.aria-describedby]="
+                      printerError ? 'line-' + row.index + '-printer-error' : null
+                    "
+                  >
+                    <option value="">Sin impresora (no se calcula electricidad)</option>
+                    @if (printersState.kind === 'ready') {
+                      @for (printer of printersState.items; track printer.id) {
+                        <option [value]="printer.id">{{ printer.name }}</option>
+                      }
+                    }
+                  </select>
+                  @if (printerError) {
+                    <p class="field-error" [id]="'line-' + row.index + '-printer-error'">
+                      {{ printerError }}
+                    </p>
+                  }
+                </div>
+
+                <div class="field">
+                  <label class="check" [for]="'line-' + row.index + '-sale'">
+                    <input
+                      [id]="'line-' + row.index + '-sale'"
+                      type="checkbox"
+                      formControlName="sale"
+                    />
+                    ¿Venta?
+                  </label>
+                </div>
+
+                @if (group.controls.sale.value) {
+                  @let marginError = errorFor(row.index, 'margin');
+                  <div class="field">
+                    <label [for]="'line-' + row.index + '-margin'">Margen</label>
+                    <div class="percent">
+                      <input
+                        [id]="'line-' + row.index + '-margin'"
+                        type="text"
+                        inputmode="decimal"
+                        autocomplete="off"
+                        formControlName="margin"
+                        [attr.aria-invalid]="marginError ? 'true' : null"
+                        [attr.aria-describedby]="
+                          marginError ? 'line-' + row.index + '-margin-error' : null
+                        "
+                      />
+                      <span aria-hidden="true">%</span>
+                    </div>
+                    @if (marginError) {
+                      <p class="field-error" [id]="'line-' + row.index + '-margin-error'">
+                        {{ marginError }}
+                      </p>
+                    }
+                  </div>
+                }
+              </fieldset>
+            }
+          }
+        </div>
+
+        @if (liveRows().length > 0) {
+          <div class="actions">
+            <button type="submit" [disabled]="calculating">
+              {{ calculating ? 'Calculando…' : 'Calcular' }}
+            </button>
+          </div>
+        } @else {
+          <p class="status" id="nothing-to-calculate">
+            No quedan piezas para calcular.
+            <a [routerLink]="['/proyectos', state.projectId, 'editar']">Editar proyecto</a>
+          </p>
+        }
+      </form>
+
+      <div class="result" aria-live="polite">
+        @if (calculating) {
+          <p class="status">Calculando el costo…</p>
+        }
+        @if (status.kind === 'done') {
+          @let estimate = status.estimate;
+          <h2>Resultado</h2>
+          <div class="table-scroll">
+            <table id="lines-result">
+              <caption class="visually-hidden">
+                Costo por línea
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Pieza</th>
+                  <th scope="col">Filamento</th>
+                  <th scope="col">Electricidad</th>
+                  <th scope="col">Desgaste</th>
+                  <th scope="col">Subtotal</th>
+                  <th scope="col">Margen</th>
+                  <th scope="col">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (line of estimate.lines; track $index) {
+                  <tr>
+                    <th scope="row">{{ nameOfLine($index) }} × {{ line.quantity }}</th>
+                    <td>
+                      {{ formatMoney(line.filament.costMinor) }}
+                      <span class="detail">({{ formatGrams(line.filament.grams) }} g)</span>
+                    </td>
+                    <td>
+                      @if (line.electricity; as electricity) {
+                        {{ formatMoney(electricity.costMinor) }}
+                      } @else {
+                        —
+                      }
+                    </td>
+                    <td>{{ formatMoney(line.wear.costMinor) }}</td>
+                    <td>{{ formatMoney(line.subtotalMinor) }}</td>
+                    <td>
+                      @if (status.sales[$index]) {
+                        {{ formatMoney(line.marginMinor) }}
+                        <span class="detail">({{ formatPercent(line.marginBasisPoints) }})</span>
+                      } @else {
+                        —
+                      }
+                    </td>
+                    <td>{{ formatMoney(line.totalMinor) }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+
+          <table class="summary">
+            <caption class="visually-hidden">
+              Totales del proyecto
+            </caption>
+            <tbody>
+              <tr>
+                <th scope="row">Costo fijo del proyecto (se cobra una vez y no lleva margen)</th>
+                <td>{{ formatMoney(estimate.fixed.costMinor) }}</td>
+              </tr>
+              <tr class="subtotal">
+                <th scope="row">Subtotal del proyecto</th>
+                <td>{{ formatMoney(estimate.subtotalMinor) }}</td>
+              </tr>
+              <tr>
+                <th scope="row">Margen</th>
+                <td>{{ formatMoney(estimate.marginMinor) }}</td>
+              </tr>
+              <tr class="total">
+                <th scope="row">Total del proyecto</th>
+                <td>{{ formatMoney(estimate.totalMinor) }}</td>
+              </tr>
+              <tr>
+                <th scope="row">Tiempo total de impresión</th>
+                <td>{{ formatDuration(estimate.printSeconds) }}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          @if (deletedCount() > 0) {
+            <p class="status" id="total-excludes-deleted">
+              El total no incluye {{ deletedCount() }} línea(s) con pieza eliminada.
+            </p>
+          }
+
+          @if (estimate.materials.length > 0) {
+            <h3>Material necesario</h3>
+            <ul class="materials">
+              @for (item of estimate.materials; track item.material) {
+                <li>{{ materialLabelOf(item.material) }}: {{ formatGrams(item.grams) }} g</li>
+              }
+            </ul>
+          }
+
+          @if (estimate.warnings.length > 0) {
+            <ul class="warnings" aria-label="Avisos">
+              @for (warning of estimate.warnings; track warning.code) {
+                <li>
+                  <span aria-hidden="true">⚠</span>
+                  {{ warningText(warning.code) }}
+                  @if (warning.code === 'settings_not_configured') {
+                    <a routerLink="/costos/ajustes">Cargar mis tarifas</a>
+                  }
+                </li>
+              }
+            </ul>
+          }
+        }
+      </div>
+
+      @if (status.kind === 'failed') {
+        <div class="status status--error" role="alert">
+          <p>{{ status.message }}</p>
+        </div>
+      }
+    }
+  }
+</section>

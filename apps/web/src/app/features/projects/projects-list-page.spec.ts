@@ -397,6 +397,16 @@ describe('ProjectsListPage', () => {
     );
   });
 
+  it('gives each row a Costo link to the project cost page named after the project', async () => {
+    const page = await render();
+
+    await page.answer(0, pageOf([makeProject({ id: 'abc' })]));
+
+    const link = page.element.querySelector('tbody tr a[href="/proyectos/abc/costo"]');
+    expect(link?.textContent).toBe('Costo');
+    expect(link?.getAttribute('aria-label')).toBe('Costo de Soportes para el taller');
+  });
+
   describe('deleting a project', () => {
     async function withOne() {
       const page = await render();

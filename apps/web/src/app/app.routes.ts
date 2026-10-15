@@ -83,6 +83,12 @@ export const routes: Routes = [
       import('./features/projects/project-form-page').then((module) => module.ProjectFormPage),
   },
   {
+    path: 'proyectos/:id/costo',
+    title: 'Costo del proyecto · Print3D Planner',
+    loadComponent: () =>
+      import('./features/costs/project-cost-page').then((module) => module.ProjectCostPage),
+  },
+  {
     path: 'costos',
     title: 'Calcular costo · Print3D Planner',
     loadComponent: () =>

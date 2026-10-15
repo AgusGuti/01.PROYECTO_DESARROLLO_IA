@@ -4,19 +4,26 @@ import { describe, expect, it } from 'vitest';
 import { AppError } from '../../shared/errors/app-error.js';
 import { problemSchema } from '../../shared/http/problem.js';
 import { createTestApp } from '../../testing/test-app.js';
-import { costEstimateSchema, costSettingsSchema } from './costs.schemas.js';
+import {
+  costEstimateSchema,
+  costSettingsSchema,
+  projectCostEstimateSchema,
+} from './costs.schemas.js';
 import {
   createFakes,
   createTestClock,
+  filamentData,
   FILAMENT_ID,
   OTHER_ID,
   PART_ID,
+  partData,
   PRINTER_ID,
   validRates,
 } from './testing/fakes.js';
 
 const ESTIMATES = '/api/v1/costs/estimates';
 const SETTINGS = '/api/v1/costs/settings';
+const PROJECTS = '/api/v1/costs/project-estimates';
 
 const ESTIMATE_KEYS = [
   'electricity',
@@ -390,4 +397,130 @@ describe('PUT /api/v1/costs/settings', () => {
     );
     expect(JSON.stringify(problem)).not.toContain('ECONNREFUSED');
   });
+});
+
+describe('POST /api/v1/costs/project-estimates', () => {
+  const line = { partId: PART_ID, filamentId: FILAMENT_ID, printerId: PRINTER_ID };
+
+  it('answers 200 with the worked example, fixed once and no leaked field', async () => {
+    const { app, settings } = setup();
+    settings.stored = { ...saved, version: 1 };
+
+    const response = await request(app)
+      .post(PROJECTS)
+      .send({ lines: [{ ...line, quantity: 2, marginBasisPoints: 2500 }] });
+
+    expect(response.status).toBe(200);
+    projectCostEstimateSchema.parse(response.body);
+    expect(Object.keys(response.body as object).sort()).toEqual([
+      'fixed',
+      'lines',
+      'marginMinor',
+      'materials',
+      'printSeconds',
+      'subtotalMinor',
+      'totalMinor',
+      'warnings',
+    ]);
+    expect(response.body).toMatchObject({
+      fixed: { costMinor: 5000 },
+      subtotalMinor: 414_240,
+      marginMinor: 102_310,
+      totalMinor: 516_550,
+      printSeconds: 14_400,
+      materials: [{ material: 'PETG', grams: 200 }],
+      warnings: [],
+    });
+    const lines = (response.body as { lines: Record<string, unknown>[] }).lines;
+    expect(lines[0]).toMatchObject({
+      partId: PART_ID,
+      subtotalMinor: 409_240,
+      totalMinor: 511_550,
+    });
+    expect(lines[0]).not.toHaveProperty('fixed');
+    expect(settings.calls).toEqual(['find']);
+  });
+
+  it.each([
+    ['no body keys', {}],
+    ['an empty list', { lines: [] }],
+    ['an unknown key on the body', { lines: [{ ...line, quantity: 1 }], extra: 1 }],
+    ['an unknown key on a line', { lines: [{ ...line, quantity: 1, price: 1 }] }],
+    ['quantity 0', { lines: [{ ...line, quantity: 0 }] }],
+    ['quantity 1001', { lines: [{ ...line, quantity: 1001 }] }],
+    ['a fractional quantity', { lines: [{ ...line, quantity: 1.5 }] }],
+    ['a missing quantity', { lines: [line] }],
+    ['a margin above the limit', { lines: [{ ...line, quantity: 1, marginBasisPoints: 100_001 }] }],
+    ['a malformed id', { lines: [{ ...line, partId: 'x', quantity: 1 }] }],
+    ['101 lines', { lines: Array.from({ length: 101 }, () => ({ ...line, quantity: 1 })) }],
+  ])('answers 400 for %s', async (_name, payload) => {
+    const { app, parts } = setup();
+
+    expectProblem(await request(app).post(PROJECTS).send(payload), 400, 'validation_failed');
+
+    expect(parts.calls).toEqual([]);
+  });
+
+  it('accepts exactly 100 lines and reads the part once', async () => {
+    const { app, parts } = setup();
+
+    const response = await request(app)
+      .post(PROJECTS)
+      .send({ lines: Array.from({ length: 100 }, () => ({ ...line, quantity: 1000 })) });
+
+    expect(response.status).toBe(200);
+    expect(parts.calls).toEqual([PART_ID]);
+  });
+
+  it('reports every unknown reference with indexed paths', async () => {
+    const { app } = setup();
+
+    const response = await request(app)
+      .post(PROJECTS)
+      .send({
+        lines: [
+          { ...line, quantity: 1 },
+          { partId: OTHER_ID, filamentId: OTHER_ID, printerId: OTHER_ID, quantity: 1 },
+        ],
+      });
+
+    const problem = expectProblem(response, 400, 'validation_failed');
+    expect(problem.issues?.map((issue) => issue.path)).toEqual([
+      'lines.1.partId',
+      'lines.1.filamentId',
+      'lines.1.printerId',
+    ]);
+  });
+
+  it('answers 400 on lines.0.quantity when the amounts overflow', async () => {
+    const { app, parts, filaments } = setup();
+    parts.records.set(PART_ID, { ...partData, estimatedWeightGrams: 20_000 });
+    filaments.records.set(FILAMENT_ID, {
+      ...filamentData,
+      initialGrams: 1,
+      purchaseCostMinor: 1e9,
+    });
+
+    const response = await request(app)
+      .post(PROJECTS)
+      .send({ lines: [{ ...line, quantity: 1000 }] });
+
+    const problem = expectProblem(response, 400, 'validation_failed');
+    expect(problem.issues?.[0]?.path).toBe('lines.0.quantity');
+  });
+
+  it.each(['parts', 'filaments', 'printers', 'settings'] as const)(
+    'answers a generic 503 without driver text when the %s dependency fails',
+    async (name) => {
+      const { app, ...fakes } = setup();
+      fakes[name].failWith = new Error('MongoServerSelectionError: ECONNREFUSED 10.1.2.3:27017');
+
+      const response = await request(app)
+        .post(PROJECTS)
+        .send({ lines: [{ ...line, quantity: 1 }] });
+
+      const problem = expectProblem(response, 503, 'service_unavailable');
+      expect(JSON.stringify(problem)).not.toContain('ECONNREFUSED');
+    },
+  );
 });

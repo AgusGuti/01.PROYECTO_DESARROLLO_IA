@@ -5,6 +5,8 @@ import {
   costEstimateRequestSchema,
   costEstimateSchema,
   costSettingsSchema,
+  projectCostEstimateRequestSchema,
+  projectCostEstimateSchema,
   updateCostSettingsSchema,
 } from './costs.schemas.js';
 
@@ -33,6 +35,33 @@ export function registerCostsPaths(registry: OpenAPIRegistry): void {
       400: problem(
         'Invalid input, an unknown part, spool or printer, a spool material that differs from ' +
           'the part material (issue path "filamentId"), or amounts too large (path "quantity").',
+      ),
+      503: problem('The part, spool, printer or settings data is temporarily unavailable.'),
+    },
+  });
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/v1/costs/project-estimates',
+    operationId: 'estimateProjectCost',
+    tags: ['Costs'],
+    summary: 'Estimate the total cost of a project',
+    description:
+      'Stateless: nothing is stored. Each line is costed alone (spool, printer and margin per ' +
+      'line); the settings fixed cost is added once for the whole project and carries no margin. ' +
+      'Totals are sums of the rounded lines, in centavos of ARS.',
+    request: {
+      body: { content: { 'application/json': { schema: projectCostEstimateRequestSchema } } },
+    },
+    responses: {
+      200: {
+        description: 'The project estimate.',
+        content: { 'application/json': { schema: projectCostEstimateSchema } },
+      },
+      400: problem(
+        'Invalid input; unknown part, spool or printer, or a material mismatch (paths ' +
+          '"lines.N.partId|filamentId|printerId"); amounts too large (path "lines.N.quantity", ' +
+          'or "lines" when only the sum overflows).',
       ),
       503: problem('The part, spool, printer or settings data is temporarily unavailable.'),
     },

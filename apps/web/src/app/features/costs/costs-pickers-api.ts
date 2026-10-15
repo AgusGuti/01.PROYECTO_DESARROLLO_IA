@@ -20,6 +20,17 @@ export interface PickerCatalogue<T> {
   readonly truncated: boolean;
 }
 
+/** A project as the cost page needs it; `part` is null when the part was deleted. */
+export interface PickerProject {
+  readonly id: string;
+  readonly name: string;
+  readonly items: readonly {
+    readonly partId: string;
+    readonly quantity: number;
+    readonly part: { readonly name: string; readonly material: Material } | null;
+  }[];
+}
+
 export const PICKER_PAGE_SIZE = 100;
 export const PICKER_MAX_PAGES = 10;
 
@@ -90,6 +101,32 @@ function pickPrinter(value: unknown): PickerPrinter | null | undefined {
   return { id: value['id'], name: value['name'], powerWatts: value['powerWatts'] };
 }
 
+function pickProject(value: unknown): PickerProject | null {
+  if (!isRecord(value) || typeof value['id'] !== 'string' || typeof value['name'] !== 'string') {
+    return null;
+  }
+  if (!Array.isArray(value['items'])) return null;
+  const items: PickerProject['items'][number][] = [];
+  for (const row of value['items'] as unknown[]) {
+    if (!isRecord(row) || typeof row['partId'] !== 'string' || !isWholeNumber(row['quantity'])) {
+      return null;
+    }
+    const part = row['part'];
+    if (part === null) {
+      items.push({ partId: row['partId'], quantity: row['quantity'], part: null });
+    } else if (isRecord(part) && typeof part['name'] === 'string' && isMaterial(part['material'])) {
+      items.push({
+        partId: row['partId'],
+        quantity: row['quantity'],
+        part: { name: part['name'], material: part['material'] },
+      });
+    } else {
+      return null;
+    }
+  }
+  return { id: value['id'], name: value['name'], items };
+}
+
 const hasMore = (page: RawPage<unknown>): boolean => page.requested * page.pageSize < page.total;
 
 /**
@@ -145,6 +182,17 @@ export class CostsPickersApi {
         }),
         { items: [], truncated: false },
       ),
+    );
+  }
+
+  /** One project with its lines. A body of the wrong shape is an `unexpected_response`. */
+  project(id: string): Observable<PickerProject> {
+    return this.http.get<unknown>(`${this.baseUrl}/api/v1/projects/${encodeURIComponent(id)}`).pipe(
+      map((body) => {
+        const project = pickProject(body);
+        if (project === null) throw unexpected();
+        return project;
+      }),
     );
   }
 

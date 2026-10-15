@@ -5,9 +5,11 @@ import { createCostsService } from './costs.service.js';
 import {
   createFakes,
   createTestClock,
+  filamentData,
   FILAMENT_ID,
   OTHER_ID,
   PART_ID,
+  partData,
   PRINTER_ID,
   validRates,
 } from './testing/fakes.js';
@@ -262,4 +264,94 @@ describe('saveSettings', () => {
     expect(error.code).toBe('service_unavailable');
     expect(error.message).not.toContain('ECONNREFUSED');
   });
+});
+
+describe('estimateProject', () => {
+  const line = { partId: PART_ID, filamentId: FILAMENT_ID, quantity: 1 };
+
+  it('reads each distinct id once, however many lines repeat it, and writes nothing', async () => {
+    const { service, settings, parts, filaments, printers } = setup();
+    settings.stored = { ...validRates, version: 1, updatedAt: new Date() };
+
+    const project = await service.estimateProject([
+      { ...line, printerId: PRINTER_ID },
+      { ...line, printerId: PRINTER_ID, quantity: 2 },
+      line,
+    ]);
+
+    expect(parts.calls).toEqual([PART_ID]);
+    expect(filaments.calls).toEqual([FILAMENT_ID]);
+    expect(printers.calls).toEqual([PRINTER_ID]);
+    expect(settings.calls).toEqual(['find']);
+    expect(project.lines).toHaveLength(3);
+    expect(project.fixed.costMinor).toBe(5000);
+  });
+
+  it('reports every missing reference at once with indexed paths', async () => {
+    const { service } = setup();
+
+    const error = await failureOf(
+      service.estimateProject([
+        line,
+        { partId: OTHER_ID, filamentId: OTHER_ID, printerId: OTHER_ID, quantity: 1 },
+      ]),
+    );
+
+    expect(error.code).toBe('validation_failed');
+    expect(error.issues.map((issue) => issue.path)).toEqual([
+      'lines.1.partId',
+      'lines.1.filamentId',
+      'lines.1.printerId',
+    ]);
+  });
+
+  it('reports a material mismatch on that line spool', async () => {
+    const { service, filaments } = setup();
+    filaments.records.set(OTHER_ID, { ...filamentData, id: OTHER_ID, material: 'PLA' });
+
+    const error = await failureOf(
+      service.estimateProject([line, { ...line, filamentId: OTHER_ID }]),
+    );
+
+    expect(error.issues).toEqual([
+      { path: 'lines.1.filamentId', message: 'The spool material differs from the part material.' },
+    ]);
+  });
+
+  it('answers amount_too_large on the line quantity, or on lines for the sum', async () => {
+    const { service, parts, filaments } = setup();
+    parts.records.set(PART_ID, { ...partData, estimatedWeightGrams: 20_000 });
+    filaments.records.set(FILAMENT_ID, {
+      ...filamentData,
+      initialGrams: 1,
+      purchaseCostMinor: 1e9,
+    });
+
+    const single = await failureOf(service.estimateProject([{ ...line, quantity: 1000 }]));
+    expect(single.issues[0]?.path).toBe('lines.0.quantity');
+
+    parts.records.set(PART_ID, { ...partData, estimatedWeightGrams: 5000 });
+    const sum = await failureOf(
+      service.estimateProject([
+        { ...line, quantity: 1000 },
+        { ...line, quantity: 1000 },
+      ]),
+    );
+    expect(sum.issues[0]?.path).toBe('lines');
+  });
+
+  it.each(['parts', 'filaments', 'printers', 'settings'] as const)(
+    'answers 503 without driver text when the %s dependency fails',
+    async (name) => {
+      const fakes = setup();
+      fakes[name].failWith = new Error('MongoNetworkError: ECONNREFUSED');
+
+      const error = await failureOf(
+        fakes.service.estimateProject([{ ...line, printerId: PRINTER_ID }]),
+      );
+
+      expect(error.code).toBe('service_unavailable');
+      expect(error.message).not.toContain('ECONNREFUSED');
+    },
+  );
 });

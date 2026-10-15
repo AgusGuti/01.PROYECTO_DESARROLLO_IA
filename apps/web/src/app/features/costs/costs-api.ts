@@ -4,12 +4,14 @@ import type {
   CostEstimate,
   CostEstimateRequest,
   CostSettings,
+  ProjectCostEstimate,
+  ProjectCostEstimateRequest,
   UpdateCostSettingsRequest,
 } from '@print3d/api-contracts';
 import { map, type Observable } from 'rxjs';
 import { API_BASE_URL } from '../../core/api/api-config';
 import { ApiError } from '../../core/api/api-error';
-import { isWarningCode } from './cost-labels';
+import { isMaterial, isWarningCode } from './cost-labels';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -40,21 +42,52 @@ export function isCostSettings(value: unknown): value is CostSettings {
   );
 }
 
-export function isCostEstimate(value: unknown): value is CostEstimate {
+/** Everything a single estimate and a project line share (a line has no `fixed`). */
+function hasLineFields(value: unknown): value is Record<string, unknown> {
   if (!isRecord(value)) return false;
-  const { filament, electricity, wear, fixed, warnings } = value;
+  const { filament, electricity, wear, warnings } = value;
   return (
     isWholeNumber(value['quantity']) &&
     isWholeNumber(value['printSeconds']) &&
     hasMinor(filament, (f) => typeof f['grams'] === 'number' && Number.isFinite(f['grams'])) &&
     (electricity === null || hasMinor(electricity, (e) => isWholeNumber(e['watts']))) &&
     hasMinor(wear) &&
-    hasMinor(fixed) &&
     isWholeNumber(value['subtotalMinor']) &&
     isWholeNumber(value['marginBasisPoints']) &&
     isWholeNumber(value['marginMinor']) &&
     isWholeNumber(value['totalMinor']) &&
     isWholeNumber(value['unitTotalMinor']) &&
+    Array.isArray(warnings) &&
+    warnings.every((warning: unknown) => isRecord(warning) && isWarningCode(warning['code']))
+  );
+}
+
+export function isCostEstimate(value: unknown): value is CostEstimate {
+  return hasLineFields(value) && hasMinor(value['fixed']);
+}
+
+function isMaterialTotal(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isMaterial(value['material']) &&
+    typeof value['grams'] === 'number' &&
+    Number.isFinite(value['grams'])
+  );
+}
+
+export function isProjectCostEstimate(value: unknown): value is ProjectCostEstimate {
+  if (!isRecord(value)) return false;
+  const { lines, fixed, materials, warnings } = value;
+  return (
+    Array.isArray(lines) &&
+    lines.every((line: unknown) => hasLineFields(line) && typeof line['partId'] === 'string') &&
+    hasMinor(fixed) &&
+    isWholeNumber(value['subtotalMinor']) &&
+    isWholeNumber(value['marginMinor']) &&
+    isWholeNumber(value['totalMinor']) &&
+    isWholeNumber(value['printSeconds']) &&
+    Array.isArray(materials) &&
+    materials.every(isMaterialTotal) &&
     Array.isArray(warnings) &&
     warnings.every((warning: unknown) => isRecord(warning) && isWarningCode(warning['code']))
   );
@@ -95,5 +128,12 @@ export class CostsApi {
     return this.http
       .post<unknown>(`${this.baseUrl}/api/v1/costs/estimates`, body)
       .pipe(map(narrow(isCostEstimate)));
+  }
+
+  /** Also stores nothing (ADR 0023) and is never retried automatically. */
+  estimateProject(body: ProjectCostEstimateRequest): Observable<ProjectCostEstimate> {
+    return this.http
+      .post<unknown>(`${this.baseUrl}/api/v1/costs/project-estimates`, body)
+      .pipe(map(narrow(isProjectCostEstimate)));
   }
 }
