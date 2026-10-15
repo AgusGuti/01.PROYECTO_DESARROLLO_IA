@@ -316,7 +316,7 @@ describe('FilamentFormPage (create)', () => {
       );
     });
 
-    it.each(['15.000', '1,234', 'abc', ',5', '10000000', '-1'])(
+    it.each(['15.000', '1,234', 'abc', ',5', '10000001', '-1'])(
       'rejects the cost %j',
       async (value) => {
         const page = await render();

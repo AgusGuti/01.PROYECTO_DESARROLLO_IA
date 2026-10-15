@@ -84,6 +84,8 @@ describe('parsePesosToMinor', () => {
     ['7', 700],
     ['9999999', 999999900],
     ['9999999,99', 999999999],
+    ['10000000', 1_000_000_000],
+    ['10000000,00', 1_000_000_000],
     [' 12,30 ', 1230],
     // parseFloat('1.15') * 100 is 114.99999999999999: integer arithmetic must not drift.
     ['1,15', 115],
@@ -93,12 +95,23 @@ describe('parsePesosToMinor', () => {
     expect(parsePesosToMinor(text)).toBe(minor);
   });
 
-  it.each(['15.000', '1,234', '', '   ', 'abc', ',5', '15000,', '-5', '1e3', '10000000', '1,2,3'])(
-    'rejects %j',
-    (text) => {
-      expect(parsePesosToMinor(text)).toBeNull();
-    },
-  );
+  it.each([
+    '15.000',
+    '1,234',
+    '',
+    '   ',
+    'abc',
+    ',5',
+    '15000,',
+    '-5',
+    '1e3',
+    '10000000,01',
+    '10000001',
+    '99999999',
+    '1,2,3',
+  ])('rejects %j', (text) => {
+    expect(parsePesosToMinor(text)).toBeNull();
+  });
 
   it('never accepts more than the API maximum', () => {
     expect(MAX_COST_MINOR).toBe(1_000_000_000);

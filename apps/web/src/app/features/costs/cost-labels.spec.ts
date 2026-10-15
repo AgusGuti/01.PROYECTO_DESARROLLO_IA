@@ -21,16 +21,26 @@ describe('parsePesosToMinor', () => {
     ['0', 0],
     ['  8,25 ', 825],
     ['10000000', 1_000_000_000],
+    ['10000000,00', 1_000_000_000],
+    ['9999999,99', 999_999_999],
   ])('turns %j into %i centavos', (text, minor) => {
     expect(parsePesosToMinor(text)).toBe(minor);
   });
 
-  it.each(['', 'abc', '-1', '1,234', '1.5', '10000000,01', '12345678', '1,'])(
-    'rejects %j',
-    (text) => {
-      expect(parsePesosToMinor(text)).toBeNull();
-    },
-  );
+  it.each([
+    '',
+    'abc',
+    '-1',
+    '1,234',
+    '1.5',
+    '10000000,01',
+    '12345678',
+    '99999999',
+    '10000001',
+    '1,',
+  ])('rejects %j', (text) => {
+    expect(parsePesosToMinor(text)).toBeNull();
+  });
 });
 
 describe('minorToPesosInput', () => {
