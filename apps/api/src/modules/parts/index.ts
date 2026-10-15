@@ -25,6 +25,30 @@ export function createPartLookup(
   };
 }
 
+/**
+ * Builds the costs module's `PartReader` (ADR 0017): one live part with the fields a cost needs.
+ * Its shape is the consumer's port, matched structurally.
+ */
+export function createPartCostReader(
+  repository: Pick<PartRepository, 'findLiveById'> = createMongoPartRepository(),
+): (id: string) => Promise<{
+  id: string;
+  material: PartMaterial;
+  estimatedWeightGrams: number;
+  estimatedPrintSeconds: number;
+} | null> {
+  return async (id) => {
+    const part = await repository.findLiveById(id);
+    if (part === null) return null;
+    return {
+      id: part.id,
+      material: part.material,
+      estimatedWeightGrams: part.estimatedWeightGrams,
+      estimatedPrintSeconds: part.estimatedPrintSeconds,
+    };
+  };
+}
+
 export function createPartsModule(deps: {
   clock: Clock;
   /** Tests inject a fake; production uses MongoDB. */

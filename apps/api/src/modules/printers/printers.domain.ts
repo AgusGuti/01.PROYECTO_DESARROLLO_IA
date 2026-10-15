@@ -28,6 +28,8 @@ export interface PrinterFields {
   readonly nozzle: Nozzle;
   readonly compatibleMaterials: readonly Material[];
   readonly typicalSpeedMmS: number | null;
+  /** Average power while printing, in watts (ADR 0022); null when unknown. */
+  readonly powerWatts: number | null;
   readonly status: PrinterStatus;
 }
 
@@ -48,6 +50,7 @@ export interface PrinterPatch {
   readonly nozzle?: Nozzle | undefined;
   readonly compatibleMaterials?: readonly Material[] | undefined;
   readonly typicalSpeedMmS?: number | null | undefined;
+  readonly powerWatts?: number | null | undefined;
   readonly status?: PrinterStatus | undefined;
 }
 
@@ -84,6 +87,7 @@ export function mergePrinter(current: PrinterFields, patch: PrinterPatch): Print
     compatibleMaterials: patch.compatibleMaterials ?? current.compatibleMaterials,
     typicalSpeedMmS:
       patch.typicalSpeedMmS === undefined ? current.typicalSpeedMmS : patch.typicalSpeedMmS,
+    powerWatts: patch.powerWatts === undefined ? current.powerWatts : patch.powerWatts,
     status: patch.status ?? current.status,
   };
 }

@@ -49,6 +49,7 @@ const compatibleMaterialsSchema = z
   .refine((list) => new Set(list).size === list.length, 'Must not contain duplicates.');
 
 const typicalSpeedSchema = z.number().int().min(1).max(1000);
+const powerWattsSchema = z.number().int().min(1).max(5000);
 const statusSchema = z.enum(PRINTER_STATUSES).openapi('PrinterStatus');
 
 const editableFields = {
@@ -63,6 +64,7 @@ export const createPrinterSchema = z
   .strictObject({
     ...editableFields,
     typicalSpeedMmS: typicalSpeedSchema.optional(),
+    powerWatts: powerWattsSchema.optional(),
     status: statusSchema.default('available'),
     // Not stored: only says the client agrees to reuse a deleted printer that has this name.
     restoreIfDeleted: z
@@ -88,6 +90,7 @@ export const updatePrinterSchema = z
     nozzle: editableFields.nozzle.optional(),
     compatibleMaterials: editableFields.compatibleMaterials.optional(),
     typicalSpeedMmS: typicalSpeedSchema.nullable().optional(),
+    powerWatts: powerWattsSchema.nullable().optional(),
     status: editableFields.status.optional(),
   })
   .refine((body) => Object.keys(body).some((key) => key !== 'version'), {
@@ -130,6 +133,11 @@ export const printerSchema = z
     nozzle: nozzleSchema,
     compatibleMaterials: z.array(materialSchema),
     typicalSpeedMmS: z.number().int().nullable(),
+    powerWatts: z
+      .number()
+      .int()
+      .nullable()
+      .openapi({ description: 'Average power while printing, in watts; null when unknown.' }),
     status: statusSchema,
     version: z.number().int().openapi({ description: 'Send this back when editing.' }),
     archivedAt: timestamp.nullable().openapi({

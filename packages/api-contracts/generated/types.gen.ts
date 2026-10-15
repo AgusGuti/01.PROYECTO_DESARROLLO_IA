@@ -44,6 +44,10 @@ export type Printer = {
     nozzle: PrinterNozzle;
     compatibleMaterials: Array<Material>;
     typicalSpeedMmS: number | null;
+    /**
+     * Average power while printing, in watts; null when unknown.
+     */
+    powerWatts: number | null;
     status: PrinterStatus;
     /**
      * Send this back when editing.
@@ -82,6 +86,7 @@ export type CreatePrinterRequest = {
     compatibleMaterials: Array<Material>;
     status?: PrinterStatus;
     typicalSpeedMmS?: number;
+    powerWatts?: number;
     /**
      * Set to true to restore a deleted printer that holds this name, replacing its data with the submitted data. Without it, that name answers 409 (issue path "restoreIfDeleted").
      */
@@ -102,6 +107,7 @@ export type UpdatePrinterRequest = {
     nozzle?: PrinterNozzle;
     compatibleMaterials?: Array<Material>;
     typicalSpeedMmS?: number | null;
+    powerWatts?: number | null;
     status?: PrinterStatus;
 };
 
@@ -420,6 +426,111 @@ export type UpdateProjectRequest = {
      * Up to 100 lines, each part at most once, every part must exist. Replaced whole on edit.
      */
     items?: Array<ProjectItemInput>;
+};
+
+export type CostEstimate = {
+    quantity: number;
+    printSeconds: number;
+    filament: {
+        grams: number;
+        /**
+         * Centavos of ARS, rounded once.
+         */
+        costMinor: number;
+    };
+    /**
+     * Null without a printer or without its power.
+     */
+    electricity: {
+        watts: number;
+        /**
+         * Centavos of ARS.
+         */
+        costMinor: number;
+    } | null;
+    wear: {
+        /**
+         * Centavos of ARS.
+         */
+        costMinor: number;
+    };
+    fixed: {
+        /**
+         * Charged once per estimate.
+         */
+        costMinor: number;
+    };
+    /**
+     * Sum of the lines: the clean cost.
+     */
+    subtotalMinor: number;
+    marginBasisPoints: number;
+    /**
+     * Margin added on the subtotal; 0 when not a sale.
+     */
+    marginMinor: number;
+    /**
+     * subtotalMinor + marginMinor.
+     */
+    totalMinor: number;
+    /**
+     * Average per unit; unit x quantity can differ by a few centavos.
+     */
+    unitTotalMinor: number;
+    warnings: Array<{
+        code: CostWarningCode;
+    }>;
+};
+
+export type CostWarningCode = 'filament_insufficient' | 'electricity_printer_not_selected' | 'electricity_printer_power_unknown' | 'settings_not_configured';
+
+export type CostEstimateRequest = {
+    partId: string;
+    filamentId: string;
+    /**
+     * Optional. Without a printer (or without its power) electricity is omitted.
+     */
+    printerId?: string;
+    quantity?: number;
+    /**
+     * Present means a sale: this margin (12.5 % is 1250) is added on the subtotal. Absent means no margin. The default margin of the settings is never applied here.
+     */
+    marginBasisPoints?: number;
+};
+
+export type CostSettings = {
+    kwhPriceMinor: number;
+    wearPerHourMinor: number;
+    fixedPerJobMinor: number;
+    defaultMarginBasisPoints: number;
+    /**
+     * 0 until the settings are first saved.
+     */
+    version: number;
+    updatedAt: string | null;
+};
+
+export type UpdateCostSettingsRequest = {
+    /**
+     * Price of one kWh, in centavos.
+     */
+    kwhPriceMinor: number;
+    /**
+     * Machine wear per print hour, centavos.
+     */
+    wearPerHourMinor: number;
+    /**
+     * Fixed cost charged once per estimate.
+     */
+    fixedPerJobMinor: number;
+    /**
+     * Value the form pre-fills for a sale. The API never applies it by itself.
+     */
+    defaultMarginBasisPoints: number;
+    /**
+     * 0 for the first save, otherwise the version last seen (ADR 0021).
+     */
+    version: number;
 };
 
 export type GcodeAnalysis = {
@@ -1257,6 +1368,93 @@ export type UpdateProjectResponses = {
 };
 
 export type UpdateProjectResponse = UpdateProjectResponses[keyof UpdateProjectResponses];
+
+export type EstimateCostData = {
+    body?: CostEstimateRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/costs/estimates';
+};
+
+export type EstimateCostErrors = {
+    /**
+     * Invalid input, an unknown part, spool or printer, a spool material that differs from the part material (issue path "filamentId"), or amounts too large (path "quantity").
+     */
+    400: Problem;
+    /**
+     * The part, spool, printer or settings data is temporarily unavailable.
+     */
+    503: Problem;
+};
+
+export type EstimateCostError = EstimateCostErrors[keyof EstimateCostErrors];
+
+export type EstimateCostResponses = {
+    /**
+     * The estimate.
+     */
+    200: CostEstimate;
+};
+
+export type EstimateCostResponse = EstimateCostResponses[keyof EstimateCostResponses];
+
+export type GetCostSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/costs/settings';
+};
+
+export type GetCostSettingsErrors = {
+    /**
+     * The settings are temporarily unavailable.
+     */
+    503: Problem;
+};
+
+export type GetCostSettingsError = GetCostSettingsErrors[keyof GetCostSettingsErrors];
+
+export type GetCostSettingsResponses = {
+    /**
+     * The settings.
+     */
+    200: CostSettings;
+};
+
+export type GetCostSettingsResponse = GetCostSettingsResponses[keyof GetCostSettingsResponses];
+
+export type SaveCostSettingsData = {
+    body?: UpdateCostSettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/costs/settings';
+};
+
+export type SaveCostSettingsErrors = {
+    /**
+     * Invalid input or an unknown field.
+     */
+    400: Problem;
+    /**
+     * Stale version (issue path "version").
+     */
+    409: Problem;
+    /**
+     * The settings are temporarily unavailable.
+     */
+    503: Problem;
+};
+
+export type SaveCostSettingsError = SaveCostSettingsErrors[keyof SaveCostSettingsErrors];
+
+export type SaveCostSettingsResponses = {
+    /**
+     * The saved settings, with the new version.
+     */
+    200: CostSettings;
+};
+
+export type SaveCostSettingsResponse = SaveCostSettingsResponses[keyof SaveCostSettingsResponses];
 
 export type AnalyzeGcodeData = {
     body?: AnalyzeGcodeRequest;

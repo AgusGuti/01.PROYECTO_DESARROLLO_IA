@@ -45,6 +45,16 @@ describe('create', () => {
     });
   });
 
+  it('keeps a given power and stores a missing one as null', async () => {
+    const { service } = setup();
+
+    const withPower = await service.create({ ...newPrinter, powerWatts: 120 });
+    const without = await service.create({ ...newPrinter, name: 'Other' });
+
+    expect(withPower.printer.powerWatts).toBe(120);
+    expect(without.printer.powerWatts).toBeNull();
+  });
+
   it('keeps a given speed', async () => {
     const { service } = setup();
 
@@ -119,6 +129,7 @@ describe('create', () => {
         nozzle: newPrinter.nozzle,
         compatibleMaterials: ['PLA'],
         typicalSpeedMmS: null,
+        powerWatts: null,
         status: 'available',
         deletedAt: null,
         archivedAt: null,

@@ -121,6 +121,11 @@ describe('mergePrinter', () => {
   it('clears the speed when the patch says null and keeps it when the key is absent', () => {
     expect(mergePrinter(current, { typicalSpeedMmS: null }).typicalSpeedMmS).toBeNull();
     expect(mergePrinter(current, {}).typicalSpeedMmS).toBe(60);
+    expect(mergePrinter({ ...current, powerWatts: 100 }, {}).powerWatts).toBe(100);
+    expect(
+      mergePrinter({ ...current, powerWatts: 100 }, { powerWatts: null }).powerWatts,
+    ).toBeNull();
+    expect(mergePrinter(current, { powerWatts: 90 }).powerWatts).toBe(90);
   });
 });
 

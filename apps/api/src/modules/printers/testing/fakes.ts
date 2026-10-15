@@ -24,6 +24,7 @@ export const validFields: PrinterFields = {
   nozzle: { diameterMm: 0.4, material: 'brass' },
   compatibleMaterials: ['PLA', 'PETG'],
   typicalSpeedMmS: 60,
+  powerWatts: 150,
   status: 'available',
 };
 

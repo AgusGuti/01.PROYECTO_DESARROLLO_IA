@@ -15,6 +15,7 @@ export function toPrinterDto(printer: Printer): PrinterDto {
     nozzle: { diameterMm: printer.nozzle.diameterMm, material: printer.nozzle.material },
     compatibleMaterials: [...printer.compatibleMaterials],
     typicalSpeedMmS: printer.typicalSpeedMmS,
+    powerWatts: printer.powerWatts,
     status: printer.status,
     version: printer.version,
     archivedAt: printer.archivedAt === null ? null : printer.archivedAt.toISOString(),

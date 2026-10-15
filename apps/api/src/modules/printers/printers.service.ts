@@ -57,6 +57,7 @@ export interface NewPrinter {
   readonly nozzle: PrinterFields['nozzle'];
   readonly compatibleMaterials: PrinterFields['compatibleMaterials'];
   readonly typicalSpeedMmS?: number | undefined;
+  readonly powerWatts?: number | undefined;
   readonly status: PrinterStatus;
   /** The client agrees to reuse a deleted printer that holds the name. */
   readonly restoreIfDeleted?: boolean | undefined;
@@ -119,6 +120,7 @@ export function createPrintersService(deps: {
         nozzle: input.nozzle,
         compatibleMaterials: input.compatibleMaterials,
         typicalSpeedMmS: input.typicalSpeedMmS ?? null,
+        powerWatts: input.powerWatts ?? null,
         status: input.status,
       };
       assertMaterialsFitNozzle(fields);

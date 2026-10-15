@@ -27,6 +27,7 @@ interface StoredPrinter {
   nozzle: { diameterMm: NozzleDiameterMm; material: NozzleMaterial };
   compatibleMaterials: Material[];
   typicalSpeedMmS?: number | null;
+  powerWatts?: number | null;
   status: PrinterStatus;
   version: number;
   archivedAt: Date | null;
@@ -57,6 +58,8 @@ const printerSchema = new Schema(
     compatibleMaterials: { type: [String], required: true },
     // Absent when unset or cleared; the DTO shows null.
     typicalSpeedMmS: { type: Number },
+    // Absent when unset or cleared (ADR 0022); the DTO shows null.
+    powerWatts: { type: Number, min: 1, max: 5000 },
     status: { type: String, enum: PRINTER_STATUSES, required: true },
     version: { type: Number, required: true },
     // Both are written as an explicit null on create so "live" is always `deletedAt: null`.
@@ -89,6 +92,7 @@ function toPrinter(stored: StoredPrinter): Printer {
     nozzle: { diameterMm: stored.nozzle.diameterMm, material: stored.nozzle.material },
     compatibleMaterials: [...stored.compatibleMaterials],
     typicalSpeedMmS: stored.typicalSpeedMmS ?? null,
+    powerWatts: stored.powerWatts ?? null,
     status: stored.status,
     version: stored.version,
     archivedAt: stored.archivedAt ?? null,
@@ -110,7 +114,16 @@ function editableSet(fields: PrinterFields) {
     nozzle: { diameterMm: fields.nozzle.diameterMm, material: fields.nozzle.material },
     compatibleMaterials: [...fields.compatibleMaterials],
     ...(fields.typicalSpeedMmS === null ? {} : { typicalSpeedMmS: fields.typicalSpeedMmS }),
+    ...(fields.powerWatts === null ? {} : { powerWatts: fields.powerWatts }),
     status: fields.status,
+  };
+}
+
+/** Optional fields that are null on a restore must disappear from the revived document. */
+function unsetKeys(fields: PrinterFields): Record<string, 1> {
+  return {
+    ...(fields.typicalSpeedMmS === null ? { typicalSpeedMmS: 1 as const } : {}),
+    ...(fields.powerWatts === null ? { powerWatts: 1 as const } : {}),
   };
 }
 
@@ -226,7 +239,7 @@ export function createMongoPrinterRepository(): MongoPrinterRepository {
           { name: fields.name, deletedAt: { $ne: null } },
           {
             $set: { ...editableSet(fields), deletedAt: null, archivedAt: null, updatedAt: now },
-            ...(fields.typicalSpeedMmS === null ? { $unset: { typicalSpeedMmS: 1 } } : {}),
+            ...(Object.keys(unsetKeys(fields)).length === 0 ? {} : { $unset: unsetKeys(fields) }),
             $inc: { version: 1 },
           },
           { returnDocument: 'after', runValidators: true, collation: NAME_COLLATION },
@@ -300,13 +313,17 @@ export function createMongoPrinterRepository(): MongoPrinterRepository {
         if (typeof patch.typicalSpeedMmS === 'number') {
           set['typicalSpeedMmS'] = patch.typicalSpeedMmS;
         }
+        if (typeof patch.powerWatts === 'number') set['powerWatts'] = patch.powerWatts;
         if (patch.status !== undefined) set['status'] = patch.status;
+        const unset: Record<string, 1> = {};
+        if (patch.typicalSpeedMmS === null) unset['typicalSpeedMmS'] = 1;
+        if (patch.powerWatts === null) unset['powerWatts'] = 1;
 
         const stored = await PrinterModel.findOneAndUpdate(
           { _id: id, version, deletedAt: null },
           {
             $set: set,
-            ...(patch.typicalSpeedMmS === null ? { $unset: { typicalSpeedMmS: 1 } } : {}),
+            ...(Object.keys(unset).length === 0 ? {} : { $unset: unset }),
             $inc: { version: 1 },
           },
           { returnDocument: 'after', runValidators: true },

@@ -107,7 +107,7 @@ export function registerPrintersPaths(registry: OpenAPIRegistry): void {
     summary: 'Edit a printer',
     description:
       'Send the `version` you last saw plus the fields to change. Nested objects and ' +
-      '`compatibleMaterials` are replaced whole; `typicalSpeedMmS: null` clears the speed.',
+      '`compatibleMaterials` are replaced whole; `typicalSpeedMmS: null` and `powerWatts: null` clear those values.',
     request: {
       params: printerIdParamsSchema,
       body: { content: { 'application/json': { schema: updatePrinterSchema } } },

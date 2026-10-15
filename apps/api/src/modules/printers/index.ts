@@ -32,6 +32,19 @@ export async function assertPrintersIndexes(): Promise<void> {
   }
 }
 
+/**
+ * Builds the costs module's `PrinterReader` (ADR 0017). A printer pending removal (archived) is
+ * still found, because it exists until it is deleted; a deleted one is not.
+ */
+export function createPrinterCostReader(
+  repository: Pick<PrinterRepository, 'findLiveById'> = createMongoPrinterRepository(),
+): (id: string) => Promise<{ id: string; powerWatts: number | null } | null> {
+  return async (id) => {
+    const printer = await repository.findLiveById(id);
+    return printer === null ? null : { id: printer.id, powerWatts: printer.powerWatts };
+  };
+}
+
 // CU07 (the print queue) will implement this check and finish the archived -> deleted step
 // (ADR 0006). Until then no printer has assignments, so only the idle-delete path is reachable.
 const noAssignmentsYet: PrinterUsageCheck = () => Promise.resolve(false);
