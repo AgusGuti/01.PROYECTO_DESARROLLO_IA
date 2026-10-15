@@ -738,6 +738,22 @@ describe('PartFormPage (import from G-code)', () => {
     expect(page.byId('field-weight')?.value).toBe('30');
   });
 
+  it.each([
+    ['field-dim-y', '95', 'badge-dimensions'],
+    ['field-hours', '2', 'badge-time'],
+    ['field-layer', '0,16', 'badge-layerHeight'],
+    ['field-printer', 'Otra', 'badge-printer'],
+  ])('clears the badge of %s when the user edits it', async (fieldId, value, badgeId) => {
+    const page = await render();
+    await page.importCura();
+    expect(page.element.querySelector(`#${badgeId}`)).not.toBeNull();
+
+    await page.type(fieldId, value);
+
+    expect(page.element.querySelector(`#${badgeId}`)).toBeNull();
+    expect(page.element.querySelectorAll('.badge')).toHaveLength(4);
+  });
+
   it('keeps every prefilled value editable and saves the edited value', async () => {
     const page = await render();
     await page.importCura();
@@ -925,6 +941,16 @@ describe('PartFormPage (import from G-code)', () => {
 
     expect(page.analyses[0]?.head).toHaveLength(65_536);
     expect(page.analyses[0]?.head).toBe('a'.repeat(65_536));
+  });
+
+  it('asks the browser for only the first 65536 characters instead of reading the whole file', async () => {
+    const page = await render();
+    const file = new File(['a'.repeat(200_000)], 'grande.gcode');
+    const slice = vi.spyOn(file, 'slice');
+
+    await page.selectFile(file);
+
+    expect(slice).toHaveBeenCalledExactlyOnceWith(0, 65_536);
   });
 
   it('sends a file shorter than the limit whole and untrimmed', async () => {

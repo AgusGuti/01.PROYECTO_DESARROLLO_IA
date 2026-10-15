@@ -145,5 +145,7 @@ const MAX_FILE_NAME_CODE_POINTS = 255;
  */
 export function toSourceFileName(name: string): string {
   const cleaned = Array.from(name.replace(/\p{Cc}/gu, '')).slice(0, MAX_FILE_NAME_CODE_POINTS);
-  return cleaned.length === 0 ? 'archivo.gcode' : cleaned.join('');
+  // The server trims the name and rejects an empty one, which would make the whole save fail.
+  const text = cleaned.join('').trim();
+  return text.length === 0 ? 'archivo.gcode' : text;
 }
