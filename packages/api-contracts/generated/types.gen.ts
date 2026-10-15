@@ -303,6 +303,125 @@ export type UpdatePartRequest = {
     source?: PartSourceInput;
 };
 
+export type PartUsage = {
+    /**
+     * All live projects that use the part.
+     */
+    total: number;
+    /**
+     * At most 50, sorted by name then id.
+     */
+    projects: Array<{
+        id: string;
+        name: string;
+        quantity: number;
+    }>;
+};
+
+export type Project = {
+    id: string;
+    name: string;
+    description: string | null;
+    /**
+     * From the least to the most urgent: low, normal, high, urgent.
+     */
+    priority: 'low' | 'normal' | 'high' | 'urgent';
+    /**
+     * YYYY-MM-DD, a calendar day (no time zone), or null.
+     */
+    deadline: string | null;
+    items: Array<ProjectItem>;
+    /**
+     * Send this back when editing.
+     */
+    version: number;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type ProjectItem = {
+    partId: string;
+    quantity: number;
+    /**
+     * The part as it is now, or null when it is no longer live ("deleted").
+     */
+    part: {
+        name: string;
+        material: Material;
+    } | null;
+};
+
+export type CreateProjectRequest = {
+    name: string;
+    description?: string;
+    /**
+     * From the least to the most urgent: low, normal, high, urgent.
+     */
+    priority?: 'low' | 'normal' | 'high' | 'urgent';
+    /**
+     * YYYY-MM-DD, a calendar day (no time zone), years 2000..2099. A past day is allowed.
+     */
+    deadline?: string;
+    /**
+     * Up to 100 lines, each part at most once, every part must exist. Replaced whole on edit.
+     */
+    items?: Array<ProjectItemInput>;
+};
+
+export type ProjectItemInput = {
+    partId: string;
+    quantity: number;
+};
+
+export type ProjectList = {
+    items: Array<ProjectSummary>;
+    page: number;
+    pageSize: number;
+    total: number;
+};
+
+export type ProjectSummary = {
+    id: string;
+    name: string;
+    description: string | null;
+    /**
+     * From the least to the most urgent: low, normal, high, urgent.
+     */
+    priority: 'low' | 'normal' | 'high' | 'urgent';
+    /**
+     * YYYY-MM-DD, a calendar day (no time zone), or null.
+     */
+    deadline: string | null;
+    /**
+     * Number of lines.
+     */
+    itemCount: number;
+    /**
+     * Sum of the quantities.
+     */
+    unitCount: number;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type UpdateProjectRequest = {
+    version: number;
+    name?: string;
+    description?: string | null;
+    /**
+     * From the least to the most urgent: low, normal, high, urgent.
+     */
+    priority?: 'low' | 'normal' | 'high' | 'urgent';
+    /**
+     * YYYY-MM-DD, a calendar day (no time zone), years 2000..2099. A past day is allowed. null clears it.
+     */
+    deadline?: string | null;
+    /**
+     * Up to 100 lines, each part at most once, every part must exist. Replaced whole on edit.
+     */
+    items?: Array<ProjectItemInput>;
+};
+
 export type GcodeAnalysis = {
     slicer: 'cura';
     estimatedPrintSeconds: number;
@@ -828,19 +947,32 @@ export type DeletePartData = {
     path: {
         id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * true confirms the removal of a part that projects use: it is pulled from them first.
+         */
+        removeFromProjects?: 'true' | 'false';
+    };
     url: '/api/v1/parts/{id}';
 };
 
 export type DeletePartErrors = {
     /**
-     * Malformed id.
+     * Malformed id or unknown query parameter.
      */
     400: Problem;
     /**
      * No such part, or it was already removed.
      */
     404: Problem;
+    /**
+     * Live projects use the part and removal was not confirmed.
+     */
+    409: Problem;
+    /**
+     * The project data is temporarily unavailable; nothing was removed.
+     */
+    503: Problem;
 };
 
 export type DeletePartError = DeletePartErrors[keyof DeletePartErrors];
@@ -919,6 +1051,212 @@ export type UpdatePartResponses = {
 };
 
 export type UpdatePartResponse = UpdatePartResponses[keyof UpdatePartResponses];
+
+export type GetPartUsageData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/parts/{id}/usage';
+};
+
+export type GetPartUsageErrors = {
+    /**
+     * Malformed id.
+     */
+    400: Problem;
+    /**
+     * No such part, or it was removed.
+     */
+    404: Problem;
+    /**
+     * The project data is temporarily unavailable.
+     */
+    503: Problem;
+};
+
+export type GetPartUsageError = GetPartUsageErrors[keyof GetPartUsageErrors];
+
+export type GetPartUsageResponses = {
+    /**
+     * The true total and at most 50 projects, sorted by name then id.
+     */
+    200: PartUsage;
+};
+
+export type GetPartUsageResponse = GetPartUsageResponses[keyof GetPartUsageResponses];
+
+export type ListProjectsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        page?: number;
+        pageSize?: number;
+        /**
+         * From the least to the most urgent: low, normal, high, urgent.
+         */
+        priority?: 'low' | 'normal' | 'high' | 'urgent';
+        /**
+         * A project without a deadline comes last in both directions when sorting by it.
+         */
+        sort?: 'deadline' | 'priority' | 'name' | 'createdAt';
+        order?: 'asc' | 'desc';
+    };
+    url: '/api/v1/projects';
+};
+
+export type ListProjectsErrors = {
+    /**
+     * Unknown or invalid query parameter.
+     */
+    400: Problem;
+};
+
+export type ListProjectsError = ListProjectsErrors[keyof ListProjectsErrors];
+
+export type ListProjectsResponses = {
+    /**
+     * One page of project summaries. A page past the last one is empty.
+     */
+    200: ProjectList;
+};
+
+export type ListProjectsResponse = ListProjectsResponses[keyof ListProjectsResponses];
+
+export type CreateProjectData = {
+    body?: CreateProjectRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/projects';
+};
+
+export type CreateProjectErrors = {
+    /**
+     * Invalid input, an unknown field, a repeated part or a part that does not exist.
+     */
+    400: Problem;
+    /**
+     * The part data is temporarily unavailable.
+     */
+    503: Problem;
+};
+
+export type CreateProjectError = CreateProjectErrors[keyof CreateProjectErrors];
+
+export type CreateProjectResponses = {
+    /**
+     * Created. The Location header points to the new project.
+     */
+    201: Project;
+};
+
+export type CreateProjectResponse = CreateProjectResponses[keyof CreateProjectResponses];
+
+export type DeleteProjectData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/projects/{id}';
+};
+
+export type DeleteProjectErrors = {
+    /**
+     * Malformed id.
+     */
+    400: Problem;
+    /**
+     * No such project, or it was already removed.
+     */
+    404: Problem;
+};
+
+export type DeleteProjectError = DeleteProjectErrors[keyof DeleteProjectErrors];
+
+export type DeleteProjectResponses = {
+    /**
+     * Removed.
+     */
+    204: void;
+};
+
+export type DeleteProjectResponse = DeleteProjectResponses[keyof DeleteProjectResponses];
+
+export type GetProjectData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/projects/{id}';
+};
+
+export type GetProjectErrors = {
+    /**
+     * Malformed id.
+     */
+    400: Problem;
+    /**
+     * No such project, or it was removed.
+     */
+    404: Problem;
+    /**
+     * The part data is temporarily unavailable.
+     */
+    503: Problem;
+};
+
+export type GetProjectError = GetProjectErrors[keyof GetProjectErrors];
+
+export type GetProjectResponses = {
+    /**
+     * The project.
+     */
+    200: Project;
+};
+
+export type GetProjectResponse = GetProjectResponses[keyof GetProjectResponses];
+
+export type UpdateProjectData = {
+    body?: UpdateProjectRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/projects/{id}';
+};
+
+export type UpdateProjectErrors = {
+    /**
+     * Invalid input, an unknown field, a repeated part or a part that does not exist.
+     */
+    400: Problem;
+    /**
+     * No such project, or it was removed.
+     */
+    404: Problem;
+    /**
+     * Stale version (issue path "version").
+     */
+    409: Problem;
+    /**
+     * The part data is temporarily unavailable.
+     */
+    503: Problem;
+};
+
+export type UpdateProjectError = UpdateProjectErrors[keyof UpdateProjectErrors];
+
+export type UpdateProjectResponses = {
+    /**
+     * The updated project, with its new version.
+     */
+    200: Project;
+};
+
+export type UpdateProjectResponse = UpdateProjectResponses[keyof UpdateProjectResponses];
 
 export type AnalyzeGcodeData = {
     body?: AnalyzeGcodeRequest;

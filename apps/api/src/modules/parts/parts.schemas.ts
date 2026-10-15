@@ -131,6 +131,20 @@ export const listPartsQuerySchema = z.strictObject({
   order: z.enum(['asc', 'desc']).default('asc'),
 });
 
+export const removePartQuerySchema = z.strictObject({
+  removeFromProjects: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true')
+    .openapi({
+      type: 'string',
+      enum: ['true', 'false'],
+      default: 'false',
+      description:
+        'true confirms the removal of a part that projects use: it is pulled from them first.',
+    }),
+});
+
 const timestamp = z.iso.datetime().openapi({ example: '2026-01-01T12:00:00.000Z' });
 
 const gcodeSourceSchema = z
@@ -175,8 +189,18 @@ export const partListSchema = z
   })
   .openapi('PartList');
 
+export const partUsageSchema = z
+  .object({
+    total: z.number().int().openapi({ description: 'All live projects that use the part.' }),
+    projects: z
+      .array(z.object({ id: z.string(), name: z.string(), quantity: z.number().int() }))
+      .openapi({ description: 'At most 50, sorted by name then id.' }),
+  })
+  .openapi('PartUsage');
+
 export type CreatePartInput = z.infer<typeof createPartSchema>;
 export type UpdatePartInput = z.infer<typeof updatePartSchema>;
 export type ListPartsInput = z.infer<typeof listPartsQuerySchema>;
 export type PartDto = z.infer<typeof partSchema>;
 export type PartListDto = z.infer<typeof partListSchema>;
+export type PartUsageDto = z.infer<typeof partUsageSchema>;

@@ -65,6 +65,24 @@ export const routes: Routes = [
       import('./features/parts/part-form-page').then((module) => module.PartFormPage),
   },
   {
+    path: 'proyectos',
+    title: 'Proyectos · Print3D Planner',
+    loadComponent: () =>
+      import('./features/projects/projects-list-page').then((module) => module.ProjectsListPage),
+  },
+  {
+    path: 'proyectos/nuevo',
+    title: 'Nuevo proyecto · Print3D Planner',
+    loadComponent: () =>
+      import('./features/projects/project-form-page').then((module) => module.ProjectFormPage),
+  },
+  {
+    path: 'proyectos/:id/editar',
+    title: 'Editar proyecto · Print3D Planner',
+    loadComponent: () =>
+      import('./features/projects/project-form-page').then((module) => module.ProjectFormPage),
+  },
+  {
     path: '**',
     title: 'Página no encontrada · Print3D Planner',
     loadComponent: () =>

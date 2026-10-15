@@ -28,6 +28,7 @@
     "db:seed": "npm run db:seed -w @print3d/api",
     "db:seed:filaments": "npm run db:seed:filaments -w @print3d/api",
     "db:seed:parts": "npm run db:seed:parts -w @print3d/api",
+    "db:seed:projects": "npm run db:seed:projects -w @print3d/api",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings 0",

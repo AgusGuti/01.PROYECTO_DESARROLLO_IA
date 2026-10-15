@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { AppError } from '../../shared/errors/app-error.js';
 import { createPartsService, type NewPart } from './parts.service.js';
-import { createFakePartRepository, createTestClock } from './testing/fakes.js';
+import { createFakePartRepository, createFakePartUsage, createTestClock } from './testing/fakes.js';
 
 function setup() {
   const repository = createFakePartRepository();
   const clock = createTestClock();
-  const service = createPartsService({ repository, clock });
-  return { repository, clock, service };
+  const partUsage = createFakePartUsage();
+  const service = createPartsService({ repository, partUsage, clock });
+  return { repository, clock, service, partUsage };
 }
 
 const newPart: NewPart = {
@@ -246,10 +247,156 @@ describe('remove', () => {
     expect((await failureOf(service.get(part.id))).code).toBe('not_found');
   });
 
-  it('answers 404 for a missing part', async () => {
-    const { service } = setup();
+  it('answers 404 for a missing part and does not pull anything', async () => {
+    const { service, partUsage } = setup();
 
     expect((await failureOf(service.remove('0'.repeat(24)))).code).toBe('not_found');
+    expect(
+      (await failureOf(service.remove('0'.repeat(24), { removeFromProjects: true }))).code,
+    ).toBe('not_found');
+    expect(partUsage.calls).toEqual([]);
+  });
+
+  describe('when projects use the part', () => {
+    const used = {
+      total: 2,
+      projects: [{ id: 'a'.repeat(24), name: 'SECRET-NAME', quantity: 3 }],
+    };
+
+    it('refuses with a fixed 409 that carries no project name or count, and deletes nothing', async () => {
+      const { service, repository, partUsage } = setup();
+      const part = repository.seed();
+      partUsage.report = used;
+
+      const error = await failureOf(service.remove(part.id));
+
+      expect(error.code).toBe('conflict');
+      expect(error.message).toBe('The part is used by one or more projects.');
+      expect(error.issues).toEqual([
+        { path: 'projects', message: 'Remove the part from the projects first.' },
+      ]);
+      expect(repository.stored.get(part.id)).toMatchObject({ deletedAt: null, version: 1 });
+      expect(partUsage.calls.some((call) => call.startsWith('removeFromProjects'))).toBe(false);
+    });
+
+    it('with the flag, pulls the part from the projects and only then deletes it', async () => {
+      const { service, repository, partUsage } = setup();
+      const part = repository.seed();
+      partUsage.report = used;
+      const order: string[] = [];
+      const pull = partUsage.removeFromProjects.bind(partUsage);
+      partUsage.removeFromProjects = async (id, now) => {
+        order.push('pull');
+        return pull(id, now);
+      };
+      const softDelete = repository.softDelete.bind(repository);
+      repository.softDelete = async (id, now) => {
+        order.push('delete');
+        return softDelete(id, now);
+      };
+
+      await service.remove(part.id, { removeFromProjects: true });
+
+      expect(order).toEqual(['pull', 'delete']);
+      expect(repository.stored.get(part.id)?.deletedAt).not.toBeNull();
+    });
+
+    it('leaves the part alive and answers 503 when the usage check fails', async () => {
+      const { service, repository, partUsage } = setup();
+      const part = repository.seed();
+      partUsage.failWith = new Error('connection refused');
+
+      const plain = await failureOf(service.remove(part.id));
+      const confirmed = await failureOf(service.remove(part.id, { removeFromProjects: true }));
+
+      expect([plain.code, confirmed.code]).toEqual(['service_unavailable', 'service_unavailable']);
+      expect(repository.stored.get(part.id)?.deletedAt).toBeNull();
+    });
+  });
+
+  it('deletes an unused part without pulling when the flag is false or absent', async () => {
+    const { service, repository, partUsage } = setup();
+    const part = repository.seed();
+
+    await service.remove(part.id, { removeFromProjects: false });
+
+    expect(repository.stored.get(part.id)?.deletedAt).not.toBeNull();
+    expect(partUsage.calls.some((call) => call.startsWith('removeFromProjects'))).toBe(false);
+  });
+
+  it('with the flag and an unused part simply deletes it', async () => {
+    const { service, repository } = setup();
+    const part = repository.seed();
+
+    await service.remove(part.id, { removeFromProjects: true });
+
+    expect(repository.stored.get(part.id)?.deletedAt).not.toBeNull();
+  });
+
+  it('answers 404 when the part vanishes after the pull', async () => {
+    const { service, repository, partUsage } = setup();
+    const part = repository.seed();
+    const original = partUsage.removeFromProjects.bind(partUsage);
+    partUsage.removeFromProjects = async (id, now) => {
+      await repository.softDelete(id, now);
+      return original(id, now);
+    };
+
+    const error = await failureOf(service.remove(part.id, { removeFromProjects: true }));
+
+    expect(error.code).toBe('not_found');
+  });
+
+  it('a retry after a failed delete finds the part still live and succeeds', async () => {
+    const { service, repository, partUsage } = setup();
+    const part = repository.seed();
+    const softDelete = repository.softDelete.bind(repository);
+    repository.softDelete = () => Promise.reject(new Error('lost connection'));
+
+    await service.remove(part.id, { removeFromProjects: true }).catch(() => undefined);
+    repository.softDelete = softDelete;
+    await service.remove(part.id, { removeFromProjects: true });
+
+    expect(repository.stored.get(part.id)?.deletedAt).not.toBeNull();
+    expect(partUsage.calls.filter((call) => call.startsWith('removeFromProjects'))).toHaveLength(2);
+  });
+});
+
+describe('usage', () => {
+  it('asks for at most 50 projects and returns the true total', async () => {
+    const { service, repository, partUsage } = setup();
+    const part = repository.seed();
+    partUsage.report = {
+      total: 120,
+      projects: Array.from({ length: 60 }, (_v, i) => ({
+        id: i.toString(16).padStart(24, '0'),
+        name: `P${String(i)}`,
+        quantity: 1,
+      })),
+    };
+
+    const usage = await service.usage(part.id);
+
+    expect(partUsage.calls).toEqual([`listProjects:${part.id}:50`]);
+    expect(usage.total).toBe(120);
+    expect(usage.projects).toHaveLength(50);
+  });
+
+  it('answers 404 for a missing or deleted part without asking the projects', async () => {
+    const { service, repository, partUsage } = setup();
+    const gone = repository.seed({ deletedAt: new Date() });
+
+    expect((await failureOf(service.usage('0'.repeat(24)))).code).toBe('not_found');
+    expect((await failureOf(service.usage(gone.id))).code).toBe('not_found');
+    expect(partUsage.calls).toEqual([]);
+  });
+
+  it('answers 503 when the projects cannot be asked', async () => {
+    const { service, repository, partUsage } = setup();
+    const part = repository.seed();
+    partUsage.failWith = new Error('boom');
+
+    expect((await failureOf(service.usage(part.id))).code).toBe('service_unavailable');
   });
 });
 

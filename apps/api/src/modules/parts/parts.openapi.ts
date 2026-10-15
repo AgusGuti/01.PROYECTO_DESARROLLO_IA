@@ -7,6 +7,8 @@ import {
   partIdParamsSchema,
   partListSchema,
   partSchema,
+  partUsageSchema,
+  removePartQuerySchema,
   updatePartSchema,
 } from './parts.schemas.js';
 
@@ -101,12 +103,36 @@ export function registerPartsPaths(registry: OpenAPIRegistry): void {
     operationId: 'deletePart',
     tags: ['Parts'],
     summary: 'Remove a part',
-    description: 'Logical removal: the document is kept but no longer listed or readable.',
-    request: { params: partIdParamsSchema },
+    description:
+      'Logical removal: the document is kept but no longer listed or readable. A part that ' +
+      'live projects use is refused with 409 (issue path "projects"); ask ' +
+      '`GET /parts/{id}/usage` and repeat with `removeFromProjects=true` to pull it from ' +
+      'those projects first and then remove it.',
+    request: { params: partIdParamsSchema, query: removePartQuerySchema },
     responses: {
       204: { description: 'Removed.' },
-      400: problem('Malformed id.'),
+      400: problem('Malformed id or unknown query parameter.'),
       404: problem('No such part, or it was already removed.'),
+      409: problem('Live projects use the part and removal was not confirmed.'),
+      503: problem('The project data is temporarily unavailable; nothing was removed.'),
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/api/v1/parts/{id}/usage',
+    operationId: 'getPartUsage',
+    tags: ['Parts'],
+    summary: 'Which live projects use a part',
+    request: { params: partIdParamsSchema },
+    responses: {
+      200: {
+        description: 'The true total and at most 50 projects, sorted by name then id.',
+        content: { 'application/json': { schema: partUsageSchema } },
+      },
+      400: problem('Malformed id.'),
+      404: problem('No such part, or it was removed.'),
+      503: problem('The project data is temporarily unavailable.'),
     },
   });
 }

@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
-import type { Part, PartList } from '@print3d/api-contracts';
+import type { Part, PartList, PartUsage } from '@print3d/api-contracts';
 import { Subject } from 'rxjs';
 import { vi } from 'vitest';
 import { ApiError } from '../../core/api/api-error';
@@ -42,16 +42,26 @@ function manyParts(count: number): Part[] {
 
 async function render() {
   const pending: { query: ListPartsQuery; reply: Subject<PartList> }[] = [];
-  const removals: { id: string; reply: Subject<void> }[] = [];
+  const removals: {
+    id: string;
+    options?: { removeFromProjects?: boolean };
+    reply: Subject<void>;
+  }[] = [];
+  const usages: { id: string; reply: Subject<PartUsage> }[] = [];
   const api = {
     list: vi.fn((query: ListPartsQuery) => {
       const reply = new Subject<PartList>();
       pending.push({ query, reply });
       return reply;
     }),
-    remove: vi.fn((id: string) => {
+    remove: vi.fn((id: string, options?: { removeFromProjects?: boolean }) => {
       const reply = new Subject<void>();
-      removals.push({ id, reply });
+      removals.push({ id, ...(options === undefined ? {} : { options }), reply });
+      return reply;
+    }),
+    usage: vi.fn((id: string) => {
+      const reply = new Subject<PartUsage>();
+      usages.push({ id, reply });
       return reply;
     }),
     get: vi.fn(() => new Subject<Part>()),
@@ -70,6 +80,7 @@ async function render() {
     api,
     pending,
     removals,
+    usages,
     text: () => element.textContent,
     live: () => element.querySelector('[aria-live="polite"]')?.textContent ?? '',
     button: (label: string) =>
@@ -534,6 +545,209 @@ describe('PartsListPage', () => {
       await page.fixture.whenStable();
 
       expect(page.pending[2]?.query.page).toBe(1);
+    });
+
+    describe('when projects use the part', () => {
+      const inUseConflict = () =>
+        new ApiError(
+          409,
+          'conflict',
+          'Los datos cambiaron.',
+          [{ path: 'projects', message: 'm' }],
+          null,
+          {
+            detail: SENTINEL,
+          },
+        );
+      const usage: PartUsage = {
+        total: 2,
+        projects: [
+          { id: 'a', name: 'Taller', quantity: 3 },
+          { id: 'b', name: 'Oficina', quantity: 1 },
+        ],
+      };
+
+      /** Opens the dialog, presses Eliminar and lets the API answer 409 and then the usage. */
+      async function reachInUse(found: PartUsage = usage) {
+        const context = await withOne();
+        await context.page.click(context.dialogButton('Eliminar'));
+        context.page.removals[0]?.reply.error(inUseConflict());
+        await context.page.fixture.whenStable();
+        context.page.usages[0]?.reply.next(found);
+        context.page.usages[0]?.reply.complete();
+        await context.page.fixture.whenStable();
+        return context;
+      }
+
+      it('asks for the usage after a 409 and switches the same dialog to in-use mode', async () => {
+        const { page, dialog } = await reachInUse();
+
+        expect(page.api.usage).toHaveBeenCalledExactlyOnceWith('p1');
+        expect(page.element.querySelectorAll('dialog')).toHaveLength(1);
+        expect(dialog()?.querySelector('h2')?.textContent).toBe('La pieza está en uso');
+        expect(dialog()?.textContent).toContain(
+          'La pieza «Soporte de cable» se usa en 2 proyectos:',
+        );
+        expect(
+          Array.from(dialog()?.querySelectorAll('li') ?? []).map((li) => li.textContent),
+        ).toEqual(['Taller (3 u.)', 'Oficina (1 u.)']);
+        expect(dialog()?.textContent).toContain('se quitará de esos proyectos');
+        expect(page.element.innerHTML).not.toContain(SENTINEL);
+        expect(page.pending).toHaveLength(1);
+      });
+
+      it('shows how many projects are not listed when the total exceeds the list', async () => {
+        const { dialog } = await reachInUse({ total: 52, projects: usage.projects });
+
+        expect(dialog()?.textContent).toContain('y 50 más');
+      });
+
+      it('keeps the dialog open with the focus on Cancelar and the buttons enabled', async () => {
+        const { dialogButton } = await reachInUse();
+
+        expect(dialogButton('Cancelar')?.disabled).toBe(false);
+        expect(dialogButton('Quitar de los proyectos y eliminar')?.disabled).toBe(false);
+        expect(document.activeElement).toBe(dialogButton('Cancelar'));
+      });
+
+      it('sends the confirmed removal and announces how many projects it was removed from', async () => {
+        const { page, dialogButton } = await reachInUse();
+
+        await page.click(dialogButton('Quitar de los proyectos y eliminar'));
+        expect(page.removals[1]).toMatchObject({ id: 'p1', options: { removeFromProjects: true } });
+        page.removals[1]?.reply.next();
+        page.removals[1]?.reply.complete();
+        await page.fixture.whenStable();
+        expect(page.pending).toHaveLength(2);
+        await page.answer(1, pageOf([]));
+
+        expect(page.live()).toContain('Pieza eliminada y quitada de 2 proyectos.');
+        expect(page.element.querySelector('dialog')).toBeNull();
+        expect(document.activeElement).toBe(page.element.querySelector('h1'));
+      });
+
+      it('sends the confirmation once even when the button is pressed twice', async () => {
+        const { page, dialogButton } = await reachInUse();
+        const confirm = dialogButton('Quitar de los proyectos y eliminar');
+
+        confirm?.click();
+        confirm?.click();
+        await page.fixture.whenStable();
+
+        expect(page.removals).toHaveLength(2);
+        expect(dialogButton('Eliminando…')?.disabled).toBe(true);
+      });
+
+      it('cancels without sending anything else and returns the focus to the trigger', async () => {
+        const { page, trigger, dialog, dialogButton } = await reachInUse();
+
+        await page.click(dialogButton('Cancelar'));
+
+        expect(dialog()).toBeNull();
+        expect(page.removals).toHaveLength(1);
+        expect(document.activeElement).toBe(trigger);
+      });
+
+      it('opens the plain dialog again for the next part after a cancel', async () => {
+        const { page, dialog, dialogButton } = await reachInUse();
+        await page.click(dialogButton('Cancelar'));
+
+        await page.click(page.button('Eliminar'));
+
+        expect(dialog()?.querySelector('h2')?.textContent).toBe('Eliminar pieza');
+      });
+
+      it('deletes directly with the confirmation when the usage is already empty', async () => {
+        const { page } = await reachInUse({ total: 0, projects: [] });
+
+        expect(page.removals[1]).toMatchObject({ id: 'p1', options: { removeFromProjects: true } });
+        page.removals[1]?.reply.next();
+        page.removals[1]?.reply.complete();
+        await page.fixture.whenStable();
+
+        expect(page.live()).toContain('La pieza se eliminó correctamente.');
+        expect(page.element.querySelector('dialog')).toBeNull();
+      });
+
+      it('says the part no longer exists when the usage answers 404', async () => {
+        const { page, dialog } = await withOne().then(async (context) => {
+          await context.page.click(context.dialogButton('Eliminar'));
+          context.page.removals[0]?.reply.error(inUseConflict());
+          await context.page.fixture.whenStable();
+          context.page.usages[0]?.reply.error(new ApiError(404, 'not_found', 'No existe.'));
+          await context.page.fixture.whenStable();
+          return context;
+        });
+
+        expect(page.live()).toContain('La pieza ya no existe.');
+        expect(dialog()).toBeNull();
+        expect(page.pending).toHaveLength(2);
+      });
+
+      it('says the part no longer exists when the confirmed removal answers 404', async () => {
+        const { page, dialogButton } = await reachInUse();
+
+        await page.click(dialogButton('Quitar de los proyectos y eliminar'));
+        page.removals[1]?.reply.error(new ApiError(404, 'not_found', 'No existe.'));
+        await page.fixture.whenStable();
+
+        expect(page.live()).toContain('La pieza ya no existe.');
+        expect(page.pending).toHaveLength(2);
+      });
+
+      it('shows a generic error and reloads when a 409 is not about projects', async () => {
+        const { page, dialog } = await withOne().then(async (context) => {
+          await context.page.click(context.dialogButton('Eliminar'));
+          context.page.removals[0]?.reply.error(
+            new ApiError(409, 'conflict', 'x', [{ path: 'version', message: 'm' }], null, {
+              detail: SENTINEL,
+            }),
+          );
+          await context.page.fixture.whenStable();
+          return context;
+        });
+
+        expect(page.api.usage).not.toHaveBeenCalled();
+        expect(page.live()).toContain('No se pudo eliminar la pieza. Intentá de nuevo.');
+        expect(dialog()).toBeNull();
+        expect(page.pending).toHaveLength(2);
+        expect(page.element.innerHTML).not.toContain(SENTINEL);
+      });
+
+      it('shows a generic error and reloads when the usage cannot be read', async () => {
+        const { page, dialog } = await withOne().then(async (context) => {
+          await context.page.click(context.dialogButton('Eliminar'));
+          context.page.removals[0]?.reply.error(inUseConflict());
+          await context.page.fixture.whenStable();
+          context.page.usages[0]?.reply.error(
+            new ApiError(500, 'internal', 'Ocurrió un error inesperado.', [], null, {
+              detail: SENTINEL,
+            }),
+          );
+          await context.page.fixture.whenStable();
+          return context;
+        });
+
+        expect(page.live()).toContain('No se pudo eliminar la pieza. Intentá de nuevo.');
+        expect(dialog()).toBeNull();
+        expect(page.pending).toHaveLength(2);
+        expect(page.element.innerHTML).not.toContain(SENTINEL);
+      });
+
+      it('shows a generic error and reloads when the confirmed removal fails', async () => {
+        const { page, dialogButton } = await reachInUse();
+
+        await page.click(dialogButton('Quitar de los proyectos y eliminar'));
+        page.removals[1]?.reply.error(
+          new ApiError(503, 'unavailable', 'No disponible.', [], null, { detail: SENTINEL }),
+        );
+        await page.fixture.whenStable();
+
+        expect(page.live()).toContain('No se pudo eliminar la pieza. Intentá de nuevo.');
+        expect(page.element.querySelector('dialog')).toBeNull();
+        expect(page.pending).toHaveLength(2);
+        expect(page.element.innerHTML).not.toContain(SENTINEL);
+      });
     });
   });
 

@@ -6,6 +6,7 @@ import type {
   Part,
   PartList,
   PartSource,
+  PartUsage,
   UpdatePartRequest,
 } from '@print3d/api-contracts';
 import { map, type Observable } from 'rxjs';
@@ -77,6 +78,21 @@ export function isPartList(value: unknown): value is PartList {
   );
 }
 
+export function isPartUsage(value: unknown): value is PartUsage {
+  return (
+    isRecord(value) &&
+    isWholeNumber(value['total']) &&
+    Array.isArray(value['projects']) &&
+    value['projects'].every(
+      (project: unknown) =>
+        isRecord(project) &&
+        typeof project['id'] === 'string' &&
+        typeof project['name'] === 'string' &&
+        isWholeNumber(project['quantity']),
+    )
+  );
+}
+
 export function narrow<T>(guard: (value: unknown) => value is T): (body: unknown) => T {
   return (body) => {
     if (!guard(body)) {
@@ -124,8 +140,21 @@ export class PartsApi {
     return this.http.patch<unknown>(this.itemUrl(id), body).pipe(map(narrow(isPart)));
   }
 
-  /** Answers 204. A second DELETE answers 404: removal is logical but final for the client. */
-  remove(id: string): Observable<void> {
-    return this.http.delete<unknown>(this.itemUrl(id)).pipe(map(() => undefined));
+  /**
+   * Answers 204. A second DELETE answers 404: removal is logical but final for the client. A part
+   * that live projects use answers 409 unless `removeFromProjects` is true (ADR 0018); the flag is
+   * sent only when true.
+   */
+  remove(id: string, options: { readonly removeFromProjects?: boolean } = {}): Observable<void> {
+    const params =
+      options.removeFromProjects === true
+        ? new HttpParams().set('removeFromProjects', 'true')
+        : new HttpParams();
+    return this.http.delete<unknown>(this.itemUrl(id), { params }).pipe(map(() => undefined));
+  }
+
+  /** The live projects that use the part: at most 50 of them, with the true total (ADR 0018). */
+  usage(id: string): Observable<PartUsage> {
+    return this.http.get<unknown>(`${this.itemUrl(id)}/usage`).pipe(map(narrow(isPartUsage)));
   }
 }

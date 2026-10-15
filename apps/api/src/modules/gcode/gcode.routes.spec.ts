@@ -36,6 +36,7 @@ function setup() {
     list: track('list'),
     update: track('update'),
     softDelete: track('softDelete'),
+    findLiveByIds: track('findLiveByIds'),
   };
   const app = createTestApp({ env: { RATE_LIMIT_MAX: '100000' }, parts: { repository } });
   return { app, parts: { calls } };

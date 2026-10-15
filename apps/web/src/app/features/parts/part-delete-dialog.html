@@ -5,10 +5,30 @@
   aria-describedby="delete-dialog-text"
   (cancel)="onCancelEvent($event)"
 >
-  <h2 id="delete-dialog-title">Eliminar pieza</h2>
-  <p id="delete-dialog-text">
-    ¿Querés eliminar la pieza «{{ partName() }}»? La pieza se quita de las listas pero se conserva.
-  </p>
+  @let inUse = usage();
+  @if (inUse) {
+    <h2 id="delete-dialog-title">La pieza está en uso</h2>
+    <div id="delete-dialog-text">
+      <p>La pieza «{{ partName() }}» se usa en {{ projectsText(inUse) }}:</p>
+      <ul class="projects">
+        @for (project of inUse.projects; track project.id) {
+          <li>{{ project.name }} ({{ project.quantity }} u.)</li>
+        }
+      </ul>
+      @if (hiddenCount(inUse) > 0) {
+        <p>y {{ hiddenCount(inUse) }} más</p>
+      }
+      <p class="warning">
+        Si continuás, la pieza se quitará de esos proyectos y después se eliminará.
+      </p>
+    </div>
+  } @else {
+    <h2 id="delete-dialog-title">Eliminar pieza</h2>
+    <p id="delete-dialog-text">
+      ¿Querés eliminar la pieza «{{ partName() }}»? La pieza se quita de las listas pero se
+      conserva.
+    </p>
+  }
   <div class="actions">
     <button
       #cancelButton
@@ -20,7 +40,7 @@
       Cancelar
     </button>
     <button type="button" class="danger" (click)="confirm()" [disabled]="busy()">
-      {{ busy() ? 'Eliminando…' : 'Eliminar' }}
+      {{ busy() ? 'Eliminando…' : inUse ? 'Quitar de los proyectos y eliminar' : 'Eliminar' }}
     </button>
   </div>
 </dialog>

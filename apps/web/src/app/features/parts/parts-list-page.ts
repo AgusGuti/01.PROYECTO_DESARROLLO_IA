@@ -11,8 +11,8 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
-import type { Material, Part, PartList } from '@print3d/api-contracts';
-import { catchError, map, of, scan, startWith, switchMap } from 'rxjs';
+import type { Material, Part, PartList, PartUsage } from '@print3d/api-contracts';
+import { catchError, map, type Observable, of, scan, startWith, switchMap } from 'rxjs';
 import { ApiError } from '../../core/api/api-error';
 import { PartDeleteDialog } from './part-delete-dialog';
 import {
@@ -63,6 +63,35 @@ interface Query {
 interface Notice {
   readonly kind: 'success' | 'error';
   readonly text: string;
+}
+
+const DELETE_FAILED = 'No se pudo eliminar la pieza. Intentá de nuevo.';
+
+/** What a removal attempt came to. */
+type RemoveOutcome =
+  | { readonly kind: 'done'; readonly removedFromProjects: number }
+  | { readonly kind: 'needsConfirmation'; readonly usage: PartUsage }
+  | { readonly kind: 'gone' }
+  | { readonly kind: 'failed'; readonly reload: boolean };
+
+/** The 409 for "projects use this part" carries an issue with the path `projects`. */
+function isInUse(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    error.status === 409 &&
+    error.issues.some((issue) => issue.path === 'projects')
+  );
+}
+
+function failureOf(error: unknown, reloadByDefault: boolean): RemoveOutcome {
+  if (error instanceof ApiError && error.status === 404) return { kind: 'gone' };
+  const conflict = error instanceof ApiError && error.status === 409;
+  return { kind: 'failed', reload: reloadByDefault || conflict };
+}
+
+function removedText(projects: number): string {
+  if (projects === 0) return NOTICE_TEXT.deleted;
+  return `Pieza eliminada y quitada de ${projects === 1 ? '1 proyecto' : `${String(projects)} proyectos`}.`;
 }
 
 @Component({
@@ -151,6 +180,8 @@ export class PartsListPage {
 
   protected readonly deleteTarget = signal<Part | null>(null);
   protected readonly deleting = signal(false);
+  /** Set when the API said projects use the target: the dialog then asks for confirmation. */
+  protected readonly deleteUsage = signal<PartUsage | null>(null);
   private trigger: HTMLElement | null = null;
 
   /** The page to draw: the loaded one, or the previous one while the next is loading. */
@@ -226,6 +257,7 @@ export class PartsListPage {
     const trigger = this.trigger;
     this.trigger = null;
     this.deleteTarget.set(null);
+    this.deleteUsage.set(null);
     afterNextRender(
       () => {
         trigger?.focus();
@@ -234,34 +266,70 @@ export class PartsListPage {
     );
   }
 
+  /**
+   * First press: a plain DELETE. If live projects use the part the API answers 409; we then ask
+   * who uses it and switch the same dialog to its "in use" mode. Second press (in that mode): the
+   * DELETE with `removeFromProjects`, which the API accepts as the confirmation (ADR 0018).
+   */
   protected confirmDelete(): void {
     const target = this.deleteTarget();
     if (target === null || this.deleting()) return;
     this.deleting.set(true);
 
-    this.api
-      .remove(target.id)
+    this.removeOutcome(target.id, this.deleteUsage())
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: () => {
-          this.finishDelete({ kind: 'success', text: NOTICE_TEXT.deleted }, true);
-        },
-        error: (error: unknown) => {
-          const gone = error instanceof ApiError && error.status === 404;
-          this.finishDelete(
-            {
-              kind: 'error',
-              text: gone ? NOTICE_TEXT.gone : 'No se pudo eliminar la pieza. Intentá de nuevo.',
-            },
-            gone,
-          );
-        },
+      .subscribe((outcome) => {
+        switch (outcome.kind) {
+          case 'done':
+            this.finishDelete(
+              { kind: 'success', text: removedText(outcome.removedFromProjects) },
+              true,
+            );
+            break;
+          case 'needsConfirmation':
+            this.deleteUsage.set(outcome.usage);
+            this.deleting.set(false);
+            break;
+          case 'gone':
+            this.finishDelete({ kind: 'error', text: NOTICE_TEXT.gone }, true);
+            break;
+          case 'failed':
+            this.finishDelete({ kind: 'error', text: DELETE_FAILED }, outcome.reload);
+            break;
+        }
       });
+  }
+
+  /** One observable for the whole flow, so there are no nested subscriptions. */
+  private removeOutcome(id: string, usage: PartUsage | null): Observable<RemoveOutcome> {
+    const confirmed = usage !== null;
+    const request = confirmed
+      ? this.api.remove(id, { removeFromProjects: true })
+      : this.api.remove(id);
+    return request.pipe(
+      map((): RemoveOutcome => ({ kind: 'done', removedFromProjects: usage?.total ?? 0 })),
+      catchError((error: unknown): Observable<RemoveOutcome> => {
+        if (!confirmed && isInUse(error)) {
+          return this.api.usage(id).pipe(
+            switchMap((found) =>
+              // Someone else emptied the projects meanwhile: nothing left to warn about.
+              found.total === 0
+                ? this.removeOutcome(id, found)
+                : of<RemoveOutcome>({ kind: 'needsConfirmation', usage: found }),
+            ),
+            catchError((usageError: unknown) => of(failureOf(usageError, true))),
+          );
+        }
+        // A conflict or a failure after the confirmation means the data may have changed.
+        return of(failureOf(error, confirmed));
+      }),
+    );
   }
 
   private finishDelete(notice: Notice, reload: boolean): void {
     this.deleting.set(false);
     this.deleteTarget.set(null);
+    this.deleteUsage.set(null);
     this.trigger = null;
     this.notice.set(notice);
     // The row that opened the dialog may be gone: send focus to the page heading.

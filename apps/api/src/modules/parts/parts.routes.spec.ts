@@ -5,7 +5,7 @@ import { AppError } from '../../shared/errors/app-error.js';
 import { problemSchema } from '../../shared/http/problem.js';
 import { createTestApp } from '../../testing/test-app.js';
 import { partSchema } from './parts.schemas.js';
-import { createFakePartRepository, createTestClock } from './testing/fakes.js';
+import { createFakePartRepository, createFakePartUsage, createTestClock } from './testing/fakes.js';
 
 const BASE = '/api/v1/parts';
 const MISSING_ID = '0'.repeat(24);
@@ -40,12 +40,14 @@ const DTO_KEYS = [
 function setup() {
   const repository = createFakePartRepository();
   const clock = createTestClock();
+  // Deleting asks the projects module, which would hit the real database: inject a fake.
+  const partUsage = createFakePartUsage();
   const app = createTestApp({
     clock,
     env: { RATE_LIMIT_MAX: '100000' },
-    parts: { repository },
+    parts: { repository, partUsage },
   });
-  return { app, repository, clock };
+  return { app, repository, clock, partUsage };
 }
 
 function expectProblem(
@@ -543,6 +545,148 @@ describe('DELETE /api/v1/parts/:id', () => {
 
     expectProblem(await request(app).delete(`${BASE}/${MISSING_ID}`), 404, 'not_found');
     expectProblem(await request(app).delete(`${BASE}/not-an-id`), 400, 'validation_failed');
+  });
+});
+
+describe('DELETE /api/v1/parts/:id when projects use the part', () => {
+  const used = {
+    total: 3,
+    projects: [{ id: 'a'.repeat(24), name: 'Soportes para el taller', quantity: 6 }],
+  };
+
+  it('answers a fixed 409 with one issue on projects and deletes nothing', async () => {
+    const { app, repository, partUsage } = setup();
+    const part = repository.seed();
+    partUsage.report = used;
+
+    const response = await request(app).delete(`${BASE}/${part.id}`);
+
+    const problem = expectProblem(response, 409, 'conflict');
+    expect(problem.detail).toBe('The part is used by one or more projects.');
+    expect(problem.issues).toEqual([
+      { path: 'projects', message: 'Remove the part from the projects first.' },
+    ]);
+    expect(JSON.stringify(response.body)).not.toContain('Soportes');
+    expect(repository.stored.get(part.id)?.deletedAt).toBeNull();
+  });
+
+  it('removeFromProjects=true pulls the part and answers 204', async () => {
+    const { app, repository, partUsage } = setup();
+    const part = repository.seed();
+    partUsage.report = used;
+
+    const response = await request(app)
+      .delete(`${BASE}/${part.id}`)
+      .query({ removeFromProjects: 'true' });
+
+    expect(response.status).toBe(204);
+    expect(partUsage.calls).toContain(`removeFromProjects:${part.id}`);
+    expect(repository.stored.get(part.id)?.deletedAt).not.toBeNull();
+  });
+
+  it('removeFromProjects=false behaves like no flag', async () => {
+    const { app, repository, partUsage } = setup();
+    const part = repository.seed();
+    partUsage.report = used;
+
+    const response = await request(app)
+      .delete(`${BASE}/${part.id}`)
+      .query({ removeFromProjects: 'false' });
+
+    expectProblem(response, 409, 'conflict');
+  });
+
+  it.each([
+    ['a value that is not true or false', { removeFromProjects: 'yes' }],
+    ['an uppercase value', { removeFromProjects: 'TRUE' }],
+    ['an unknown key', { force: 'true' }],
+    ['a repeated flag', { removeFromProjects: ['true', 'false'] }],
+  ])('rejects %s with 400 before touching anything', async (_label, query) => {
+    const { app, repository, partUsage } = setup();
+    const part = repository.seed();
+    repository.calls.length = 0;
+
+    expectProblem(
+      await request(app).delete(`${BASE}/${part.id}`).query(query),
+      400,
+      'validation_failed',
+    );
+    expect(repository.calls).toEqual([]);
+    expect(partUsage.calls).toEqual([]);
+  });
+
+  it('answers 404 and pulls nothing for a missing part even with the flag', async () => {
+    const { app, partUsage } = setup();
+
+    const response = await request(app)
+      .delete(`${BASE}/${MISSING_ID}`)
+      .query({ removeFromProjects: 'true' });
+
+    expectProblem(response, 404, 'not_found');
+    expect(partUsage.calls).toEqual([]);
+  });
+
+  it('answers a generic 503 and keeps the part when the project data is unavailable', async () => {
+    const { app, repository, partUsage } = setup();
+    const part = repository.seed();
+    partUsage.failWith = new Error('MongoServerSelectionError: ECONNREFUSED 10.1.2.3:27017');
+
+    for (const query of [{}, { removeFromProjects: 'true' }]) {
+      const response = await request(app).delete(`${BASE}/${part.id}`).query(query);
+      expectProblem(response, 503, 'service_unavailable');
+      expect(JSON.stringify(response.body)).not.toMatch(/Mongo|ECONNREFUSED|10\.1\.2\.3/);
+    }
+    expect(repository.stored.get(part.id)?.deletedAt).toBeNull();
+  });
+});
+
+describe('GET /api/v1/parts/:id/usage', () => {
+  it('returns the true total and at most 50 projects with exactly the DTO keys', async () => {
+    const { app, repository, partUsage } = setup();
+    const part = repository.seed();
+    partUsage.report = {
+      total: 75,
+      projects: Array.from({ length: 75 }, (_v, i) => ({
+        id: i.toString(16).padStart(24, '0'),
+        name: `P${String(i)}`,
+        quantity: 2,
+      })),
+    };
+
+    const response = await request(app).get(`${BASE}/${part.id}/usage`);
+
+    expect(response.status).toBe(200);
+    const body = response.body as { total: number; projects: Record<string, unknown>[] };
+    expect(Object.keys(body).sort()).toEqual(['projects', 'total']);
+    expect(body.total).toBe(75);
+    expect(body.projects).toHaveLength(50);
+    expect(body.projects[0]).toEqual({ id: '0'.repeat(24), name: 'P0', quantity: 2 });
+  });
+
+  it('is empty for an unused part', async () => {
+    const { app, repository } = setup();
+    const part = repository.seed();
+
+    const response = await request(app).get(`${BASE}/${part.id}/usage`);
+
+    expect(response.body).toEqual({ total: 0, projects: [] });
+  });
+
+  it('answers 404 for a missing or deleted part and 400 for a malformed id', async () => {
+    const { app, repository } = setup();
+    const gone = repository.seed({ deletedAt: new Date() });
+
+    expectProblem(await request(app).get(`${BASE}/${MISSING_ID}/usage`), 404, 'not_found');
+    expectProblem(await request(app).get(`${BASE}/${gone.id}/usage`), 404, 'not_found');
+    expectProblem(await request(app).get(`${BASE}/nope/usage`), 400, 'validation_failed');
+  });
+
+  it('answers 503 when the project data is unavailable', async () => {
+    const { app, repository, partUsage } = setup();
+    const part = repository.seed();
+    partUsage.failWith = new Error('boom');
+
+    expectProblem(await request(app).get(`${BASE}/${part.id}/usage`), 503, 'service_unavailable');
   });
 });
 

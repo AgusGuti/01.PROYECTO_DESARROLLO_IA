@@ -2,7 +2,7 @@
 // Used by service and route tests; the real repository has its own integration tests.
 import type { Clock } from '../../health/index.js';
 import type { Part, PartFields, PartPatch } from '../parts.domain.js';
-import type { PartRepository } from '../parts.service.js';
+import type { PartRepository, PartUsage, PartUsageReport } from '../parts.service.js';
 
 /**
  * What a PATCH produces: `undefined` keeps the current value, `null` clears a text. The real rules
@@ -153,6 +153,18 @@ export function createFakePartRepository(): FakePartRepository {
       });
     },
 
+    findLiveByIds(ids) {
+      guard('findLiveByIds');
+      return Promise.resolve(
+        ids.flatMap((id) => {
+          const part = live(id);
+          return part === undefined
+            ? []
+            : [{ id: part.id, name: part.name, material: part.material }];
+        }),
+      );
+    },
+
     update(id, version, patch, now) {
       guard('update');
       const current = live(id);
@@ -183,4 +195,41 @@ export function createFakePartRepository(): FakePartRepository {
   };
 
   return repository;
+}
+
+export interface FakePartUsage extends PartUsage {
+  /** Calls in order, such as `removeFromProjects:<id>`. */
+  readonly calls: string[];
+  /** What `listProjects` answers. */
+  report: PartUsageReport;
+  /** Projects pulled by `removeFromProjects`. */
+  pulled: number;
+  /** When set, both methods reject with this error (a dependency failure). */
+  failWith: Error | undefined;
+}
+
+/** A plain-object stand-in for the projects module's usage port. Unused by default. */
+export function createFakePartUsage(
+  report: PartUsageReport = { total: 0, projects: [] },
+): FakePartUsage {
+  const usage: FakePartUsage = {
+    calls: [],
+    report,
+    pulled: 0,
+    failWith: undefined,
+    listProjects(partId, limit) {
+      usage.calls.push(`listProjects:${partId}:${String(limit)}`);
+      if (usage.failWith !== undefined) return Promise.reject(usage.failWith);
+      return Promise.resolve({
+        total: usage.report.total,
+        projects: usage.report.projects.slice(0, limit),
+      });
+    },
+    removeFromProjects(partId) {
+      usage.calls.push(`removeFromProjects:${partId}`);
+      if (usage.failWith !== undefined) return Promise.reject(usage.failWith);
+      return Promise.resolve(usage.pulled);
+    },
+  };
+  return usage;
 }

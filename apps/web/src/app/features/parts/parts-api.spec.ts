@@ -6,7 +6,7 @@ import { firstValueFrom } from 'rxjs';
 import { API_BASE_URL } from '../../core/api/api-config';
 import { ApiError } from '../../core/api/api-error';
 import { apiErrorInterceptor } from '../../core/api/api-error.interceptor';
-import { isPart, isPartList, PartsApi } from './parts-api';
+import { isPart, isPartList, isPartUsage, PartsApi } from './parts-api';
 
 const part: Part = {
   id: '66f0c0ffee0123456789abcd',
@@ -154,6 +154,66 @@ describe('PartsApi', () => {
     await expect(result).resolves.toBeUndefined();
   });
 
+  it('sends no query parameter on a plain DELETE or when the flag is false', async () => {
+    const plain = firstValueFrom(api.remove(part.id));
+    const plainRequest = http.expectOne({ method: 'DELETE', url: `${URL}/${part.id}` });
+    expect(plainRequest.request.params.keys()).toEqual([]);
+    plainRequest.flush(null, { status: 204, statusText: 'No Content' });
+    await plain;
+
+    const explicit = firstValueFrom(api.remove(part.id, { removeFromProjects: false }));
+    const explicitRequest = http.expectOne({ method: 'DELETE', url: `${URL}/${part.id}` });
+    expect(explicitRequest.request.params.keys()).toEqual([]);
+    explicitRequest.flush(null, { status: 204, statusText: 'No Content' });
+    await explicit;
+  });
+
+  it('sends removeFromProjects=true only when the removal was confirmed', async () => {
+    const result = firstValueFrom(api.remove(part.id, { removeFromProjects: true }));
+
+    const request = http.expectOne((r) => r.url === `${URL}/${part.id}`);
+    expect(request.request.method).toBe('DELETE');
+    expect(request.request.params.get('removeFromProjects')).toBe('true');
+    request.flush(null, { status: 204, statusText: 'No Content' });
+
+    await expect(result).resolves.toBeUndefined();
+  });
+
+  it('maps the in-use conflict to an ApiError that keeps the projects issue', async () => {
+    const result = firstValueFrom(api.remove(part.id));
+
+    http
+      .expectOne(`${URL}/${part.id}`)
+      .flush(
+        { code: 'conflict', detail: 'backend text', issues: [{ path: 'projects', message: 'x' }] },
+        { status: 409, statusText: 'Conflict' },
+      );
+
+    await expect(result).rejects.toMatchObject({
+      status: 409,
+      issues: [{ path: 'projects', message: 'x' }],
+    });
+  });
+
+  it('gets the usage of a part from its usage endpoint', async () => {
+    const usage = { total: 2, projects: [{ id: 'p1', name: 'Taller', quantity: 3 }] };
+    const result = firstValueFrom(api.usage(part.id));
+
+    http.expectOne({ method: 'GET', url: `${URL}/${part.id}/usage` }).flush(usage);
+
+    await expect(result).resolves.toEqual(usage);
+  });
+
+  it('rejects a usage response that does not match the contract', async () => {
+    const result = firstValueFrom(api.usage(part.id));
+
+    http
+      .expectOne(`${URL}/${part.id}/usage`)
+      .flush({ total: 1, projects: [{ id: 'p1', name: 'Taller', quantity: '3' }] });
+
+    await expect(result).rejects.toMatchObject({ code: 'unexpected_response' });
+  });
+
   it('rejects a list response that does not match the contract', async () => {
     const result = firstValueFrom(api.list());
 
@@ -241,6 +301,23 @@ describe('isPart', () => {
     ['a missing name', { ...part, name: undefined }],
   ])('rejects %s', (_name, value) => {
     expect(isPart(value)).toBe(false);
+  });
+});
+
+describe('isPartUsage', () => {
+  it('accepts a total with a list of projects, possibly empty', () => {
+    expect(isPartUsage({ total: 0, projects: [] })).toBe(true);
+    expect(isPartUsage({ total: 51, projects: [{ id: 'a', name: 'b', quantity: 1 }] })).toBe(true);
+  });
+
+  it.each([
+    ['null', null],
+    ['a total sent as text', { total: '1', projects: [] }],
+    ['projects that are not an array', { total: 1, projects: 'x' }],
+    ['a project without a name', { total: 1, projects: [{ id: 'a', quantity: 1 }] }],
+    ['a fractional quantity', { total: 1, projects: [{ id: 'a', name: 'b', quantity: 1.5 }] }],
+  ])('rejects %s', (_name, value) => {
+    expect(isPartUsage(value)).toBe(false);
   });
 });
 
