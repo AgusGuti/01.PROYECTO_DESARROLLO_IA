@@ -133,6 +133,7 @@
     <app-part-delete-dialog
       [partName]="target.name"
       [busy]="deleting()"
+      [usage]="deleteUsage()"
       (confirmed)="confirmDelete()"
       (cancelled)="cancelDelete()"
     />
