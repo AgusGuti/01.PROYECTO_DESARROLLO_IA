@@ -15,6 +15,7 @@ const printer: Printer = {
   nozzle: { diameterMm: 0.2, material: 'brass' },
   compatibleMaterials: ['PLA', 'PETG'],
   typicalSpeedMmS: null,
+  powerWatts: null,
   status: 'available',
   version: 1,
   archivedAt: null,
@@ -179,6 +180,14 @@ describe('PrintersApi', () => {
     expect(isPrinter({ ...printer, nozzle: { diameterMm: 0.4, material: 'wood' } })).toBe(false);
     expect(isPrinter(null)).toBe(false);
     expect(isPrinter(printer)).toBe(true);
+  });
+
+  it('accepts a whole-number power or null and rejects anything else', () => {
+    expect(isPrinter({ ...printer, powerWatts: 270 })).toBe(true);
+    expect(isPrinter({ ...printer, powerWatts: null })).toBe(true);
+    expect(isPrinter({ ...printer, powerWatts: 270.5 })).toBe(false);
+    expect(isPrinter({ ...printer, powerWatts: '270' })).toBe(false);
+    expect(isPrinter({ ...printer, powerWatts: undefined })).toBe(false);
   });
 
   it('maps a conflict to an ApiError that keeps the problem issues', async () => {

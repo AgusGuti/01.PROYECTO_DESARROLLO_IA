@@ -58,7 +58,16 @@ type SaveState =
   | { readonly kind: 'failed'; readonly message: string; readonly stale: boolean };
 
 type FieldKey =
-  'name' | 'x' | 'y' | 'z' | 'diameterMm' | 'nozzleMaterial' | 'materials' | 'speed' | 'status';
+  | 'name'
+  | 'x'
+  | 'y'
+  | 'z'
+  | 'diameterMm'
+  | 'nozzleMaterial'
+  | 'materials'
+  | 'speed'
+  | 'power'
+  | 'status';
 
 /** Top-to-bottom order, used to move focus to the first invalid field. */
 const FIELD_ORDER: readonly FieldKey[] = [
@@ -70,6 +79,7 @@ const FIELD_ORDER: readonly FieldKey[] = [
   'nozzleMaterial',
   'materials',
   'speed',
+  'power',
   'status',
 ];
 
@@ -82,6 +92,7 @@ const FOCUS_TARGET: Readonly<Record<FieldKey, string>> = {
   nozzleMaterial: 'field-nozzle-material',
   materials: `material-${MATERIAL_ORDER[0] ?? 'PLA'}`,
   speed: 'field-speed',
+  power: 'field-power',
   status: 'field-status',
 };
 
@@ -95,6 +106,7 @@ const ISSUE_FIELD: Readonly<Record<string, FieldKey>> = {
   'nozzle.material': 'nozzleMaterial',
   compatibleMaterials: 'materials',
   typicalSpeedMmS: 'speed',
+  powerWatts: 'power',
   status: 'status',
 };
 
@@ -107,6 +119,7 @@ const SERVER_REJECTED: Readonly<Record<FieldKey, string>> = {
   nozzleMaterial: 'El material de la boquilla no es válido.',
   materials: 'Los materiales elegidos no son compatibles con esta boquilla. Revisá la selección.',
   speed: 'La velocidad no es válida.',
+  power: 'La potencia no es válida.',
   status: 'El estado no es válido.',
 };
 
@@ -129,6 +142,7 @@ const VALIDATION_MESSAGES: Readonly<Record<FieldKey, (errors: ValidationErrors) 
   nozzleMaterial: () => SERVER_REJECTED.nozzleMaterial,
   materials: () => 'Elegí al menos un material.',
   speed: () => 'Ingresá un número entero entre 1 y 1000, o dejalo vacío.',
+  power: () => 'Ingresá un número entero entre 1 y 5000, o dejalo vacío.',
   status: () => SERVER_REJECTED.status,
 };
 
@@ -206,6 +220,7 @@ export class PrinterFormPage {
     nozzleMaterial: this.fb.control<NozzleMaterial>('brass'),
     materials: this.fb.control<Material[]>([], atLeastOne),
     speed: this.fb.control<number | null>(null, wholeNumberBetween(1, 1000, true)),
+    power: this.fb.control<number | null>(null, wholeNumberBetween(1, 5000, true)),
     status: this.fb.control<PrinterStatus>('available'),
   });
 
@@ -371,6 +386,7 @@ export class PrinterFormPage {
       compatibleMaterials: values.materials,
       status: values.status,
       ...(values.speed === null ? {} : { typicalSpeedMmS: values.speed }),
+      ...(values.power === null ? {} : { powerWatts: values.power }),
     };
     this.save.set({ kind: 'saving' });
     (restoreIfDeleted ? this.api.create(body, { restoreIfDeleted }) : this.api.create(body))
@@ -478,6 +494,7 @@ export class PrinterFormPage {
       nozzleMaterial: printer.nozzle.material,
       materials: MATERIAL_ORDER.filter((item) => printer.compatibleMaterials.includes(item)),
       speed: printer.typicalSpeedMmS,
+      power: printer.powerWatts,
       status: printer.status,
     });
     this.submitted.set(false);
@@ -497,6 +514,7 @@ export class PrinterFormPage {
       nozzle,
       materials: raw.materials,
       speed: raw.speed,
+      power: raw.power,
       status: raw.status,
     };
   }
@@ -523,6 +541,7 @@ export class PrinterFormPage {
         ? {}
         : { compatibleMaterials: values.materials }),
       ...(values.speed === printer.typicalSpeedMmS ? {} : { typicalSpeedMmS: values.speed }),
+      ...(values.power === printer.powerWatts ? {} : { powerWatts: values.power }),
       ...(values.status === printer.status ? {} : { status: values.status }),
     };
   }

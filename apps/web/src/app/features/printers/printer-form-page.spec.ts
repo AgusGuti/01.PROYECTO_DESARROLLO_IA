@@ -17,6 +17,7 @@ function makePrinter(overrides: Partial<Printer> = {}): Printer {
     nozzle: { diameterMm: 0.2, material: 'brass' },
     compatibleMaterials: ['PLA', 'PETG'],
     typicalSpeedMmS: 60,
+    powerWatts: 120,
     status: 'available',
     version: 3,
     archivedAt: null,
@@ -141,7 +142,7 @@ describe('PrinterFormPage (create)', () => {
     expect(page.element.querySelectorAll('h1')).toHaveLength(1);
     expect(page.element.querySelector('h1')?.textContent).toBe('Nueva impresora');
     const controls = Array.from(page.element.querySelectorAll('input, select'));
-    expect(controls.length).toBe(3 + 1 + 1 + 1 + 14 + 1 + 1);
+    expect(controls.length).toBe(3 + 1 + 1 + 1 + 14 + 1 + 1 + 1);
     for (const control of controls) {
       const labelled = control as HTMLInputElement;
       expect(labelled.labels?.length, `control ${labelled.id} has no label`).toBeGreaterThan(0);
@@ -268,6 +269,48 @@ describe('PrinterFormPage (create)', () => {
       await page.type('field-speed', '');
       await page.submit();
       expect(page.api.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('labels the average power with its hint and accepts it empty', async () => {
+      const page = await render();
+      await page.fillValid();
+
+      await page.submit();
+
+      expect(page.element.querySelector('label[for="field-power"]')?.textContent).toContain(
+        'Potencia promedio (W)',
+      );
+      expect(page.byId('field-power')?.getAttribute('aria-describedby')).toContain('power-hint');
+      expect(page.errorOf('power-hint')).toBe(
+        'Consumo medio mientras imprime, no el máximo de la fuente',
+      );
+      expect(page.api.create).toHaveBeenCalledExactlyOnceWith(
+        expect.not.objectContaining({ powerWatts: expect.anything() as unknown }),
+      );
+    });
+
+    it.each(['0', '5001', '1.5'])('rejects an average power of %s', async (value) => {
+      const page = await render();
+      await page.fillValid();
+      await page.type('field-power', value);
+
+      await page.submit();
+
+      expect(page.api.create).not.toHaveBeenCalled();
+      expect(page.errorOf('power-error')).toContain('entre 1 y 5000');
+      expect(page.byId('field-power')?.getAttribute('aria-invalid')).toBe('true');
+    });
+
+    it.each(['1', '5000'])('sends an average power of %s watts', async (value) => {
+      const page = await render();
+      await page.fillValid();
+      await page.type('field-power', value);
+
+      await page.submit();
+
+      expect(page.api.create).toHaveBeenCalledWith(
+        expect.objectContaining({ powerWatts: Number(value) }),
+      );
     });
   });
 
@@ -701,6 +744,25 @@ describe('PrinterFormPage (edit)', () => {
     await page.submit();
 
     expect(page.api.update).toHaveBeenCalledWith('p1', { version: 3, typicalSpeedMmS: null });
+  });
+
+  it('shows the stored power and sends null when the user clears it', async () => {
+    const page = await renderEditing();
+    expect(page.byId('field-power')?.value).toBe('120');
+    await page.type('field-power', '');
+
+    await page.submit();
+
+    expect(page.api.update).toHaveBeenCalledWith('p1', { version: 3, powerWatts: null });
+  });
+
+  it('sends only the new power when it changes', async () => {
+    const page = await renderEditing();
+    await page.type('field-power', '200');
+
+    await page.submit();
+
+    expect(page.api.update).toHaveBeenCalledWith('p1', { version: 3, powerWatts: 200 });
   });
 
   it('sends the status and the materials when they change', async () => {

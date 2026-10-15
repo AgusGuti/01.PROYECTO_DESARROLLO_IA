@@ -173,6 +173,25 @@ describe('create printer: compatible materials', () => {
   });
 });
 
+describe('printer power', () => {
+  it.each([1, 5000, 150])('accepts a power of %s', (watts) => {
+    expect(accepts(withField('powerWatts', watts))).toBe(true);
+  });
+
+  it.each([0, 5001, 1.5, '150', null, -1])('rejects a power of %s', (watts) => {
+    expect(accepts(withField('powerWatts', watts))).toBe(false);
+  });
+
+  it('allows the power to be omitted on create and null or absent on update', () => {
+    expect(createPrinterSchema.parse(valid)).not.toHaveProperty('powerWatts');
+    expect(updatePrinterSchema.parse({ version: 1, powerWatts: null })).toEqual({
+      version: 1,
+      powerWatts: null,
+    });
+    expect(updatePrinterSchema.parse({ version: 1, name: 'x' })).not.toHaveProperty('powerWatts');
+  });
+});
+
 describe('create printer: speed and status', () => {
   it.each([1, 1000, 60])('accepts a speed of %s', (speed) => {
     expect(accepts(withField('typicalSpeedMmS', speed))).toBe(true);

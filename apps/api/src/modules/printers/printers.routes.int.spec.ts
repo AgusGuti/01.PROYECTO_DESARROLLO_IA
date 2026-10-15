@@ -182,6 +182,40 @@ describe('printers API on a real MongoDB', () => {
       expect((await request(app).get(url)).body).toEqual(created.body);
     });
 
+    it('clears the power with null, keeps it when absent and sets it again', async () => {
+      const created = await create({ powerWatts: 150 });
+      const url = `${BASE}/${idOf(created)}`;
+
+      const kept = await request(app).patch(url).send({ version: 1, status: 'maintenance' });
+      const cleared = await request(app).patch(url).send({ version: 2, powerWatts: null });
+      const again = await request(app).patch(url).send({ version: 3, powerWatts: 90 });
+
+      expect(kept.body).toHaveProperty('powerWatts', 150);
+      expect(cleared.body).toHaveProperty('powerWatts', null);
+      expect(await collection().findOne({ name: 'Ender 3' })).toHaveProperty('powerWatts', 90);
+      expect(again.body).toHaveProperty('powerWatts', 90);
+    });
+
+    it('reads an old document stored without powerWatts as null', async () => {
+      const inserted = await collection().insertOne({
+        name: 'Old',
+        buildVolume: { x: 1, y: 1, z: 1 },
+        nozzle: { diameterMm: 0.4, material: 'brass' },
+        compatibleMaterials: ['PLA'],
+        status: 'available',
+        version: 1,
+        archivedAt: null,
+        deletedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const response = await request(app).get(`${BASE}/${inserted.insertedId.toString()}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('powerWatts', null);
+    });
+
     it('clears and then restores the speed', async () => {
       const created = await create({ typicalSpeedMmS: 60 });
       const url = `${BASE}/${idOf(created)}`;

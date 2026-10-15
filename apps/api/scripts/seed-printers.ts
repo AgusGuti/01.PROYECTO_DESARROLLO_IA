@@ -10,6 +10,8 @@ const logger = createLogger(config);
 
 // Sources: manufacturer and retailer spec sheets (June 2026). `typicalSpeedMmS` is a realistic
 // everyday speed, not the marketing maximum, and is an estimate where no vendor figure exists.
+// `powerWatts` is the average draw while printing: also an estimate, to be replaced with a
+// wattmeter reading of your own printer.
 const PRINTERS = [
   {
     name: 'Creality Ender-3 V2 Neo',
@@ -17,6 +19,7 @@ const PRINTERS = [
     nozzle: { diameterMm: 0.4, material: 'brass' },
     compatibleMaterials: ['PLA', 'PETG', 'TPU', 'ABS'],
     typicalSpeedMmS: 60,
+    powerWatts: 150,
   },
   {
     // ABS, ASA and PC need an enclosure, sold separately by Prusa.
@@ -25,6 +28,7 @@ const PRINTERS = [
     nozzle: { diameterMm: 0.4, material: 'brass' },
     compatibleMaterials: ['PLA', 'PETG', 'TPU', 'ABS', 'ASA', 'PC'],
     typicalSpeedMmS: 100,
+    powerWatts: 120,
   },
   {
     name: 'Bambu Lab X1 Carbon',
@@ -45,6 +49,7 @@ const PRINTERS = [
       'PA_GF',
     ],
     typicalSpeedMmS: 200,
+    powerWatts: 150,
   },
   {
     // Bambu rates it for PLA, PETG, TPU and PVA only (open frame, 80 °C bed).
@@ -53,6 +58,7 @@ const PRINTERS = [
     nozzle: { diameterMm: 0.4, material: 'stainless_steel' },
     compatibleMaterials: ['PLA', 'PETG', 'TPU', 'PVA'],
     typicalSpeedMmS: 150,
+    powerWatts: 80,
   },
   {
     name: 'Elegoo Neptune 4 Pro',
@@ -60,6 +66,7 @@ const PRINTERS = [
     nozzle: { diameterMm: 0.4, material: 'brass' },
     compatibleMaterials: ['PLA', 'PETG', 'TPU', 'ABS', 'ASA', 'PA'],
     typicalSpeedMmS: 250,
+    powerWatts: 150,
   },
 ];
 

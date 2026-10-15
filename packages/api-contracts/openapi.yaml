@@ -124,6 +124,11 @@ components:
           type:
             - integer
             - "null"
+        powerWatts:
+          type:
+            - integer
+            - "null"
+          description: Average power while printing, in watts; null when unknown.
         status:
           $ref: "#/components/schemas/PrinterStatus"
         version:
@@ -151,6 +156,7 @@ components:
         - nozzle
         - compatibleMaterials
         - typicalSpeedMmS
+        - powerWatts
         - status
         - version
         - archivedAt
@@ -257,6 +263,10 @@ components:
           type: integer
           minimum: 1
           maximum: 1000
+        powerWatts:
+          type: integer
+          minimum: 1
+          maximum: 5000
         restoreIfDeleted:
           type: boolean
           default: false
@@ -313,6 +323,12 @@ components:
             - "null"
           minimum: 1
           maximum: 1000
+        powerWatts:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+          maximum: 5000
         status:
           $ref: "#/components/schemas/PrinterStatus"
       required:
@@ -1006,6 +1022,189 @@ components:
       required:
         - version
       additionalProperties: false
+    CostEstimate:
+      type: object
+      properties:
+        quantity:
+          type: integer
+        printSeconds:
+          type: integer
+        filament:
+          type: object
+          properties:
+            grams:
+              type: integer
+            costMinor:
+              type: integer
+              description: Centavos of ARS, rounded once.
+          required:
+            - grams
+            - costMinor
+        electricity:
+          type:
+            - object
+            - "null"
+          properties:
+            watts:
+              type: integer
+            costMinor:
+              type: integer
+              description: Centavos of ARS.
+          required:
+            - watts
+            - costMinor
+          description: Null without a printer or without its power.
+        wear:
+          type: object
+          properties:
+            costMinor:
+              type: integer
+              description: Centavos of ARS.
+          required:
+            - costMinor
+        fixed:
+          type: object
+          properties:
+            costMinor:
+              type: integer
+              description: Charged once per estimate.
+          required:
+            - costMinor
+        subtotalMinor:
+          type: integer
+          description: "Sum of the lines: the clean cost."
+        marginBasisPoints:
+          type: integer
+        marginMinor:
+          type: integer
+          description: Margin added on the subtotal; 0 when not a sale.
+        totalMinor:
+          type: integer
+          description: subtotalMinor + marginMinor.
+        unitTotalMinor:
+          type: integer
+          description: Average per unit; unit x quantity can differ by a few centavos.
+        warnings:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                $ref: "#/components/schemas/CostWarningCode"
+            required:
+              - code
+      required:
+        - quantity
+        - printSeconds
+        - filament
+        - electricity
+        - wear
+        - fixed
+        - subtotalMinor
+        - marginBasisPoints
+        - marginMinor
+        - totalMinor
+        - unitTotalMinor
+        - warnings
+    CostWarningCode:
+      type: string
+      enum:
+        - filament_insufficient
+        - electricity_printer_not_selected
+        - electricity_printer_power_unknown
+        - settings_not_configured
+    CostEstimateRequest:
+      type: object
+      properties:
+        partId:
+          type: string
+          pattern: ^[0-9a-f]{24}$/i
+          example: 66f0c0ffee0123456789abcd
+        filamentId:
+          type: string
+          pattern: ^[0-9a-f]{24}$/i
+          example: 66f0c0ffee0123456789abcd
+        printerId:
+          type: string
+          pattern: ^[0-9a-f]{24}$/i
+          example: 66f0c0ffee0123456789abcd
+          description: Optional. Without a printer (or without its power) electricity is omitted.
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 1
+        marginBasisPoints:
+          type: integer
+          minimum: 0
+          maximum: 100000
+          description: "Present means a sale: this margin (12.5 % is 1250) is added on the subtotal. Absent
+            means no margin. The default margin of the settings is never applied here."
+      required:
+        - partId
+        - filamentId
+      additionalProperties: false
+    CostSettings:
+      type: object
+      properties:
+        kwhPriceMinor:
+          type: integer
+        wearPerHourMinor:
+          type: integer
+        fixedPerJobMinor:
+          type: integer
+        defaultMarginBasisPoints:
+          type: integer
+        version:
+          type: integer
+          description: 0 until the settings are first saved.
+        updatedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+      required:
+        - kwhPriceMinor
+        - wearPerHourMinor
+        - fixedPerJobMinor
+        - defaultMarginBasisPoints
+        - version
+        - updatedAt
+    UpdateCostSettingsRequest:
+      type: object
+      properties:
+        kwhPriceMinor:
+          type: integer
+          minimum: 0
+          maximum: 1000000000
+          description: Price of one kWh, in centavos.
+        wearPerHourMinor:
+          type: integer
+          minimum: 0
+          maximum: 1000000000
+          description: Machine wear per print hour, centavos.
+        fixedPerJobMinor:
+          type: integer
+          minimum: 0
+          maximum: 1000000000
+          description: Fixed cost charged once per estimate.
+        defaultMarginBasisPoints:
+          type: integer
+          minimum: 0
+          maximum: 100000
+          description: Value the form pre-fills for a sale. The API never applies it by itself.
+        version:
+          type: integer
+          minimum: 0
+          description: 0 for the first save, otherwise the version last seen (ADR 0021).
+      required:
+        - kwhPriceMinor
+        - wearPerHourMinor
+        - fixedPerJobMinor
+        - defaultMarginBasisPoints
+        - version
+      additionalProperties: false
     GcodeAnalysis:
       type: object
       properties:
@@ -1312,7 +1511,8 @@ paths:
         - Printers
       summary: Edit a printer
       description: "Send the `version` you last saw plus the fields to change. Nested objects and
-        `compatibleMaterials` are replaced whole; `typicalSpeedMmS: null` clears the speed."
+        `compatibleMaterials` are replaced whole; `typicalSpeedMmS: null` and `powerWatts: null`
+        clear those values."
       parameters:
         - schema:
             type: string
@@ -2122,6 +2322,96 @@ paths:
                 $ref: "#/components/schemas/Problem"
         "404":
           description: No such project, or it was already removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/costs/estimates:
+    post:
+      operationId: estimateCost
+      tags:
+        - Costs
+      summary: Estimate the cost of printing a part
+      description: "Stateless: nothing is stored. Every amount is an integer in centavos of ARS and the
+        lines add up to the total. A margin is added only when marginBasisPoints is sent. Unknown
+        ids are reported together as issues on partId, filamentId and printerId."
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CostEstimateRequest"
+      responses:
+        "200":
+          description: The estimate.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CostEstimate"
+        "400":
+          description: Invalid input, an unknown part, spool or printer, a spool material that differs from
+            the part material (issue path "filamentId"), or amounts too large (path "quantity").
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: The part, spool, printer or settings data is temporarily unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/costs/settings:
+    get:
+      operationId: getCostSettings
+      tags:
+        - Costs
+      summary: Get the cost settings
+      description: Before the first save it answers zeros with version 0. It never writes.
+      responses:
+        "200":
+          description: The settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CostSettings"
+        "503":
+          description: The settings are temporarily unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    put:
+      operationId: saveCostSettings
+      tags:
+        - Costs
+      summary: Save the cost settings
+      description: Send all four numbers and the version last seen (0 for the first save).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCostSettingsRequest"
+      responses:
+        "200":
+          description: The saved settings, with the new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CostSettings"
+        "400":
+          description: Invalid input or an unknown field.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Stale version (issue path "version").
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: The settings are temporarily unavailable.
           content:
             application/problem+json:
               schema:

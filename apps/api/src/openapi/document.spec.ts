@@ -106,6 +106,33 @@ describe('the generated OpenAPI document', () => {
     expect(update).toMatch(/"suggestedPrinterName":\{"type":\["string","null"\]/);
   });
 
+  it('documents the cost estimate, the settings and the warning codes', () => {
+    const document = buildOpenApiDocument();
+    const paths = document.paths ?? {};
+    const schemas = document.components?.schemas ?? {};
+
+    expect(Object.keys(paths['/api/v1/costs/estimates'] ?? {})).toEqual(['post']);
+    expect(Object.keys(paths['/api/v1/costs/settings'] ?? {}).sort()).toEqual(['get', 'put']);
+    expect(Object.keys(paths['/api/v1/costs/estimates']?.post?.responses ?? {})).toEqual(
+      expect.arrayContaining(['200', '400', '503']),
+    );
+    expect(Object.keys(paths['/api/v1/costs/settings']?.put?.responses ?? {})).toEqual(
+      expect.arrayContaining(['200', '400', '409', '503']),
+    );
+    // Written out on purpose: a new warning needs a Spanish message in the web.
+    const warnings = JSON.stringify(schemas['CostWarningCode']);
+    for (const code of [
+      'filament_insufficient',
+      'electricity_printer_not_selected',
+      'electricity_printer_power_unknown',
+      'settings_not_configured',
+    ]) {
+      expect(warnings).toContain(`"${code}"`);
+    }
+    expect(JSON.stringify(schemas['CostEstimate'])).toContain('"subtotalMinor"');
+    expect(JSON.stringify(schemas['CostSettings'])).toContain('"defaultMarginBasisPoints"');
+  });
+
   it('keeps one Material component shared by printers, filaments and parts', () => {
     const document = buildOpenApiDocument();
     const schemas = document.components?.schemas ?? {};

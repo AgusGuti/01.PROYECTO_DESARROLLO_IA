@@ -17,6 +17,7 @@ const body = {
   nozzle: { diameterMm: 0.4, material: 'brass' },
   compatibleMaterials: ['PLA', 'PETG'],
   typicalSpeedMmS: 60,
+  powerWatts: 150,
 };
 
 function setup(hasAssignments?: PrinterUsageCheck) {
@@ -58,6 +59,7 @@ describe('POST /api/v1/printers', () => {
       nozzle: { diameterMm: 0.4, material: 'brass' },
       compatibleMaterials: ['PLA', 'PETG'],
       typicalSpeedMmS: 60,
+      powerWatts: 150,
       status: 'available',
       version: 1,
       archivedAt: null,
@@ -75,6 +77,42 @@ describe('POST /api/v1/printers', () => {
 
     expect(response.status).toBe(201);
     expect(response.body).toHaveProperty('typicalSpeedMmS', null);
+  });
+
+  it('shows a missing power as null', async () => {
+    const { app } = setup();
+    const { powerWatts: _power, ...withoutPower } = body;
+
+    const response = await request(app).post(BASE).send(withoutPower);
+
+    expect(response.status).toBe(201);
+    expect(response.body).toHaveProperty('powerWatts', null);
+  });
+
+  it.each([0, 5001, 1.5, '150', null])(
+    'rejects a power of %s with 400 and writes nothing',
+    async (powerWatts) => {
+      const { app, repository } = setup();
+
+      const response = await request(app)
+        .post(BASE)
+        .send({ ...body, powerWatts });
+
+      expectProblem(response, 400, 'validation_failed');
+      expect(repository.calls).toEqual([]);
+    },
+  );
+
+  it.each([0, 5001, 1.5])('rejects a patch with a power of %s', async (powerWatts) => {
+    const { app, repository } = setup();
+    const printer = repository.seed();
+
+    const response = await request(app)
+      .patch(`${BASE}/${printer.id}`)
+      .send({ version: 1, powerWatts });
+
+    expectProblem(response, 400, 'validation_failed');
+    expect(repository.calls).toEqual([]);
   });
 
   it('trims and normalises the name', async () => {
@@ -204,7 +242,7 @@ describe('POST /api/v1/printers', () => {
     it('restores it with 200, Location and the submitted data when the flag is true', async () => {
       const { app, repository, clock } = setup();
       const old = repository.seed({ deletedAt, typicalSpeedMmS: 99 });
-      const { typicalSpeedMmS: _speed, ...withoutSpeed } = body;
+      const { typicalSpeedMmS: _speed, powerWatts: _power, ...withoutSpeed } = body;
 
       const response = await request(app)
         .post(BASE)
@@ -219,6 +257,7 @@ describe('POST /api/v1/printers', () => {
         nozzle: { diameterMm: 0.4, material: 'brass' },
         compatibleMaterials: ['PLA', 'PETG'],
         typicalSpeedMmS: null,
+        powerWatts: null,
         status: 'maintenance',
         version: 2,
         archivedAt: null,
@@ -293,6 +332,7 @@ describe('POST /api/v1/printers/:id/unarchive', () => {
       nozzle: { diameterMm: 0.4, material: 'brass' },
       compatibleMaterials: ['PLA', 'PETG'],
       typicalSpeedMmS: 60,
+      powerWatts: 150,
       status: 'available',
       version: 2,
       archivedAt: null,
@@ -470,6 +510,7 @@ describe('GET /api/v1/printers', () => {
         'id',
         'name',
         'nozzle',
+        'powerWatts',
         'status',
         'typicalSpeedMmS',
         'updatedAt',
@@ -565,7 +606,7 @@ describe('PATCH /api/v1/printers/:id', () => {
 
   it('clears the speed with null', async () => {
     const { app, repository } = setup();
-    const printer = repository.seed({ typicalSpeedMmS: 60 });
+    const printer = repository.seed({ typicalSpeedMmS: 60, powerWatts: 150 });
 
     const response = await request(app)
       .patch(`${BASE}/${printer.id}`)

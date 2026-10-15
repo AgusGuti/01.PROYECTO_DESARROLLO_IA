@@ -156,6 +156,17 @@ describe('PartsListPage', () => {
     expect(page.text()).not.toContain('PA_CF');
   });
 
+  it('links each part to the cost calculator with its id', async () => {
+    const page = await render();
+
+    await page.answer(0, pageOf([makePart({ id: 'abc123', name: 'Soporte de cable' })]));
+
+    const link = page.element.querySelector<HTMLAnchorElement>('a[href^="/costos"]');
+    expect(link?.textContent.trim()).toBe('Calcular costo');
+    expect(link?.getAttribute('href')).toBe('/costos?piezaId=abc123');
+    expect(link?.getAttribute('aria-label')).toBe('Calcular costo de Soporte de cable');
+  });
+
   it('shows a part imported from G-code with its origin and a comma in the layer height', async () => {
     const page = await render();
 

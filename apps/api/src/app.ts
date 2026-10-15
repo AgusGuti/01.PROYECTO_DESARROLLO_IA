@@ -8,10 +8,15 @@ import type { Logger } from 'pino';
 import { pinoHttp } from 'pino-http';
 import type { Config } from './config/env.js';
 import { createHealthModule, type Clock, type DependencyProbe } from './modules/health/index.js';
-import { createFilamentsModule } from './modules/filaments/index.js';
+import { createFilamentCostReader, createFilamentsModule } from './modules/filaments/index.js';
+import { createCostsModule } from './modules/costs/index.js';
 import { createGcodeModule } from './modules/gcode/index.js';
-import { createPartLookup, createPartsModule } from './modules/parts/index.js';
-import { createPrintersModule } from './modules/printers/index.js';
+import {
+  createPartCostReader,
+  createPartLookup,
+  createPartsModule,
+} from './modules/parts/index.js';
+import { createPrinterCostReader, createPrintersModule } from './modules/printers/index.js';
 import { createProjectsModule } from './modules/projects/index.js';
 import { AppError } from './shared/errors/app-error.js';
 import { createErrorHandler, notFoundHandler } from './shared/http/error-handler.js';
@@ -30,6 +35,8 @@ export interface AppDependencies {
   parts?: Partial<Omit<Parameters<typeof createPartsModule>[0], 'clock'>>;
   /** Lets tests replace the projects repository and the part lookup with fakes. */
   projects?: Partial<Omit<Parameters<typeof createProjectsModule>[0], 'clock'>>;
+  /** Lets tests replace the settings repository and the three read ports with fakes. */
+  costs?: Partial<Omit<Parameters<typeof createCostsModule>[0], 'clock'>>;
 }
 
 const systemClock: Clock = { now: () => new Date() };
@@ -43,6 +50,7 @@ export function createApp({
   filaments = {},
   parts = {},
   projects = {},
+  costs = {},
 }: AppDependencies): Express {
   const app = express();
 
@@ -113,6 +121,17 @@ export function createApp({
   v1.use(
     '/parts',
     createPartsModule({ clock, partUsage: projectsModule.partUsage, ...parts }).router,
+  );
+  // Costs read parts, spools and printers only through ports built here (ADR 0017).
+  v1.use(
+    '/costs',
+    createCostsModule({
+      clock,
+      partReader: createPartCostReader(parts.repository),
+      filamentReader: createFilamentCostReader(filaments.repository),
+      printerReader: createPrinterCostReader(printers.repository),
+      ...costs,
+    }).router,
   );
   v1.use('/gcode-analyses', createGcodeModule().router);
 

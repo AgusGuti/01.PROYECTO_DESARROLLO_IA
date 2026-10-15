@@ -190,6 +190,26 @@
           }
         </div>
 
+        @let powerError = errorFor('power');
+        <div class="field">
+          <label for="field-power">Potencia promedio (W), opcional</label>
+          <input
+            id="field-power"
+            type="number"
+            inputmode="numeric"
+            step="1"
+            formControlName="power"
+            [attr.aria-invalid]="powerError ? 'true' : null"
+            [attr.aria-describedby]="powerError ? 'power-hint power-error' : 'power-hint'"
+          />
+          <p id="power-hint" class="hint">
+            Consumo medio mientras imprime, no el máximo de la fuente
+          </p>
+          @if (powerError) {
+            <p id="power-error" class="field-error">{{ powerError }}</p>
+          }
+        </div>
+
         <div class="field">
           <label for="field-status">Estado</label>
           <select id="field-status" formControlName="status">

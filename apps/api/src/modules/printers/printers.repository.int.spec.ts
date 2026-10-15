@@ -203,6 +203,25 @@ describe('printers repository on a real MongoDB', () => {
       });
     });
 
+    it('sets, keeps and clears the power independently of the speed', async () => {
+      const printer = await make('Ender 3', { powerWatts: null, typicalSpeedMmS: 60 });
+
+      const set = await repository.update(printer.id, 1, { powerWatts: 120 }, T1);
+      const kept = await repository.update(printer.id, 2, { status: 'maintenance' }, T1);
+      const cleared = await repository.update(printer.id, 3, { powerWatts: null }, T1);
+
+      expect(set).toMatchObject({ powerWatts: 120, typicalSpeedMmS: 60 });
+      expect(kept).toMatchObject({ powerWatts: 120 });
+      expect(cleared).toMatchObject({ powerWatts: null, typicalSpeedMmS: 60 });
+      expect(await collection().findOne({ name: 'Ender 3' })).not.toHaveProperty('powerWatts');
+    });
+
+    it('reads a raw document without powerWatts as null', async () => {
+      const printer = await make('Ender 3', { powerWatts: null });
+      expect(await collection().findOne({ name: 'Ender 3' })).not.toHaveProperty('powerWatts');
+      expect((await repository.findLiveById(printer.id))?.powerWatts).toBeNull();
+    });
+
     it('removes the speed field when cleared with null', async () => {
       const printer = await make('Ender 3', { typicalSpeedMmS: 60 });
 
@@ -408,6 +427,7 @@ describe('printers repository on a real MongoDB', () => {
       nozzle: { diameterMm: 0.6, material: 'hardened_steel' },
       compatibleMaterials: ['PA_CF'],
       typicalSpeedMmS: null,
+      powerWatts: null,
       status: 'maintenance',
     };
 
@@ -429,7 +449,18 @@ describe('printers repository on a real MongoDB', () => {
       });
       expect(await collection().countDocuments({})).toBe(1);
       expect(await collection().findOne({ name: 'ENDER 3' })).not.toHaveProperty('typicalSpeedMmS');
+      expect(await collection().findOne({ name: 'ENDER 3' })).not.toHaveProperty('powerWatts');
       expect(await repository.findLiveById(first.id)).toEqual(restored);
+    });
+
+    it('applies a submitted power when restoring', async () => {
+      const first = await make('Ender 3', { powerWatts: null });
+      await repository.softDelete(first.id, T1);
+
+      const restored = await repository.restore({ ...newData, powerWatts: 90 }, T1);
+
+      expect(restored).toMatchObject({ id: first.id, powerWatts: 90 });
+      expect(await collection().findOne({ name: 'ENDER 3' })).toHaveProperty('powerWatts', 90);
     });
 
     it('matches the name ignoring case and composed or decomposed accents', async () => {
