@@ -318,6 +318,166 @@ components:
       required:
         - version
       additionalProperties: false
+    Filament:
+      type: object
+      properties:
+        id:
+          type: string
+          example: 66f0c0ffee0123456789abcd
+        brand:
+          type: string
+        material:
+          $ref: "#/components/schemas/Material"
+        colorName:
+          type: string
+        initialGrams:
+          type: integer
+        availableGrams:
+          type: integer
+        purchaseCostMinor:
+          type: integer
+          description: Centavos of ARS. 1500000 means $15.000,00.
+        purchaseDate:
+          type: string
+          format: date
+          example: 2026-03-15
+          description: YYYY-MM-DD, a calendar day (no time zone).
+        version:
+          type: integer
+          description: Send this back when editing.
+        createdAt:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+        updatedAt:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+      required:
+        - id
+        - brand
+        - material
+        - colorName
+        - initialGrams
+        - availableGrams
+        - purchaseCostMinor
+        - purchaseDate
+        - version
+        - createdAt
+        - updatedAt
+    CreateFilamentRequest:
+      type: object
+      properties:
+        brand:
+          type: string
+          minLength: 1
+          maxLength: 60
+          example: Grilon3
+        material:
+          $ref: "#/components/schemas/Material"
+        colorName:
+          type: string
+          minLength: 1
+          maxLength: 40
+          example: Negro
+        initialGrams:
+          type: integer
+          minimum: 1
+          maximum: 20000
+          description: Weight of the spool when bought, in grams.
+        availableGrams:
+          type: integer
+          minimum: 0
+          maximum: 20000
+          description: Defaults to initialGrams (a new, unused spool).
+        purchaseCostMinor:
+          type: integer
+          minimum: 0
+          maximum: 1000000000
+          description: Purchase cost in centavos of Argentine pesos (ARS), an integer. 1500000 means $15.000,00.
+        purchaseDate:
+          type: string
+          format: date
+          example: 2026-03-15
+          description: Calendar day of the purchase, YYYY-MM-DD (UTC). It cannot be later than today (UTC).
+      required:
+        - brand
+        - material
+        - colorName
+        - initialGrams
+        - purchaseCostMinor
+        - purchaseDate
+      additionalProperties: false
+    FilamentList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Filament"
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+      required:
+        - items
+        - page
+        - pageSize
+        - total
+    UpdateFilamentRequest:
+      type: object
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        brand:
+          type: string
+          minLength: 1
+          maxLength: 60
+          example: Grilon3
+        material:
+          $ref: "#/components/schemas/Material"
+        colorName:
+          type: string
+          minLength: 1
+          maxLength: 40
+          example: Negro
+        initialGrams:
+          type: integer
+          minimum: 1
+          maximum: 20000
+          description: Weight of the spool when bought, in grams.
+        availableGrams:
+          type: integer
+          minimum: 0
+          maximum: 20000
+          description: Grams left on the spool. Never more than initialGrams.
+        purchaseCostMinor:
+          type: integer
+          minimum: 0
+          maximum: 1000000000
+          description: Purchase cost in centavos of Argentine pesos (ARS), an integer. 1500000 means $15.000,00.
+        purchaseDate:
+          type: string
+          format: date
+          example: 2026-03-15
+          description: Calendar day of the purchase, YYYY-MM-DD (UTC). It cannot be later than today (UTC).
+      required:
+        - version
+      additionalProperties: false
+    ConsumeFilamentRequest:
+      type: object
+      properties:
+        grams:
+          type: integer
+          minimum: 1
+          maximum: 20000
+          description: Grams to take from the spool.
+      required:
+        - grams
+      additionalProperties: false
   parameters: {}
 paths:
   /health/live:
@@ -604,6 +764,259 @@ paths:
                 $ref: "#/components/schemas/Problem"
         "404":
           description: No such printer, or it was already removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/filaments:
+    post:
+      operationId: createFilament
+      tags:
+        - Filaments
+      summary: Register a filament spool
+      description: "Two identical spools are allowed: there is no uniqueness rule."
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFilamentRequest"
+      responses:
+        "201":
+          description: Created. The Location header points to the new filament.
+          headers:
+            Location:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Filament"
+        "400":
+          description: Invalid input, availableGrams above initialGrams, or a purchase date in the future.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    get:
+      operationId: listFilaments
+      tags:
+        - Filaments
+      summary: List filaments
+      description: Removed filaments are not listed.
+      parameters:
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 1
+          required: false
+          name: page
+          in: query
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          required: false
+          name: pageSize
+          in: query
+        - schema:
+            $ref: "#/components/schemas/Material"
+          required: false
+          name: material
+          in: query
+        - schema:
+            type: string
+            enum:
+              - "true"
+              - "false"
+            description: "true: only spools with grams left. false: only empty spools."
+          required: false
+          description: "true: only spools with grams left. false: only empty spools."
+          name: inStock
+          in: query
+        - schema:
+            type: string
+            enum:
+              - purchaseDate
+              - brand
+              - availableGrams
+              - createdAt
+            default: createdAt
+          required: false
+          name: sort
+          in: query
+        - schema:
+            type: string
+            enum:
+              - asc
+              - desc
+            default: desc
+          required: false
+          name: order
+          in: query
+      responses:
+        "200":
+          description: One page of filaments. A page past the last one is empty.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FilamentList"
+        "400":
+          description: Unknown or invalid query parameter.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/filaments/{id}:
+    get:
+      operationId: getFilament
+      tags:
+        - Filaments
+      summary: Get one filament
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      responses:
+        "200":
+          description: The filament.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Filament"
+        "400":
+          description: Malformed id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such filament, or it was removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    patch:
+      operationId: updateFilament
+      tags:
+        - Filaments
+      summary: Edit a filament
+      description: Send the `version` you last saw plus the fields to change.
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateFilamentRequest"
+      responses:
+        "200":
+          description: The updated filament, with its new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Filament"
+        "400":
+          description: Invalid input, or the merged state breaks a rule (availableGrams above initialGrams, or
+            a purchase date in the future).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such filament, or it was removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Stale version (issue path "version").
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    delete:
+      operationId: deleteFilament
+      tags:
+        - Filaments
+      summary: Remove a filament
+      description: "Logical removal: the document is kept but no longer listed or readable."
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      responses:
+        "204":
+          description: Removed.
+        "400":
+          description: Malformed id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such filament, or it was already removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/filaments/{id}/consume:
+    post:
+      operationId: consumeFilament
+      tags:
+        - Filaments
+      summary: Take grams from a spool
+      description: "One atomic decrement. It needs no version: it does not conflict with edits, only with
+        the stock left."
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: id
+          in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsumeFilamentRequest"
+      responses:
+        "200":
+          description: The filament with the grams taken off.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Filament"
+        "400":
+          description: Invalid input or malformed id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such filament, or it was removed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Not enough material (issue path "grams"). The filament is unchanged.
           content:
             application/problem+json:
               schema:
