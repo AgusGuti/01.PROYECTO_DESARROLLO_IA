@@ -66,7 +66,7 @@ export function stockLevel(
 /** Same cap as the API: 1,000,000,000 centavos (ARS 10,000,000). */
 export const MAX_COST_MINOR = 1_000_000_000;
 
-const PESOS_INPUT = /^(\d{1,7})(?:,(\d{1,2}))?$/;
+const PESOS_INPUT = /^(\d{1,8})(?:,(\d{1,2}))?$/;
 
 /**
  * Converts what the user typed ("15000", "15000,5", "0,01") to integer centavos, or null when the

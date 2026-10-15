@@ -28,6 +28,69 @@ function estimateOf(input: EstimateInput): Estimate {
   return result.estimate;
 }
 
+// Hand-computed so they do not depend on the production formulas. Everything else is set to zero
+// so that exactly one line produces the number being checked.
+function onlyWear(seconds: number, wearPerHourMinor: number, marginBasisPoints = 0): Estimate {
+  return estimateOf(
+    build({
+      part: { ...partData, estimatedWeightGrams: 1, estimatedPrintSeconds: seconds },
+      filament: { ...filamentData, purchaseCostMinor: 0 },
+      printer: null,
+      marginBasisPoints,
+      settings: { ...settings, kwhPriceMinor: 0, wearPerHourMinor, fixedPerJobMinor: 0 },
+    }),
+  );
+}
+
+describe('hand-computed rounding vectors', () => {
+  it.each([
+    [1, 1800, 1], // 1 s at 1800 c/h is exactly 0.5 c: the tie goes up
+    [1, 1799, 0], // just under the tie goes down
+    [1, 1801, 1],
+    [3600, 50, 50], // one hour
+    [5400, 100, 150], // one and a half hours
+    [7, 3600, 7],
+  ])('charges %i s of wear at %i c/h as %i c', (seconds, rate, expected) => {
+    expect(onlyWear(seconds, rate).wear.costMinor).toBe(expected);
+  });
+
+  it.each([
+    [5000, 2], // the subtotal is 1 c; half of it is 0.5 c, which goes up: total 2
+    [4999, 1], // 0.4999 c goes down: total 1
+    [10_000, 2], // +100 %
+    [0, 1],
+  ])('adds a margin of %i basis points to a subtotal of 1 c for a total of %i c', (bp, total) => {
+    const estimate = onlyWear(1, 1800, bp);
+
+    expect(estimate.subtotalMinor).toBe(1);
+    expect(estimate.totalMinor).toBe(total);
+    expect(estimate.marginMinor + estimate.subtotalMinor).toBe(estimate.totalMinor);
+  });
+
+  it('rounds the unit price half up: a total of 5 c over 2 copies is 3 c', () => {
+    const estimate = estimateOf(
+      build({
+        part: { ...partData, estimatedWeightGrams: 1, estimatedPrintSeconds: 1 },
+        filament: { ...filamentData, purchaseCostMinor: 0 },
+        printer: null,
+        quantity: 2,
+        settings: { ...settings, kwhPriceMinor: 0, wearPerHourMinor: 0, fixedPerJobMinor: 5 },
+      }),
+    );
+
+    expect(estimate.totalMinor).toBe(5);
+    expect(estimate.unitTotalMinor).toBe(3);
+  });
+
+  it('charges the fixed cost once however many copies are made', () => {
+    const one = estimateOf(build({ quantity: 1 })).fixed.costMinor;
+    const ten = estimateOf(build({ quantity: 10 })).fixed.costMinor;
+
+    expect(one).toBe(5000);
+    expect(ten).toBe(5000);
+  });
+});
+
 describe('roundHalfUpDiv', () => {
   it.each([
     [1n, 2n, 1n],

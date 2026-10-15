@@ -145,7 +145,12 @@ describe('costs API on a real MongoDB with the real wiring', () => {
 
       expect(responses.map((r) => r.status).sort()).toEqual([200, 409]);
       expect(await settings().countDocuments({})).toBe(1);
-      expect(await settings().findOne({})).toMatchObject({ version: 2 });
+      // The stored values are exactly the winner's, not the loser's and not a mix.
+      const winner = responses.find((r) => r.status === 200);
+      expect(await settings().findOne({})).toMatchObject({
+        version: 2,
+        kwhPriceMinor: (winner?.body as { kwhPriceMinor: number }).kwhPriceMinor,
+      });
     });
 
     it('has only the _id index', async () => {
