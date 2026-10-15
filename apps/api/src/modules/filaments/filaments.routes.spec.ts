@@ -455,6 +455,18 @@ describe('PATCH /api/v1/filaments/:id', () => {
     );
   });
 
+  it('answers 409 before the domain 400 when the version is stale and the merged state is invalid', async () => {
+    const { app, repository } = setup();
+    const filament = repository.seed({ version: 4, initialGrams: 100, availableGrams: 50 });
+
+    const response = await request(app)
+      .patch(`${BASE}/${filament.id}`)
+      .send({ version: 1, availableGrams: 500 });
+
+    const problem = expectProblem(response, 409, 'conflict');
+    expect(problem.issues?.[0]?.path).toBe('version');
+  });
+
   it('answers 404 before 409 for a missing spool with any version', async () => {
     const { app } = setup();
 
