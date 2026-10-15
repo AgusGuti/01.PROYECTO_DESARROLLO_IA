@@ -105,6 +105,88 @@ export type UpdatePrinterRequest = {
     status?: PrinterStatus;
 };
 
+export type Filament = {
+    id: string;
+    brand: string;
+    material: Material;
+    colorName: string;
+    initialGrams: number;
+    availableGrams: number;
+    /**
+     * Centavos of ARS. 1500000 means $15.000,00.
+     */
+    purchaseCostMinor: number;
+    /**
+     * YYYY-MM-DD, a calendar day (no time zone).
+     */
+    purchaseDate: string;
+    /**
+     * Send this back when editing.
+     */
+    version: number;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type CreateFilamentRequest = {
+    brand: string;
+    material: Material;
+    colorName: string;
+    /**
+     * Weight of the spool when bought, in grams.
+     */
+    initialGrams: number;
+    /**
+     * Defaults to initialGrams (a new, unused spool).
+     */
+    availableGrams?: number;
+    /**
+     * Purchase cost in centavos of Argentine pesos (ARS), an integer. 1500000 means $15.000,00.
+     */
+    purchaseCostMinor: number;
+    /**
+     * Calendar day of the purchase, YYYY-MM-DD (UTC). It cannot be later than today (UTC).
+     */
+    purchaseDate: string;
+};
+
+export type FilamentList = {
+    items: Array<Filament>;
+    page: number;
+    pageSize: number;
+    total: number;
+};
+
+export type UpdateFilamentRequest = {
+    version: number;
+    brand?: string;
+    material?: Material;
+    colorName?: string;
+    /**
+     * Weight of the spool when bought, in grams.
+     */
+    initialGrams?: number;
+    /**
+     * Grams left on the spool. Never more than initialGrams.
+     */
+    availableGrams?: number;
+    /**
+     * Purchase cost in centavos of Argentine pesos (ARS), an integer. 1500000 means $15.000,00.
+     */
+    purchaseCostMinor?: number;
+    /**
+     * Calendar day of the purchase, YYYY-MM-DD (UTC). It cannot be later than today (UTC).
+     */
+    purchaseDate?: string;
+};
+
+export type ConsumeFilamentRequest = {
+    /**
+     * Grams to take from the spool.
+     */
+    grams: number;
+};
+
 export type GetLivenessData = {
     body?: never;
     path?: never;
@@ -337,3 +419,195 @@ export type UpdatePrinterResponses = {
 };
 
 export type UpdatePrinterResponse = UpdatePrinterResponses[keyof UpdatePrinterResponses];
+
+export type ListFilamentsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        page?: number;
+        pageSize?: number;
+        material?: Material;
+        /**
+         * true: only spools with grams left. false: only empty spools.
+         */
+        inStock?: 'true' | 'false';
+        sort?: 'purchaseDate' | 'brand' | 'availableGrams' | 'createdAt';
+        order?: 'asc' | 'desc';
+    };
+    url: '/api/v1/filaments';
+};
+
+export type ListFilamentsErrors = {
+    /**
+     * Unknown or invalid query parameter.
+     */
+    400: Problem;
+};
+
+export type ListFilamentsError = ListFilamentsErrors[keyof ListFilamentsErrors];
+
+export type ListFilamentsResponses = {
+    /**
+     * One page of filaments. A page past the last one is empty.
+     */
+    200: FilamentList;
+};
+
+export type ListFilamentsResponse = ListFilamentsResponses[keyof ListFilamentsResponses];
+
+export type CreateFilamentData = {
+    body?: CreateFilamentRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/filaments';
+};
+
+export type CreateFilamentErrors = {
+    /**
+     * Invalid input, availableGrams above initialGrams, or a purchase date in the future.
+     */
+    400: Problem;
+};
+
+export type CreateFilamentError = CreateFilamentErrors[keyof CreateFilamentErrors];
+
+export type CreateFilamentResponses = {
+    /**
+     * Created. The Location header points to the new filament.
+     */
+    201: Filament;
+};
+
+export type CreateFilamentResponse = CreateFilamentResponses[keyof CreateFilamentResponses];
+
+export type DeleteFilamentData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/filaments/{id}';
+};
+
+export type DeleteFilamentErrors = {
+    /**
+     * Malformed id.
+     */
+    400: Problem;
+    /**
+     * No such filament, or it was already removed.
+     */
+    404: Problem;
+};
+
+export type DeleteFilamentError = DeleteFilamentErrors[keyof DeleteFilamentErrors];
+
+export type DeleteFilamentResponses = {
+    /**
+     * Removed.
+     */
+    204: void;
+};
+
+export type DeleteFilamentResponse = DeleteFilamentResponses[keyof DeleteFilamentResponses];
+
+export type GetFilamentData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/filaments/{id}';
+};
+
+export type GetFilamentErrors = {
+    /**
+     * Malformed id.
+     */
+    400: Problem;
+    /**
+     * No such filament, or it was removed.
+     */
+    404: Problem;
+};
+
+export type GetFilamentError = GetFilamentErrors[keyof GetFilamentErrors];
+
+export type GetFilamentResponses = {
+    /**
+     * The filament.
+     */
+    200: Filament;
+};
+
+export type GetFilamentResponse = GetFilamentResponses[keyof GetFilamentResponses];
+
+export type UpdateFilamentData = {
+    body?: UpdateFilamentRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/filaments/{id}';
+};
+
+export type UpdateFilamentErrors = {
+    /**
+     * Invalid input, or the merged state breaks a rule (availableGrams above initialGrams, or a purchase date in the future).
+     */
+    400: Problem;
+    /**
+     * No such filament, or it was removed.
+     */
+    404: Problem;
+    /**
+     * Stale version (issue path "version").
+     */
+    409: Problem;
+};
+
+export type UpdateFilamentError = UpdateFilamentErrors[keyof UpdateFilamentErrors];
+
+export type UpdateFilamentResponses = {
+    /**
+     * The updated filament, with its new version.
+     */
+    200: Filament;
+};
+
+export type UpdateFilamentResponse = UpdateFilamentResponses[keyof UpdateFilamentResponses];
+
+export type ConsumeFilamentData = {
+    body?: ConsumeFilamentRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/filaments/{id}/consume';
+};
+
+export type ConsumeFilamentErrors = {
+    /**
+     * Invalid input or malformed id.
+     */
+    400: Problem;
+    /**
+     * No such filament, or it was removed.
+     */
+    404: Problem;
+    /**
+     * Not enough material (issue path "grams"). The filament is unchanged.
+     */
+    409: Problem;
+};
+
+export type ConsumeFilamentError = ConsumeFilamentErrors[keyof ConsumeFilamentErrors];
+
+export type ConsumeFilamentResponses = {
+    /**
+     * The filament with the grams taken off.
+     */
+    200: Filament;
+};
+
+export type ConsumeFilamentResponse = ConsumeFilamentResponses[keyof ConsumeFilamentResponses];
