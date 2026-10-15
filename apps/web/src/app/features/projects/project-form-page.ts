@@ -27,13 +27,13 @@ import { catchError, map, of, startWith, Subject, switchMap } from 'rxjs';
 import { ApiError } from '../../core/api/api-error';
 import { type PickerPart, PartsPickerApi } from './parts-picker-api';
 import {
+  formatDeadline,
   isDeadlineInRange,
   MATERIAL_LABELS,
-  MAX_DEADLINE,
-  MIN_DEADLINE,
   type Priority,
   PRIORITY_LABELS,
   PRIORITY_ORDER,
+  parseDeadline,
 } from './project-labels';
 import { ProjectsApi } from './projects-api';
 import { noticeState, type ProjectsNotice } from './projects-notice';
@@ -109,7 +109,7 @@ const VALIDATION_MESSAGES: Readonly<Record<FieldKey, (errors: ValidationErrors) 
       ? `La descripción puede tener hasta ${String(MAX_DESCRIPTION_LENGTH)} caracteres.`
       : 'La descripción debe ser una sola línea, sin caracteres de control.',
   priority: () => SERVER_REJECTED.priority,
-  deadline: () => 'Ingresá una fecha válida entre el 01/01/2000 y el 31/12/2099.',
+  deadline: () => 'Ingresá una fecha válida entre el 01-01-2000 y el 31-12-2099 (DD-MM-AAAA).',
 };
 
 // Client validation mirrors the API limits. It is a convenience: the server decides.
@@ -173,8 +173,6 @@ export class ProjectFormPage {
     label: PRIORITY_LABELS[value],
   }));
   protected readonly maxLines = MAX_LINES;
-  protected readonly minDeadline = MIN_DEADLINE;
-  protected readonly maxDeadline = MAX_DEADLINE;
 
   protected readonly form = this.fb.group({
     name: this.fb.control('', textValidator(MAX_NAME_LENGTH, false)),
@@ -365,7 +363,7 @@ export class ProjectFormPage {
 
     const name = this.form.controls.name.value.trim();
     const description = this.form.controls.description.value.trim();
-    const deadline = this.form.controls.deadline.value;
+    const deadline = parseDeadline(this.form.controls.deadline.value) ?? '';
     const priority = this.form.controls.priority.value;
     const items: ProjectItemInput[] = this.lines().map((line) => ({
       partId: line.partId,
@@ -492,7 +490,7 @@ export class ProjectFormPage {
       name: project.name,
       description: project.description ?? '',
       priority: project.priority,
-      deadline: project.deadline ?? '',
+      deadline: project.deadline === null ? '' : formatDeadline(project.deadline),
     });
     this.lines.set(
       project.items.map((item) => ({

@@ -156,7 +156,7 @@ describe('FilamentsListPage', () => {
     expect(row).toContain('800 / 1000 g');
     expect(row).toContain('Disponible');
     expect(row).toContain('$ 15.000,50');
-    expect(row).toContain('01/10/2026');
+    expect(row).toContain('01-10-2026');
     expect(page.text()).not.toContain('PA_CF');
   });
 
@@ -179,8 +179,8 @@ describe('FilamentsListPage', () => {
 
     await page.answer(0, pageOf([makeFilament({ purchaseDate: '2026-10-01' })]));
 
-    expect(page.element.querySelector('tbody')?.textContent).toContain('01/10/2026');
-    expect(page.element.querySelector('tbody')?.textContent).not.toContain('30/09/2026');
+    expect(page.element.querySelector('tbody')?.textContent).toContain('01-10-2026');
+    expect(page.element.querySelector('tbody')?.textContent).not.toContain('30-09-2026');
   });
 
   it('invites the user to create the first filament when there are none', async () => {

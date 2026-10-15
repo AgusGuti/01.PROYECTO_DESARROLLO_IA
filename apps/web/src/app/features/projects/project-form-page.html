@@ -92,14 +92,15 @@
           <label for="field-deadline">Fecha límite (opcional)</label>
           <input
             id="field-deadline"
-            type="date"
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
+            placeholder="DD-MM-AAAA"
             formControlName="deadline"
-            [min]="minDeadline"
-            [max]="maxDeadline"
             [attr.aria-invalid]="deadlineError ? 'true' : null"
             [attr.aria-describedby]="describedBy('deadline', 'deadline-hint')"
           />
-          <p id="deadline-hint" class="hint">Puede ser una fecha pasada.</p>
+          <p id="deadline-hint" class="hint">Formato DD-MM-AAAA. Puede ser una fecha pasada.</p>
           @if (deadlineError) {
             <p id="error-deadline" class="field-error">{{ deadlineError }}</p>
           }

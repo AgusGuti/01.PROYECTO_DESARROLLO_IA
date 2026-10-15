@@ -131,10 +131,10 @@ const DATE = new Intl.DateTimeFormat('es-AR', {
   year: 'numeric',
 });
 
-/** An instant ("2026-10-15T15:00:00.000Z") as dd/mm/aaaa in the browser's own time zone. */
+/** An instant ("2026-10-15T15:00:00.000Z") as DD-MM-YYYY in the browser's own time zone. */
 export function formatInstantDate(iso: string): string {
   const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : DATE.format(date);
+  return Number.isNaN(date.getTime()) ? iso : DATE.format(date).replaceAll('/', '-');
 }
 
 const MAX_FILE_NAME_CODE_POINTS = 255;

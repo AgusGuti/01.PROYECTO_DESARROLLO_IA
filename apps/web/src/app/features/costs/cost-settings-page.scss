@@ -49,3 +49,16 @@ input[type='text'] {
   display: flex;
   gap: 1rem;
 }
+
+.help {
+  max-inline-size: 40rem;
+  margin-block-end: 1.25rem;
+
+  h2 {
+    font-size: 1.125rem;
+  }
+
+  li {
+    margin-block-end: 0.5rem;
+  }
+}

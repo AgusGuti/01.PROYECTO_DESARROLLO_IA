@@ -24,11 +24,12 @@ import type {
 import { catchError, map, of, startWith, Subject, switchMap } from 'rxjs';
 import { ApiError } from '../../core/api/api-error';
 import {
-  isIsoDate,
+  formatDate,
   MATERIAL_LABELS,
   MATERIAL_ORDER,
   minorToPesosInput,
   parsePesosToMinor,
+  parseDate,
   todayUtc,
 } from './filament-labels';
 import { FilamentsApi } from './filaments-api';
@@ -164,7 +165,8 @@ function costValidator(control: AbstractControl<string>): ValidationErrors | nul
 function dateValidator(today: string): ValidatorFn {
   return (control) => {
     const value: unknown = control.value;
-    return isIsoDate(value) && value <= today ? null : { date: true };
+    const iso = typeof value === 'string' ? parseDate(value) : null;
+    return iso !== null && iso <= today ? null : { date: true };
   };
 }
 
@@ -389,7 +391,7 @@ export class FilamentFormPage {
       initialGrams: filament.initialGrams,
       availableGrams: filament.availableGrams,
       purchaseCost: minorToPesosInput(filament.purchaseCostMinor),
-      purchaseDate: filament.purchaseDate,
+      purchaseDate: formatDate(filament.purchaseDate),
     });
     this.submitted.set(false);
   }
@@ -405,7 +407,7 @@ export class FilamentFormPage {
       initialGrams: raw.initialGrams,
       availableGrams: raw.availableGrams,
       purchaseCostMinor,
-      purchaseDate: raw.purchaseDate,
+      purchaseDate: parseDate(raw.purchaseDate) ?? '',
     };
   }
 

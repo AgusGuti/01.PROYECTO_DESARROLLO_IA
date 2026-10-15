@@ -19,7 +19,7 @@
           <dt>Base de datos</dt>
           <dd>{{ view.readiness.checks.database === 'up' ? 'Conectada' : 'Sin conexión' }}</dd>
           <dt>Última verificación</dt>
-          <dd>{{ view.readiness.timestamp | date: 'medium' }}</dd>
+          <dd>{{ view.readiness.timestamp | date: 'dd-MM-yyyy HH:mm:ss' }}</dd>
         </dl>
       }
       @case ('failed') {

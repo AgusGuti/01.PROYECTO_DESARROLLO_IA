@@ -8,6 +8,7 @@ import {
   linesAndUnits,
   MATERIAL_LABELS,
   PRIORITY_LABELS,
+  parseDeadline,
   PRIORITY_ORDER,
   todayLocal,
 } from './project-labels';
@@ -38,9 +39,9 @@ describe('project labels', () => {
 });
 
 describe('formatDeadline', () => {
-  it('writes a calendar day as dd/mm/aaaa by splitting the text', () => {
-    expect(formatDeadline('2026-11-30')).toBe('30/11/2026');
-    expect(formatDeadline('2000-01-05')).toBe('05/01/2000');
+  it('writes a calendar day as DD-MM-YYYY by splitting the text', () => {
+    expect(formatDeadline('2026-11-30')).toBe('30-11-2026');
+    expect(formatDeadline('2000-01-05')).toBe('05-01-2000');
   });
 
   it('does not depend on the time zone because it never builds a Date', () => {
@@ -48,7 +49,7 @@ describe('formatDeadline', () => {
 
     const text = formatDeadline('2026-01-01');
 
-    expect(text).toBe('01/01/2026');
+    expect(text).toBe('01-01-2026');
     expect(dateSpy).not.toHaveBeenCalled();
     dateSpy.mockRestore();
   });
@@ -102,16 +103,32 @@ describe('isOverdue', () => {
 
 describe('isDeadlineInRange', () => {
   it.each([
-    ['2000-01-01', true],
-    ['2099-12-31', true],
-    ['1999-12-31', false],
-    ['2100-01-01', false],
-    ['275760-09-13', false],
-    ['', false],
+    ['01-01-2000', true],
+    ['31-12-2099', true],
+    ['29-02-2020', true],
+    ['31-12-1999', false],
+    ['01-01-2100', false],
+    ['30-02-2026', false],
+    ['2026-11-30', false],
     ['30/11/2026', false],
+    ['', false],
   ])('for %s answers %s', (value, expected) => {
     expect(isDeadlineInRange(value)).toBe(expected);
   });
+});
+
+describe('parseDeadline', () => {
+  it('turns DD-MM-YYYY into the YYYY-MM-DD the API takes', () => {
+    expect(parseDeadline('30-11-2026')).toBe('2026-11-30');
+    expect(parseDeadline(' 05-01-2000 ')).toBe('2000-01-05');
+  });
+
+  it.each(['2026-11-30', '30/11/2026', '31-04-2026', '29-02-2025', '1-1-2026', ''])(
+    'rejects %j',
+    (value) => {
+      expect(parseDeadline(value)).toBeNull();
+    },
+  );
 });
 
 describe('linesAndUnits', () => {

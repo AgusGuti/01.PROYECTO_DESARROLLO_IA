@@ -45,13 +45,28 @@ export function isMaterial(value: unknown): value is Material {
 const CALENDAR_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 /**
- * "2026-11-30" becomes "30/11/2026". The string is split, never parsed as a `Date`: a deadline
+ * "2026-11-30" becomes "30-11-2026" (DD-MM-YYYY). The string is split, never parsed as a `Date`: a deadline
  * is a calendar day with no time zone, and `new Date('2026-11-30')` is UTC midnight, which is the
  * previous day west of Greenwich.
  */
 export function formatDeadline(deadline: string): string {
   const match = CALENDAR_DAY.exec(deadline);
-  return match === null ? deadline : `${match[3] ?? ''}/${match[2] ?? ''}/${match[1] ?? ''}`;
+  return match === null ? deadline : `${match[3] ?? ''}-${match[2] ?? ''}-${match[1] ?? ''}`;
+}
+
+const DMY_DAY = /^(\d{2})-(\d{2})-(\d{4})$/;
+
+/** What the user types, DD-MM-YYYY, back to YYYY-MM-DD; null if it is not a real calendar day. */
+export function parseDeadline(text: string): string | null {
+  const match = DMY_DAY.exec(text.trim());
+  if (match === null) return null;
+  const [day, month, year] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const check = new Date(Date.UTC(year, month - 1, day));
+  const real =
+    check.getUTCFullYear() === year &&
+    check.getUTCMonth() === month - 1 &&
+    check.getUTCDate() === day;
+  return real ? `${match[3] ?? ''}-${match[2] ?? ''}-${match[1] ?? ''}` : null;
 }
 
 const pad = (value: number, length: number): string => String(value).padStart(length, '0');
@@ -73,7 +88,8 @@ export const MIN_DEADLINE = '2000-01-01';
 export const MAX_DEADLINE = '2099-12-31';
 
 export function isDeadlineInRange(value: string): boolean {
-  return CALENDAR_DAY.test(value) && value >= MIN_DEADLINE && value <= MAX_DEADLINE;
+  const iso = parseDeadline(value);
+  return iso !== null && iso >= MIN_DEADLINE && iso <= MAX_DEADLINE;
 }
 
 // ---- Plurals ---------------------------------------------------------------------------------

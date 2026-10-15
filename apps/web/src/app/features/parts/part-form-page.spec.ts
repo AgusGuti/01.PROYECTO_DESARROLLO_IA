@@ -1082,7 +1082,7 @@ describe('PartFormPage (edit)', () => {
 
     const origin = page.element.querySelector('.origin')?.textContent.trim() ?? '';
     expect(origin).toMatch(
-      /^Origen: G-code «<img src=x onerror=alert\(1\)>» \(Cura\), importado el 1[45]\/10\/2026$/,
+      /^Origen: G-code «<img src=x onerror=alert\(1\)>» \(Cura\), importado el 1[45]-10-2026$/,
     );
     expect(page.element.querySelector('img')).toBeNull();
     expect(page.element.querySelector('label[for="field-gcode"]')?.textContent.trim()).toBe(

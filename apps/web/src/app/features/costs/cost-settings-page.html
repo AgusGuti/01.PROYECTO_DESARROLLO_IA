@@ -20,6 +20,34 @@
         <p class="notice">Todavía no guardaste tus tarifas: los costos se calculan con ceros.</p>
       }
 
+      <section class="help" aria-labelledby="help-title">
+        <h2 id="help-title">Cómo cargar los valores</h2>
+        <ul>
+          <li>
+            Escribí los importes en pesos con coma para los centavos, sin signo $ ni puntos de
+            miles: por ejemplo <strong>150,50</strong>.
+          </li>
+          <li>
+            <strong>Precio del kWh:</strong> lo que pagás por kWh de luz, del total de la factura
+            dividido por los kWh consumidos. Ejemplo: 120,00.
+          </li>
+          <li>
+            <strong>Desgaste por hora:</strong> lo que querés reservar por cada hora de impresión
+            para repuestos (boquilla, correas, cama). Ejemplo: precio de los repuestos del año ÷
+            horas impresas en el año.
+          </li>
+          <li>
+            <strong>Costo fijo por trabajo:</strong> un monto que se suma una sola vez a cada
+            cálculo, sin importar la cantidad (embalaje, preparación). Dejalo en 0 si no lo usás.
+          </li>
+          <li>
+            <strong>Margen por defecto:</strong> porcentaje de ganancia, con hasta 2 decimales (por
+            ejemplo 30 o 12,5). Solo se usa para precargar el cálculo cuando marcás «¿Venta?».
+            Después de guardar, volvé a calcular un costo para ver el efecto.
+          </li>
+        </ul>
+      </section>
+
       <div class="notices" aria-live="polite">
         @if (savedNotice()) {
           <p class="notice notice--success">Ajustes guardados.</p>

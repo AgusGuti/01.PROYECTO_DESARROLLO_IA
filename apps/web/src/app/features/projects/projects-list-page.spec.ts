@@ -143,7 +143,7 @@ describe('ProjectsListPage', () => {
 
     expect(page.row()).toContain('Soportes para el taller');
     expect(page.row()).toContain('Urgente');
-    expect(page.row()).toContain('30/11/2026');
+    expect(page.row()).toContain('30-11-2026');
     expect(page.row()).toContain('3 líneas · 12 unidades');
     expect(page.text()).not.toContain('urgent');
   });
@@ -162,7 +162,7 @@ describe('ProjectsListPage', () => {
 
     await page.answer(0, pageOf([makeProject({ deadline: '2026-10-14' })]));
 
-    expect(page.row()).toContain('14/10/2026');
+    expect(page.row()).toContain('14-10-2026');
     expect(page.row()).toContain('Vencido');
     expect(page.element.querySelector('.overdue [aria-hidden="true"]')).not.toBeNull();
   });
