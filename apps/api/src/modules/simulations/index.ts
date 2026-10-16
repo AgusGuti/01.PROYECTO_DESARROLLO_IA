@@ -8,12 +8,14 @@ import {
   type PrinterLookup,
   type ProjectReader,
   type QueueReader,
+  type PlanningReader,
   type ScheduleReader,
 } from './simulations.service.js';
 
 export { registerSimulationsPaths } from './simulations.openapi.js';
 export type {
   PartLookup,
+  PlanningReader,
   PrinterLookup,
   ProjectReader,
   QueueReader,
@@ -27,6 +29,7 @@ export function createSimulationsModule(deps: {
   partLookup: PartLookup;
   printerLookup: PrinterLookup;
   scheduleReader: ScheduleReader;
+  planningReader: PlanningReader;
 }): { router: Router } {
   const service = createSimulationsService(deps);
   return { router: createSimulationsRouter(createSimulationsController(service)) };

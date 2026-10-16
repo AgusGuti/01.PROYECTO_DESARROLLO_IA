@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import type { Simulation, SimulationRequest } from '@print3d/api-contracts';
+import type { Optimization, Simulation, SimulationRequest } from '@print3d/api-contracts';
 import { Subject } from 'rxjs';
 import { vi } from 'vitest';
 import { ApiError, type ApiFieldIssue } from '../../core/api/api-error';
@@ -60,6 +60,116 @@ function makeSimulation(overrides: Partial<Simulation> = {}): Simulation {
   };
 }
 
+function makeOptimization(overrides: Partial<Optimization> = {}): Optimization {
+  return {
+    projectId: 'p1',
+    goal: 'fastest',
+    startAt: '2026-10-16T10:15',
+    strategy: 'best_fit',
+    baseline: {
+      totals: {
+        placedPlates: 2,
+        placedUnits: 2,
+        unplacedUnits: 1,
+        finishAt: '2026-10-17T08:00',
+        totalBusyMinutes: 1305,
+        totalIdleMinutes: 90,
+      },
+      deadline: { date: '2026-10-20', met: false },
+      unplaced: [{ partId: 'b', partName: 'Tapa', units: 1 }],
+    },
+    optimized: {
+      jobs: [
+        {
+          order: 1,
+          partId: 'a',
+          partName: 'Soporte',
+          units: 2,
+          plateIndex: 1,
+          platesInLine: 2,
+          printerId: 'pr1',
+          startAt: '2026-10-16T10:15',
+          endAt: '2026-10-16T12:15',
+          handoffAt: '2026-10-16T12:30',
+          unattended: false,
+        },
+        {
+          order: 2,
+          partId: 'a',
+          partName: 'Soporte',
+          units: 1,
+          plateIndex: 2,
+          platesInLine: 2,
+          printerId: 'pr1',
+          startAt: '2026-10-16T12:30',
+          endAt: '2026-10-16T20:30',
+          handoffAt: '2026-10-17T03:30',
+          unattended: true,
+        },
+      ],
+      printers: [
+        { printerId: 'pr1', name: 'Ender', jobs: 2, busyMinutes: 1035, idleMinutes: 0 },
+        { printerId: 'pr2', name: 'Prusa', jobs: 0, busyMinutes: 0, idleMinutes: 0 },
+      ],
+      totals: {
+        placedPlates: 2,
+        placedUnits: 3,
+        unplacedUnits: 0,
+        finishAt: '2026-10-17T03:30',
+        totalBusyMinutes: 1035,
+        totalIdleMinutes: 0,
+      },
+      deadline: { date: '2026-10-20', met: true },
+      unplaced: [],
+    },
+    comparison: { finishDeltaMinutes: -270, idleDeltaMinutes: -90, deadlineChanged: 'gained' },
+    candidates: [
+      {
+        strategy: 'naive',
+        finishAt: '2026-10-17T08:00',
+        totalIdleMinutes: 90,
+        deadlineMet: false,
+        placedUnits: 2,
+        unplacedUnits: 1,
+      },
+      {
+        strategy: 'queue_order',
+        finishAt: '2026-10-17T05:00',
+        totalIdleMinutes: 30,
+        deadlineMet: true,
+        placedUnits: 3,
+        unplacedUnits: 0,
+      },
+      {
+        strategy: 'longest_first',
+        finishAt: null,
+        totalIdleMinutes: 0,
+        deadlineMet: null,
+        placedUnits: 0,
+        unplacedUnits: 3,
+      },
+      {
+        strategy: 'shortest_first',
+        finishAt: '2026-10-17T06:15',
+        totalIdleMinutes: 45,
+        deadlineMet: true,
+        placedUnits: 3,
+        unplacedUnits: 0,
+      },
+      {
+        strategy: 'best_fit',
+        finishAt: '2026-10-17T03:30',
+        totalIdleMinutes: 0,
+        deadlineMet: true,
+        placedUnits: 3,
+        unplacedUnits: 0,
+      },
+    ],
+    warnings: [{ code: 'batching_applied' }],
+    ...overrides,
+  };
+}
+
 function problem(status: number, issues: ApiFieldIssue[] = []): ApiError {
   return new ApiError(status, 'problem', 'Mensaje seguro en español.', issues, null, {
     detail: SENTINEL,
@@ -70,10 +180,16 @@ const plain = (text: string | null | undefined): string => (text ?? '').replace(
 
 async function render() {
   const runs: { body: SimulationRequest; reply: Subject<Simulation> }[] = [];
+  const optimizations: { body: SimulationRequest; reply: Subject<Optimization> }[] = [];
   const api = {
     simulate: vi.fn((body: SimulationRequest) => {
       const reply = new Subject<Simulation>();
       runs.push({ body, reply });
+      return reply;
+    }),
+    optimize: vi.fn((body: SimulationRequest) => {
+      const reply = new Subject<Optimization>();
+      optimizations.push({ body, reply });
       return reply;
     }),
   };
@@ -98,6 +214,7 @@ async function render() {
   };
   await settle();
   const input = (id: string) => element.querySelector<HTMLInputElement>(`#${id}`);
+  const optimizeButton = () => element.querySelector<HTMLButtonElement>('#optimize');
   const view = {
     element,
     api,
@@ -126,6 +243,23 @@ async function render() {
       runs[runs.length - 1]?.reply.error(error);
       await settle();
     },
+    optimizations,
+    async optimize() {
+      optimizeButton()?.click();
+      await settle();
+    },
+    async answerOptimization(
+      optimization: Optimization = makeOptimization(),
+      index = optimizations.length - 1,
+    ) {
+      optimizations[index]?.reply.next(optimization);
+      await settle();
+    },
+    async failOptimization(error: unknown) {
+      optimizations[optimizations.length - 1]?.reply.error(error);
+      await settle();
+    },
+    optimizeButton,
     submitButton: () => element.querySelector<HTMLButtonElement>('button[type="submit"]'),
   };
   return view;
@@ -506,6 +640,366 @@ describe('SimulationPage', () => {
       expect(page.api.simulate).toHaveBeenCalledTimes(2);
       expect(page.q('[role="alert"]')).toBeNull();
       expect(page.q('#summary')).not.toBeNull();
+    });
+  });
+
+  describe('the optimiser', () => {
+    const table = (page: Awaited<ReturnType<typeof render>>, selector: string) =>
+      Array.from(page.element.querySelectorAll(`${selector} tbody tr`)).map((row) =>
+        Array.from(row.children).map((cell) => plain(cell.textContent)),
+      );
+
+    it('links to the planning settings from the page', async () => {
+      const page = await render();
+
+      expect(page.q('a[href="/planificacion/ajustes"]')?.textContent).toBe(
+        'Ajustes de planificación',
+      );
+      expect(plain(page.optimizeButton()?.textContent)).toBe('Optimizar y comparar');
+    });
+
+    it('sends the same start as the simulation to the optimiser, not to the simulator', async () => {
+      const page = await render();
+      await page.type('sim-date', '05-11-2026');
+      await page.type('sim-time', '08:30');
+
+      await page.optimize();
+
+      expect(page.api.optimize).toHaveBeenCalledExactlyOnceWith({
+        projectId: 'p1',
+        startAt: '2026-11-05T08:30',
+      });
+      expect(page.api.simulate).not.toHaveBeenCalled();
+    });
+
+    it('rejects an invalid date without calling the API and focuses it', async () => {
+      const page = await render();
+      await page.type('sim-date', '31-04-2026');
+
+      await page.optimize();
+
+      expect(page.api.optimize).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(page.input('sim-date'));
+    });
+
+    it('disables both buttons while optimizing and announces it', async () => {
+      const page = await render();
+
+      await page.optimize();
+
+      expect(page.optimizeButton()?.disabled).toBe(true);
+      expect(plain(page.optimizeButton()?.textContent)).toBe('Optimizando…');
+      expect(page.submitButton()?.disabled).toBe(true);
+      expect(plain(page.q('#sim-status')?.textContent)).toBe('Optimizando…');
+      expect(page.q('#sim-status')?.getAttribute('aria-live')).toBe('polite');
+    });
+
+    it('announces only a short status line when the result is ready', async () => {
+      const page = await render();
+      await page.optimize();
+
+      await page.answerOptimization();
+
+      expect(plain(page.q('#sim-status')?.textContent)).toBe(
+        'Optimización lista: Mejor encaje con tus ventanas',
+      );
+      expect(page.optimizeButton()?.disabled).toBe(false);
+    });
+
+    it('explains what was done in plain Spanish and names the chosen strategy', async () => {
+      const page = await render();
+      await page.optimize();
+
+      await page.answerOptimization();
+
+      expect(plain(page.q('#explanation')?.textContent)).toBe(
+        'Probamos 5 estrategias y elegimos la mejor según el objetivo: terminar lo antes posible.',
+      );
+      expect(plain(page.q('#chosen')?.textContent)).toBe(
+        'Estrategia elegida: Mejor encaje con tus ventanas',
+      );
+    });
+
+    it.each([
+      ['deadline', 'cumplir la fecha límite'],
+      ['minimal_idle', 'tener el menor tiempo muerto'],
+    ] as const)('words the goal %s as "%s"', async (goal, text) => {
+      const page = await render();
+      await page.optimize();
+
+      await page.answerOptimization(makeOptimization({ goal }));
+
+      expect(plain(page.q('#explanation')?.textContent)).toContain(`el objetivo: ${text}.`);
+    });
+
+    it('shows the naive plan and the optimised plan side by side with exact figures', async () => {
+      const page = await render();
+      await page.optimize();
+
+      await page.answerOptimization();
+
+      expect(
+        Array.from(page.element.querySelectorAll('#comparison thead th')).map((th) =>
+          plain(th.textContent),
+        ),
+      ).toEqual(['Dato', 'Orden simple', 'Optimizado']);
+      expect(table(page, '#comparison')).toEqual([
+        ['Hora de fin', '17-10-2026 08:00', '17-10-2026 03:30'],
+        ['Tiempo ocupado', '21 h 45 min', '17 h 15 min'],
+        ['Tiempo muerto', '1 h 30 min', '0 min'],
+        ['Piezas ubicadas', '2', '3'],
+        ['Piezas no ubicadas', '1', '0'],
+        ['Placas impresas', '2', '2'],
+        ['Fecha límite', '20-10-2026: no cumple', '20-10-2026: cumple'],
+      ]);
+    });
+
+    it('words the improvement: finishes earlier, less idle time, deadline gained', async () => {
+      const page = await render();
+      await page.optimize();
+
+      await page.answerOptimization();
+
+      expect(
+        Array.from(page.element.querySelectorAll('#deltas li')).map((li) => li.textContent),
+      ).toEqual([
+        'Termina 4 h 30 min antes.',
+        'Tiempo muerto: 1 h 30 min menos.',
+        'Ahora cumple la fecha límite.',
+      ]);
+    });
+
+    it.each([
+      ['lost', 'Ya no cumple la fecha límite.'],
+      ['same', 'La fecha límite queda igual.'],
+      ['unknown', 'No se puede comparar la fecha límite.'],
+    ] as const)('words a deadline that is %s', async (deadlineChanged, text) => {
+      const page = await render();
+      await page.optimize();
+
+      await page.answerOptimization(
+        makeOptimization({
+          comparison: { finishDeltaMinutes: 0, idleDeltaMinutes: 0, deadlineChanged },
+        }),
+      );
+
+      expect(
+        Array.from(page.element.querySelectorAll('#deltas li')).map((li) => li.textContent),
+      ).toEqual(['Sin diferencia en la hora de fin.', 'Sin diferencia en el tiempo muerto.', text]);
+    });
+
+    it('says the finish cannot be compared when only one plan placed anything', async () => {
+      const page = await render();
+      await page.optimize();
+
+      await page.answerOptimization(
+        makeOptimization({
+          comparison: { finishDeltaMinutes: null, idleDeltaMinutes: 0, deadlineChanged: 'unknown' },
+        }),
+      );
+
+      expect(page.q('#deltas li')?.textContent).toBe('No se puede comparar la hora de fin.');
+    });
+
+    it('lists every candidate with a Spanish label and marks the chosen row', async () => {
+      const page = await render();
+      await page.optimize();
+
+      await page.answerOptimization();
+
+      expect(table(page, '#candidates')).toEqual([
+        ['Orden simple', '17-10-2026 08:00', '1 h 30 min', 'No cumple', '2', '1'],
+        ['Orden de la cola agrupando piezas', '17-10-2026 05:00', '30 min', 'Cumple', '3', '0'],
+        ['Las más largas primero', 'Sin trabajos ubicados', '0 min', 'No aplica', '0', '3'],
+        ['Las más cortas primero', '17-10-2026 06:15', '45 min', 'Cumple', '3', '0'],
+        ['Mejor encaje con tus ventanas Elegida', '17-10-2026 03:30', '0 min', 'Cumple', '3', '0'],
+      ]);
+      const chosen = page.element.querySelectorAll('#candidates tr.chosen');
+      expect(chosen).toHaveLength(1);
+      expect(plain(chosen[0]?.querySelector('th')?.textContent)).toContain('Mejor encaje');
+    });
+
+    it('shows the optimised plan with pieces per plate, plate x of y and Sin atender', async () => {
+      const page = await render();
+      await page.optimize();
+
+      await page.answerOptimization();
+
+      expect(page.text()).toContain('Plan optimizado');
+      expect(table(page, '.printer')).toEqual([
+        [
+          '1',
+          'Soporte: 2 piezas por placa (placa 1 de 2)',
+          '16-10-2026 10:15',
+          '16-10-2026 12:15',
+          '16-10-2026 12:30',
+          '',
+        ],
+        [
+          '2',
+          'Soporte: 1 pieza por placa (placa 2 de 2)',
+          '16-10-2026 12:30',
+          '16-10-2026 20:30',
+          '17-10-2026 03:30',
+          'Sin atender',
+        ],
+      ]);
+      expect(page.text()).toContain('Sin trabajos en esta impresora');
+      const bars = Array.from(page.element.querySelectorAll<HTMLElement>('.bar'));
+      expect(bars).toHaveLength(2);
+      // 14 days = 20160 min: the second plate starts 135 min in and lasts 900 min to its handoff.
+      expect(bars[1]?.style.left).toBe(`${(135 / 20160) * 100}%`);
+      expect(bars[1]?.style.width).toBe(`${(900 / 20160) * 100}%`);
+      expect(page.q('.timeline')?.getAttribute('aria-hidden')).toBe('true');
+    });
+
+    it('explains the batching warning in Spanish without the code', async () => {
+      const page = await render();
+      await page.optimize();
+
+      await page.answerOptimization();
+
+      expect(plain(page.q('.warnings li')?.textContent)).toBe(
+        '⚠ Se agruparon piezas iguales en una misma placa.',
+      );
+      expect(page.q('.result')?.textContent).not.toContain('batching_applied');
+    });
+
+    it('lists what could not be placed by the optimised plan', async () => {
+      const page = await render();
+      await page.optimize();
+      const base = makeOptimization();
+
+      await page.answerOptimization(
+        makeOptimization({
+          optimized: { ...base.optimized, unplaced: [{ partId: 'b', partName: 'Tapa', units: 2 }] },
+        }),
+      );
+
+      expect(plain(page.q('#unplaced')?.textContent)).toBe('Tapa: 2 unidad(es)');
+    });
+
+    it('renders hostile names as plain text', async () => {
+      const page = await render();
+      await page.optimize();
+      const base = makeOptimization();
+      const hostile = '<img src=x onerror=alert(1)>';
+
+      await page.answerOptimization(
+        makeOptimization({
+          optimized: {
+            ...base.optimized,
+            unplaced: [{ partId: 'h', partName: hostile, units: 1 }],
+          },
+        }),
+      );
+
+      expect(page.element.querySelector('img')).toBeNull();
+      expect(page.q('#unplaced')?.textContent).toContain(hostile);
+    });
+
+    it.each(['sim-date', 'sim-time'])(
+      'clears the previous optimisation when %s changes',
+      async (field) => {
+        const page = await render();
+        await page.optimize();
+        await page.answerOptimization();
+        expect(page.q('#comparison')).not.toBeNull();
+
+        await page.type(field, field === 'sim-date' ? '17-10-2026' : '11:00');
+
+        expect(page.q('#comparison')).toBeNull();
+        expect(page.q('#candidates')).toBeNull();
+        expect(plain(page.q('#sim-status')?.textContent)).toBe('');
+      },
+    );
+
+    it('keeps only the latest run when a new one starts', async () => {
+      const page = await render();
+      await page.optimize();
+      await page.type('sim-time', '11:00');
+      await page.optimize();
+
+      await page.answerOptimization(
+        makeOptimization({
+          optimized: {
+            ...makeOptimization().optimized,
+            unplaced: [{ partId: 'x', partName: 'VIEJA', units: 1 }],
+          },
+        }),
+        0,
+      );
+      expect(page.q('#comparison')).toBeNull();
+      await page.answerOptimization(makeOptimization(), 1);
+
+      expect(page.api.optimize).toHaveBeenCalledTimes(2);
+      expect(page.text()).not.toContain('VIEJA');
+      expect(page.q('#comparison')).not.toBeNull();
+    });
+
+    it('replaces a simulation result when optimizing, and the other way round', async () => {
+      const page = await render();
+      await page.submit();
+      await page.answer();
+      expect(page.q('#summary')).not.toBeNull();
+
+      await page.optimize();
+      await page.answerOptimization();
+
+      expect(page.q('#summary')).toBeNull();
+      expect(page.q('#comparison')).not.toBeNull();
+    });
+
+    describe('errors', () => {
+      it('offers a link to the queue when the project has none (400 on projectId)', async () => {
+        const page = await render();
+        await page.optimize();
+
+        await page.failOptimization(problem(400, [{ path: 'projectId', message: SENTINEL }]));
+
+        expect(page.q('#no-queue')?.textContent).toContain('todavía no tiene una cola');
+        expect(page.q('#no-queue a')?.getAttribute('href')).toBe('/proyectos/p1/cola');
+        expect(page.text()).not.toContain(SENTINEL);
+        expect(page.optimizeButton()?.disabled).toBe(false);
+      });
+
+      it.each([
+        ['lines', 'demasiadas unidades pendientes'],
+        ['printerIds', 'impresoras elegidas'],
+        ['startAt', 'fecha y la hora de inicio'],
+      ])('maps an issue on %s to a fixed message', async (path, text) => {
+        const page = await render();
+        await page.optimize();
+
+        await page.failOptimization(problem(400, [{ path, message: SENTINEL }]));
+
+        expect(plain(page.q('[role="alert"]')?.textContent)).toContain(text);
+        expect(page.text()).not.toContain(SENTINEL);
+      });
+
+      it('shows the safe message for a 503, never backend text, and does not retry', async () => {
+        const page = await render();
+        await page.optimize();
+
+        await page.failOptimization(problem(503));
+
+        expect(plain(page.q('[role="alert"]')?.textContent)).toBe('Mensaje seguro en español.');
+        expect(page.text()).not.toContain(SENTINEL);
+        expect(page.api.optimize).toHaveBeenCalledTimes(1);
+        expect(page.optimizeButton()?.disabled).toBe(false);
+      });
+
+      it('shows a generic message when the error is not an ApiError', async () => {
+        const page = await render();
+        await page.optimize();
+
+        await page.failOptimization(new Error(SENTINEL));
+
+        expect(plain(page.q('[role="alert"]')?.textContent)).toContain(
+          'Ocurrió un error inesperado',
+        );
+        expect(page.text()).not.toContain(SENTINEL);
+      });
     });
   });
 });

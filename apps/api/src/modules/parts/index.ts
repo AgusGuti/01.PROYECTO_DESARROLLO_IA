@@ -69,6 +69,37 @@ export function createQueuePartLookup(
   };
 }
 
+/**
+ * Builds the simulations module's part port (ADR 0017, 0026, 0027): name, print time and size
+ * (bounding box in mm) of the live parts among the ids, in one query.
+ */
+export function createSimulationPartLookup(
+  repository: Pick<PartRepository, 'findLiveByIds'> = createMongoPartRepository(),
+): (ids: string[]) => Promise<
+  ReadonlyMap<
+    string,
+    {
+      name: string;
+      estimatedPrintSeconds: number;
+      dimensionsMm: { x: number; y: number; z: number };
+    }
+  >
+> {
+  return async (ids) => {
+    const found = await repository.findLiveByIds(ids);
+    return new Map(
+      found.map((part) => [
+        part.id,
+        {
+          name: part.name,
+          estimatedPrintSeconds: part.estimatedPrintSeconds,
+          dimensionsMm: { x: part.dimensionsMm.x, y: part.dimensionsMm.y, z: part.dimensionsMm.z },
+        },
+      ]),
+    );
+  };
+}
+
 export function createPartsModule(deps: {
   clock: Clock;
   /** Tests inject a fake; production uses MongoDB. */

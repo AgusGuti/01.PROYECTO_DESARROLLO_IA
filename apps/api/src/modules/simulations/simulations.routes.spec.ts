@@ -3,8 +3,9 @@ import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { problemSchema } from '../../shared/http/problem.js';
 import { createTestApp } from '../../testing/test-app.js';
-import { simulationSchema } from './simulations.schemas.js';
+import { optimizationSchema, simulationSchema } from './simulations.schemas.js';
 import {
+  BIG_PART,
   createFakePorts,
   PART_A,
   PRINTER_1,
@@ -99,7 +100,11 @@ describe('POST /api/v1/simulations', () => {
 
   it('reports units beyond the 14-day horizon as unplaced', async () => {
     const { app, ports } = setup();
-    ports.parts.set(PART_A, { name: 'Soporte en L', estimatedPrintSeconds: 36_000 });
+    ports.parts.set(PART_A, {
+      name: 'Soporte en L',
+      estimatedPrintSeconds: 36_000,
+      dimensionsMm: BIG_PART,
+    });
     ports.queues.set(PROJECT_ID, {
       goal: 'fastest',
       mode: 'single',
@@ -172,6 +177,144 @@ describe('POST /api/v1/simulations', () => {
       ports.failing = which;
 
       const response = await request(app).post(URL).send(body);
+
+      expectProblem(response, 503, 'service_unavailable');
+      expect(JSON.stringify(response.body)).not.toContain('boom');
+    },
+  );
+});
+
+describe('POST /api/v1/simulations/optimizations', () => {
+  const OPTIMIZE = '/api/v1/simulations/optimizations';
+  const OPTIMIZATION_KEYS = [
+    'baseline',
+    'candidates',
+    'comparison',
+    'goal',
+    'optimized',
+    'projectId',
+    'startAt',
+    'strategy',
+    'warnings',
+  ];
+
+  /** Six 2 h pieces that share a plate with a 30 % saving; the deadline is the same day. */
+  function batchable() {
+    const { app, ports } = setup();
+    ports.parts.set(PART_A, {
+      name: 'Soporte en L',
+      estimatedPrintSeconds: 7200,
+      dimensionsMm: { x: 40, y: 40, z: 20 },
+    });
+    ports.queues.set(PROJECT_ID, {
+      goal: 'deadline',
+      mode: 'single',
+      printerIds: [PRINTER_1],
+      lines: [{ partId: PART_A, quantity: 6, completed: 0 }],
+    });
+    ports.projects.set(PROJECT_ID, '2026-03-02');
+    ports.batchSavingBasisPoints = 3000;
+    return { app, ports };
+  }
+
+  it('answers 200 with the optimised plan, the baseline and only the declared fields', async () => {
+    const { app } = batchable();
+
+    const response = await request(app).post(OPTIMIZE).send(body);
+
+    expect(response.status).toBe(200);
+    const dto = optimizationSchema.parse(response.body);
+    expect(Object.keys(response.body as object).sort()).toEqual(OPTIMIZATION_KEYS);
+    expect(dto.strategy).toBe('queue_order');
+    expect(dto.optimized.jobs).toEqual([
+      {
+        order: 1,
+        partId: PART_A,
+        partName: 'Soporte en L',
+        units: 6,
+        plateIndex: 1,
+        platesInLine: 1,
+        printerId: PRINTER_1,
+        startAt: '2026-03-02T08:00',
+        endAt: '2026-03-02T16:24',
+        handoffAt: '2026-03-02T16:24',
+        unattended: false,
+      },
+    ]);
+    expect(dto.optimized.printers).toEqual([
+      { printerId: PRINTER_1, name: 'Ender 3', jobs: 1, busyMinutes: 504, idleMinutes: 0 },
+    ]);
+    expect(dto.optimized.totals).toEqual({
+      placedPlates: 1,
+      placedUnits: 6,
+      unplacedUnits: 0,
+      finishAt: '2026-03-02T16:24',
+      totalBusyMinutes: 504,
+      totalIdleMinutes: 0,
+    });
+    expect(dto.optimized.deadline).toEqual({ date: '2026-03-02', met: true });
+    expect(dto.baseline.totals).toMatchObject({
+      placedPlates: 6,
+      finishAt: '2026-03-03T10:00',
+      totalIdleMinutes: 840,
+    });
+    expect(dto.baseline.deadline).toEqual({ date: '2026-03-02', met: false });
+    expect(dto.comparison).toEqual({
+      finishDeltaMinutes: -1056,
+      idleDeltaMinutes: -840,
+      deadlineChanged: 'gained',
+    });
+    expect(dto.candidates.map((entry) => entry.strategy)).toEqual([
+      'naive',
+      'queue_order',
+      'longest_first',
+      'shortest_first',
+      'best_fit',
+    ]);
+    expect(dto.warnings).toEqual([{ code: 'batching_applied' }]);
+  });
+
+  it('writes nothing: the same request twice gives the same answer', async () => {
+    const { app } = batchable();
+
+    const first = await request(app).post(OPTIMIZE).send(body);
+    const second = await request(app).post(OPTIMIZE).send(body);
+
+    expect(second.body).toEqual(first.body);
+  });
+
+  it.each([
+    ['a body that is not an object', []],
+    ['an unknown field', { ...body, strategy: 'best_fit' }],
+    ['seconds in startAt', { ...body, startAt: '2026-03-02T08:00:00' }],
+    ['a malformed id', { ...body, projectId: 'nope' }],
+    ['a missing startAt', { projectId: PROJECT_ID }],
+  ])('answers 400 for %s', async (_label, payload) => {
+    const { app } = setup();
+
+    expectProblem(await request(app).post(OPTIMIZE).send(payload), 400, 'validation_failed');
+  });
+
+  it('answers 400 on projectId when the project has no queue', async () => {
+    const { app, ports } = setup();
+    ports.queues.clear();
+
+    const problem = expectProblem(
+      await request(app).post(OPTIMIZE).send(body),
+      400,
+      'validation_failed',
+    );
+
+    expect(problem.issues).toEqual([{ path: 'projectId', message: 'The project has no queue.' }]);
+  });
+
+  it.each(['queue', 'project', 'parts', 'printers', 'schedule', 'planning'] as Failing[])(
+    'answers a generic 503 when the %s port fails',
+    async (which) => {
+      const { app, ports } = setup();
+      ports.failing = which;
+
+      const response = await request(app).post(OPTIMIZE).send(body);
 
       expectProblem(response, 503, 'service_unavailable');
       expect(JSON.stringify(response.body)).not.toContain('boom');

@@ -9,12 +9,17 @@
     pieza dentro de tus ventanas de intervención. Todas las horas son de Argentina y se calcula
     hasta {{ horizonDays }} días desde el inicio. No se guarda nada.
   </p>
+  <p>
+    «Optimizar y comparar» prueba varias formas de ordenar el trabajo, agrupa piezas iguales en una
+    misma placa y las compara con el orden simple.
+    <a routerLink="/planificacion/ajustes">Ajustes de planificación</a>
+  </p>
 
   @let startProblem = dateError();
   @let timeProblem = timeError();
   @let state = run();
 
-  <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+  <form [formGroup]="form" (ngSubmit)="launch('simulate')" novalidate>
     <div class="field">
       <label for="sim-date">Fecha de inicio (DD-MM-AAAA)</label>
       <input
@@ -47,19 +52,97 @@
       }
     </div>
 
+    @let busy = state.kind === 'running';
+    @let mode = state.kind === 'running' ? state.mode : null;
     <div class="actions">
-      <button type="submit" [disabled]="state.kind === 'running'">
-        {{ state.kind === 'running' ? 'Simulando…' : 'Simular' }}
+      <button type="submit" [disabled]="busy">
+        {{ mode === 'simulate' ? 'Simulando…' : 'Simular' }}
+      </button>
+      <button type="button" id="optimize" [disabled]="busy" (click)="launch('optimize')">
+        {{ mode === 'optimize' ? 'Optimizando…' : 'Optimizar y comparar' }}
       </button>
     </div>
   </form>
 
   <p class="visually-hidden" id="sim-status" aria-live="polite">{{ statusText(state) }}</p>
 
+  <ng-template #warningList let-warnings>
+    @if (warnings.length > 0) {
+      <ul class="warnings" id="warnings">
+        @for (warning of warnings; track warning.code) {
+          <li><span aria-hidden="true">⚠</span> {{ warningText(warning.code) }}</li>
+        }
+      </ul>
+    }
+  </ng-template>
+
+  <ng-template #printerPlans let-printers>
+    @for (printer of printers; track printer.id) {
+      <section class="printer" [attr.aria-labelledby]="'printer-' + printer.id">
+        <h3 [id]="'printer-' + printer.id">{{ printer.name }}</h3>
+        <p>{{ printer.summary }}</p>
+        @if (printer.jobs.length === 0) {
+          <p class="status">Sin trabajos en esta impresora.</p>
+        } @else {
+          <div class="timeline" aria-hidden="true">
+            @for (job of printer.jobs; track job.order) {
+              <span
+                class="bar"
+                [class.bar--unattended]="job.unattended"
+                [style.left.%]="job.left"
+                [style.width.%]="job.width"
+                [attr.title]="job.title"
+              ></span>
+            }
+          </div>
+          <div class="table-scroll">
+            <table>
+              <caption class="visually-hidden">
+                Trabajos de
+                {{
+                  printer.name
+                }}
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Orden</th>
+                  <th scope="col">Pieza</th>
+                  <th scope="col">Inicio</th>
+                  <th scope="col">Fin</th>
+                  <th scope="col">Retiro</th>
+                  <th scope="col">Atención</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (job of printer.jobs; track job.order) {
+                  <tr>
+                    <td>{{ job.order }}</td>
+                    <th scope="row">{{ job.part }}</th>
+                    <td>{{ job.start }}</td>
+                    <td>{{ job.end }}</td>
+                    <td>{{ job.handoff }}</td>
+                    <td>
+                      @if (job.unattended) {
+                        <span class="badge">Sin atender</span>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </section>
+    }
+    <p class="axis" aria-hidden="true">
+      La línea de tiempo cubre {{ horizonDays }} días desde el inicio.
+    </p>
+  </ng-template>
+
   <div class="result">
     @switch (state.kind) {
       @case ('running') {
-        <p class="status">Simulando…</p>
+        <p class="status">{{ state.mode === 'optimize' ? 'Optimizando…' : 'Simulando…' }}</p>
       }
       @case ('noQueue') {
         <p class="status status--error" id="no-queue" role="alert">
@@ -79,24 +162,15 @@
         @let sim = state.simulation;
         <h2>Resultado</h2>
 
-        @if (sim.warnings.length > 0) {
-          <ul class="warnings" id="warnings">
-            @for (warning of sim.warnings; track warning.code) {
-              <li><span aria-hidden="true">⚠</span> {{ warningText(warning.code) }}</li>
-            }
-          </ul>
-        }
+        <ng-container
+          [ngTemplateOutlet]="warningList"
+          [ngTemplateOutletContext]="{ $implicit: sim.warnings }"
+        />
 
         <dl class="totals" id="summary">
           <div>
             <dt>Hora de fin</dt>
-            <dd>
-              {{
-                sim.totals.finishAt === null
-                  ? 'Sin trabajos ubicados'
-                  : formatDateTime(sim.totals.finishAt)
-              }}
-            </dd>
+            <dd>{{ finishText(sim.totals.finishAt) }}</dd>
           </div>
           <div>
             <dt>Tiempo ocupado</dt>
@@ -116,7 +190,7 @@
           </div>
           <div>
             <dt>Fecha límite</dt>
-            <dd>{{ deadlineText(sim) }}</dd>
+            <dd>{{ deadlineText(sim.deadline) }}</dd>
           </div>
         </dl>
 
@@ -129,66 +203,106 @@
           </ul>
         }
 
-        @for (printer of state.printers; track printer.id) {
-          <section class="printer" [attr.aria-labelledby]="'printer-' + printer.id">
-            <h3 [id]="'printer-' + printer.id">{{ printer.name }}</h3>
-            <p>{{ printer.summary }}</p>
-            @if (printer.jobs.length === 0) {
-              <p class="status">Sin trabajos en esta impresora.</p>
-            } @else {
-              <div class="timeline" aria-hidden="true">
-                @for (job of printer.jobs; track job.order) {
-                  <span
-                    class="bar"
-                    [class.bar--unattended]="job.unattended"
-                    [style.left.%]="job.left"
-                    [style.width.%]="job.width"
-                    [attr.title]="job.title"
-                  ></span>
-                }
-              </div>
-              <div class="table-scroll">
-                <table>
-                  <caption class="visually-hidden">
-                    Trabajos de
-                    {{
-                      printer.name
-                    }}
-                  </caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Orden</th>
-                      <th scope="col">Pieza</th>
-                      <th scope="col">Inicio</th>
-                      <th scope="col">Fin</th>
-                      <th scope="col">Retiro</th>
-                      <th scope="col">Atención</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    @for (job of printer.jobs; track job.order) {
-                      <tr>
-                        <td>{{ job.order }}</td>
-                        <th scope="row">{{ job.part }}</th>
-                        <td>{{ job.start }}</td>
-                        <td>{{ job.end }}</td>
-                        <td>{{ job.handoff }}</td>
-                        <td>
-                          @if (job.unattended) {
-                            <span class="badge">Sin atender</span>
-                          }
-                        </td>
-                      </tr>
-                    }
-                  </tbody>
-                </table>
-              </div>
-            }
-          </section>
-        }
-        <p class="axis" aria-hidden="true">
-          La línea de tiempo cubre {{ horizonDays }} días desde el inicio.
+        <ng-container
+          [ngTemplateOutlet]="printerPlans"
+          [ngTemplateOutletContext]="{ $implicit: state.printers }"
+        />
+      }
+      @case ('optimized') {
+        @let opt = state.optimization;
+        <h2>Resultado de la optimización</h2>
+
+        <ng-container
+          [ngTemplateOutlet]="warningList"
+          [ngTemplateOutletContext]="{ $implicit: opt.warnings }"
+        />
+
+        <p id="explanation">{{ explanation(opt) }}</p>
+        <p id="chosen">
+          Estrategia elegida: <strong>{{ strategyLabel[opt.strategy] }}</strong>
         </p>
+
+        <h3>Orden simple y optimizado, lado a lado</h3>
+        <div class="table-scroll">
+          <table id="comparison">
+            <caption class="visually-hidden">
+              Comparación entre el orden simple y el plan optimizado
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Dato</th>
+                <th scope="col">Orden simple</th>
+                <th scope="col">Optimizado</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of comparisonRows(opt); track row.label) {
+                <tr>
+                  <th scope="row">{{ row.label }}</th>
+                  <td>{{ row.baseline }}</td>
+                  <td>{{ row.optimized }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <ul class="deltas" id="deltas">
+          @for (line of deltaLines(opt); track line) {
+            <li>{{ line }}</li>
+          }
+        </ul>
+
+        <h3>Estrategias probadas</h3>
+        <div class="table-scroll">
+          <table id="candidates">
+            <caption class="visually-hidden">
+              Resultado de cada estrategia probada
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Estrategia</th>
+                <th scope="col">Fin</th>
+                <th scope="col">Tiempo muerto</th>
+                <th scope="col">Fecha límite</th>
+                <th scope="col">Piezas ubicadas</th>
+                <th scope="col">Piezas no ubicadas</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (candidate of opt.candidates; track candidate.strategy) {
+                <tr [class.chosen]="candidate.strategy === opt.strategy">
+                  <th scope="row">
+                    {{ strategyLabel[candidate.strategy] }}
+                    @if (candidate.strategy === opt.strategy) {
+                      <span class="badge badge--ok">Elegida</span>
+                    }
+                  </th>
+                  <td>{{ finishText(candidate.finishAt) }}</td>
+                  <td>{{ formatMinutes(candidate.totalIdleMinutes) }}</td>
+                  <td>{{ candidateDeadline(candidate.deadlineMet) }}</td>
+                  <td>{{ candidate.placedUnits }}</td>
+                  <td>{{ candidate.unplacedUnits }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        @if (opt.optimized.unplaced.length > 0) {
+          <h3>No se pudieron ubicar</h3>
+          <ul id="unplaced">
+            @for (item of opt.optimized.unplaced; track item.partId) {
+              <li>{{ item.partName }}: {{ item.units }} unidad(es)</li>
+            }
+          </ul>
+        }
+
+        <h3>Plan optimizado</h3>
+        <ng-container
+          [ngTemplateOutlet]="printerPlans"
+          [ngTemplateOutletContext]="{ $implicit: state.printers }"
+        />
       }
     }
   </div>

@@ -34,6 +34,7 @@ export interface LivePartSummary {
   readonly name: string;
   readonly material: Part['material'];
   readonly estimatedPrintSeconds: number;
+  readonly dimensionsMm: Part['dimensionsMm'];
 }
 
 export interface PartUsageProject {

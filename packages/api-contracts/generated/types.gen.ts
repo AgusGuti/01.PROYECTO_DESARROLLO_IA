@@ -680,6 +680,26 @@ export type InterventionRange = {
     endMinute: number;
 };
 
+export type PlanningSettings = {
+    batchSavingBasisPoints: number;
+    /**
+     * 0 until the settings are first saved.
+     */
+    version: number;
+    updatedAt: string | null;
+};
+
+export type UpdatePlanningSettingsRequest = {
+    /**
+     * Time saved when identical pieces share a plate, in basis points: 1000 is 10 %. 0 to 5000.
+     */
+    batchSavingBasisPoints: number;
+    /**
+     * 0 for the first save, otherwise the version last seen (ADR 0027).
+     */
+    version: number;
+};
+
 export type Queue = {
     projectId: string;
     /**
@@ -853,7 +873,7 @@ export type Simulation = {
     }>;
 };
 
-export type SimulationWarningCode = 'part_deleted' | 'printer_unavailable' | 'availability_not_configured' | 'nothing_to_print';
+export type SimulationWarningCode = 'part_deleted' | 'printer_unavailable' | 'availability_not_configured' | 'nothing_to_print' | 'batching_applied';
 
 export type SimulationRequest = {
     projectId: string;
@@ -862,6 +882,146 @@ export type SimulationRequest = {
      */
     startAt: string;
 };
+
+export type Optimization = {
+    projectId: string;
+    /**
+     * fastest: earliest finish, then less idle. minimal_idle: less total idle, then earlier finish. deadline: deadline met first, then earliest finish, then less idle.
+     */
+    goal: 'deadline' | 'fastest' | 'minimal_idle';
+    /**
+     * Wall-clock time of America/Argentina/Buenos_Aires: YYYY-MM-DDTHH:mm.
+     */
+    startAt: string;
+    strategy: OptimizationStrategy;
+    /**
+     * The naive plan (CU10), with no batching.
+     */
+    baseline: {
+        totals: {
+            /**
+             * Plates printed; each is one collection of the printer.
+             */
+            placedPlates: number;
+            placedUnits: number;
+            unplacedUnits: number;
+            /**
+             * The last handoff, if any.
+             */
+            finishAt: string | null;
+            totalBusyMinutes: number;
+            totalIdleMinutes: number;
+        };
+        deadline: {
+            date: string | null;
+            /**
+             * Null without a deadline or with nothing to place; false if anything is unplaced.
+             */
+            met: boolean | null;
+        };
+        unplaced: Array<{
+            partId: string;
+            partName: string;
+            units: number;
+        }>;
+    };
+    optimized: {
+        jobs: Array<{
+            order: number;
+            partId: string;
+            partName: string;
+            /**
+             * Identical pieces on this plate.
+             */
+            units: number;
+            /**
+             * 1-based plate within its line.
+             */
+            plateIndex: number;
+            platesInLine: number;
+            printerId: string;
+            /**
+             * Wall-clock time of America/Argentina/Buenos_Aires: YYYY-MM-DDTHH:mm.
+             */
+            startAt: string;
+            /**
+             * Wall-clock time of America/Argentina/Buenos_Aires: YYYY-MM-DDTHH:mm.
+             */
+            endAt: string;
+            /**
+             * Wall-clock time of America/Argentina/Buenos_Aires: YYYY-MM-DDTHH:mm.
+             */
+            handoffAt: string;
+            unattended: boolean;
+        }>;
+        printers: Array<{
+            printerId: string;
+            name: string;
+            jobs: number;
+            busyMinutes: number;
+            idleMinutes: number;
+        }>;
+        totals: {
+            /**
+             * Plates printed; each is one collection of the printer.
+             */
+            placedPlates: number;
+            placedUnits: number;
+            unplacedUnits: number;
+            /**
+             * The last handoff, if any.
+             */
+            finishAt: string | null;
+            totalBusyMinutes: number;
+            totalIdleMinutes: number;
+        };
+        deadline: {
+            date: string | null;
+            /**
+             * Null without a deadline or with nothing to place; false if anything is unplaced.
+             */
+            met: boolean | null;
+        };
+        unplaced: Array<{
+            partId: string;
+            partName: string;
+            units: number;
+        }>;
+    };
+    comparison: {
+        /**
+         * optimized - baseline finish, negative is better. Null if only one placed.
+         */
+        finishDeltaMinutes: number | null;
+        /**
+         * optimized - baseline idle, negative is better.
+         */
+        idleDeltaMinutes: number;
+        deadlineChanged: 'gained' | 'lost' | 'same' | 'unknown';
+    };
+    /**
+     * Every strategy that was tried, for explainability.
+     */
+    candidates: Array<{
+        strategy: OptimizationStrategy & unknown;
+        /**
+         * Wall-clock time of America/Argentina/Buenos_Aires: YYYY-MM-DDTHH:mm.
+         */
+        finishAt: string | null;
+        totalIdleMinutes: number;
+        deadlineMet: boolean | null;
+        placedUnits: number;
+        unplacedUnits: number;
+    }>;
+    warnings: Array<{
+        code: SimulationWarningCode;
+    }>;
+};
+
+/**
+ * The strategy whose plan is `optimized`.
+ */
+export type OptimizationStrategy = 'naive' | 'queue_order' | 'longest_first' | 'shortest_first' | 'best_fit';
 
 export type GcodeAnalysis = {
     slicer: 'cura';
@@ -1873,6 +2033,64 @@ export type SaveInterventionScheduleResponses = {
 
 export type SaveInterventionScheduleResponse = SaveInterventionScheduleResponses[keyof SaveInterventionScheduleResponses];
 
+export type GetPlanningSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/planning/settings';
+};
+
+export type GetPlanningSettingsErrors = {
+    /**
+     * The settings are temporarily unavailable.
+     */
+    503: Problem;
+};
+
+export type GetPlanningSettingsError = GetPlanningSettingsErrors[keyof GetPlanningSettingsErrors];
+
+export type GetPlanningSettingsResponses = {
+    /**
+     * The settings.
+     */
+    200: PlanningSettings;
+};
+
+export type GetPlanningSettingsResponse = GetPlanningSettingsResponses[keyof GetPlanningSettingsResponses];
+
+export type SavePlanningSettingsData = {
+    body?: UpdatePlanningSettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/planning/settings';
+};
+
+export type SavePlanningSettingsErrors = {
+    /**
+     * Invalid input or an unknown field.
+     */
+    400: Problem;
+    /**
+     * Stale version (issue path "version").
+     */
+    409: Problem;
+    /**
+     * The settings are temporarily unavailable.
+     */
+    503: Problem;
+};
+
+export type SavePlanningSettingsError = SavePlanningSettingsErrors[keyof SavePlanningSettingsErrors];
+
+export type SavePlanningSettingsResponses = {
+    /**
+     * The saved settings, with the new version.
+     */
+    200: PlanningSettings;
+};
+
+export type SavePlanningSettingsResponse = SavePlanningSettingsResponses[keyof SavePlanningSettingsResponses];
+
 export type CreateQueueData = {
     body?: CreateQueueRequest;
     path?: never;
@@ -2045,6 +2263,35 @@ export type SimulatePlanningResponses = {
 };
 
 export type SimulatePlanningResponse = SimulatePlanningResponses[keyof SimulatePlanningResponses];
+
+export type OptimizePlanningData = {
+    body?: SimulationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/simulations/optimizations';
+};
+
+export type OptimizePlanningErrors = {
+    /**
+     * Invalid input. Issue path "projectId": the project does not exist or has no queue; "lines": more than 1000 units left; "printerIds": no selected printer is available.
+     */
+    400: Problem;
+    /**
+     * The queue, project, part, printer, schedule or planning settings data is temporarily unavailable.
+     */
+    503: Problem;
+};
+
+export type OptimizePlanningError = OptimizePlanningErrors[keyof OptimizePlanningErrors];
+
+export type OptimizePlanningResponses = {
+    /**
+     * The optimised plan, the naive baseline and their comparison.
+     */
+    200: Optimization;
+};
+
+export type OptimizePlanningResponse = OptimizePlanningResponses[keyof OptimizePlanningResponses];
 
 export type AnalyzeGcodeData = {
     body?: AnalyzeGcodeRequest;

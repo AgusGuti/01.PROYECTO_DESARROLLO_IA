@@ -1519,6 +1519,41 @@ components:
         - startMinute
         - endMinute
       additionalProperties: false
+    PlanningSettings:
+      type: object
+      properties:
+        batchSavingBasisPoints:
+          type: integer
+        version:
+          type: integer
+          description: 0 until the settings are first saved.
+        updatedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+      required:
+        - batchSavingBasisPoints
+        - version
+        - updatedAt
+    UpdatePlanningSettingsRequest:
+      type: object
+      properties:
+        batchSavingBasisPoints:
+          type: integer
+          minimum: 0
+          maximum: 5000
+          description: "Time saved when identical pieces share a plate, in basis points: 1000 is 10 %. 0 to
+            5000."
+        version:
+          type: integer
+          minimum: 0
+          description: 0 for the first save, otherwise the version last seen (ADR 0027).
+      required:
+        - batchSavingBasisPoints
+        - version
+      additionalProperties: false
     Queue:
       type: object
       properties:
@@ -1906,6 +1941,7 @@ components:
         - printer_unavailable
         - availability_not_configured
         - nothing_to_print
+        - batching_applied
     SimulationRequest:
       type: object
       properties:
@@ -1922,6 +1958,323 @@ components:
         - projectId
         - startAt
       additionalProperties: false
+    Optimization:
+      type: object
+      properties:
+        projectId:
+          type: string
+          pattern: ^[0-9a-f]{24}$/i
+          example: 66f0c0ffee0123456789abcd
+        goal:
+          type: string
+          enum:
+            - deadline
+            - fastest
+            - minimal_idle
+          description: "fastest: earliest finish, then less idle. minimal_idle: less total idle, then earlier
+            finish. deadline: deadline met first, then earliest finish, then less idle."
+        startAt:
+          type: string
+          example: 2026-03-02T08:00
+          description: "Wall-clock time of America/Argentina/Buenos_Aires: YYYY-MM-DDTHH:mm."
+        strategy:
+          $ref: "#/components/schemas/OptimizationStrategy"
+        baseline:
+          type: object
+          properties:
+            totals:
+              type: object
+              properties:
+                placedPlates:
+                  type: integer
+                  description: Plates printed; each is one collection of the printer.
+                placedUnits:
+                  type: integer
+                unplacedUnits:
+                  type: integer
+                finishAt:
+                  type:
+                    - string
+                    - "null"
+                  example: 2026-03-02T08:00
+                  description: The last handoff, if any.
+                totalBusyMinutes:
+                  type: integer
+                totalIdleMinutes:
+                  type: integer
+              required:
+                - placedPlates
+                - placedUnits
+                - unplacedUnits
+                - finishAt
+                - totalBusyMinutes
+                - totalIdleMinutes
+            deadline:
+              type: object
+              properties:
+                date:
+                  type:
+                    - string
+                    - "null"
+                  example: 2026-03-20
+                met:
+                  type:
+                    - boolean
+                    - "null"
+                  description: Null without a deadline or with nothing to place; false if anything is unplaced.
+              required:
+                - date
+                - met
+            unplaced:
+              type: array
+              items:
+                type: object
+                properties:
+                  partId:
+                    type: string
+                    pattern: ^[0-9a-f]{24}$/i
+                    example: 66f0c0ffee0123456789abcd
+                  partName:
+                    type: string
+                  units:
+                    type: integer
+                required:
+                  - partId
+                  - partName
+                  - units
+          required:
+            - totals
+            - deadline
+            - unplaced
+          description: The naive plan (CU10), with no batching.
+        optimized:
+          type: object
+          properties:
+            jobs:
+              type: array
+              items:
+                type: object
+                properties:
+                  order:
+                    type: integer
+                  partId:
+                    type: string
+                    pattern: ^[0-9a-f]{24}$/i
+                    example: 66f0c0ffee0123456789abcd
+                  partName:
+                    type: string
+                  units:
+                    type: integer
+                    description: Identical pieces on this plate.
+                  plateIndex:
+                    type: integer
+                    description: 1-based plate within its line.
+                  platesInLine:
+                    type: integer
+                  printerId:
+                    type: string
+                    pattern: ^[0-9a-f]{24}$/i
+                    example: 66f0c0ffee0123456789abcd
+                  startAt:
+                    type: string
+                    example: 2026-03-02T08:00
+                    description: "Wall-clock time of America/Argentina/Buenos_Aires: YYYY-MM-DDTHH:mm."
+                  endAt:
+                    type: string
+                    example: 2026-03-02T08:00
+                    description: "Wall-clock time of America/Argentina/Buenos_Aires: YYYY-MM-DDTHH:mm."
+                  handoffAt:
+                    type: string
+                    example: 2026-03-02T08:00
+                    description: "Wall-clock time of America/Argentina/Buenos_Aires: YYYY-MM-DDTHH:mm."
+                  unattended:
+                    type: boolean
+                required:
+                  - order
+                  - partId
+                  - partName
+                  - units
+                  - plateIndex
+                  - platesInLine
+                  - printerId
+                  - startAt
+                  - endAt
+                  - handoffAt
+                  - unattended
+            printers:
+              type: array
+              items:
+                type: object
+                properties:
+                  printerId:
+                    type: string
+                    pattern: ^[0-9a-f]{24}$/i
+                    example: 66f0c0ffee0123456789abcd
+                  name:
+                    type: string
+                  jobs:
+                    type: integer
+                  busyMinutes:
+                    type: integer
+                  idleMinutes:
+                    type: integer
+                required:
+                  - printerId
+                  - name
+                  - jobs
+                  - busyMinutes
+                  - idleMinutes
+            totals:
+              type: object
+              properties:
+                placedPlates:
+                  type: integer
+                  description: Plates printed; each is one collection of the printer.
+                placedUnits:
+                  type: integer
+                unplacedUnits:
+                  type: integer
+                finishAt:
+                  type:
+                    - string
+                    - "null"
+                  example: 2026-03-02T08:00
+                  description: The last handoff, if any.
+                totalBusyMinutes:
+                  type: integer
+                totalIdleMinutes:
+                  type: integer
+              required:
+                - placedPlates
+                - placedUnits
+                - unplacedUnits
+                - finishAt
+                - totalBusyMinutes
+                - totalIdleMinutes
+            deadline:
+              type: object
+              properties:
+                date:
+                  type:
+                    - string
+                    - "null"
+                  example: 2026-03-20
+                met:
+                  type:
+                    - boolean
+                    - "null"
+                  description: Null without a deadline or with nothing to place; false if anything is unplaced.
+              required:
+                - date
+                - met
+            unplaced:
+              type: array
+              items:
+                type: object
+                properties:
+                  partId:
+                    type: string
+                    pattern: ^[0-9a-f]{24}$/i
+                    example: 66f0c0ffee0123456789abcd
+                  partName:
+                    type: string
+                  units:
+                    type: integer
+                required:
+                  - partId
+                  - partName
+                  - units
+          required:
+            - jobs
+            - printers
+            - totals
+            - deadline
+            - unplaced
+        comparison:
+          type: object
+          properties:
+            finishDeltaMinutes:
+              type:
+                - integer
+                - "null"
+              description: optimized - baseline finish, negative is better. Null if only one placed.
+            idleDeltaMinutes:
+              type: integer
+              description: optimized - baseline idle, negative is better.
+            deadlineChanged:
+              type: string
+              enum:
+                - gained
+                - lost
+                - same
+                - unknown
+          required:
+            - finishDeltaMinutes
+            - idleDeltaMinutes
+            - deadlineChanged
+        candidates:
+          type: array
+          items:
+            type: object
+            properties:
+              strategy:
+                allOf:
+                  - $ref: "#/components/schemas/OptimizationStrategy"
+                  - description: "naive: the CU10 result. queue_order: queue order with batching. longest_first and
+                      shortest_first: plates sorted by duration. best_fit: at each start, the plate
+                      that leaves the least waiting time before it is collected."
+              finishAt:
+                type:
+                  - string
+                  - "null"
+                example: 2026-03-02T08:00
+                description: "Wall-clock time of America/Argentina/Buenos_Aires: YYYY-MM-DDTHH:mm."
+              totalIdleMinutes:
+                type: integer
+              deadlineMet:
+                type:
+                  - boolean
+                  - "null"
+              placedUnits:
+                type: integer
+              unplacedUnits:
+                type: integer
+            required:
+              - strategy
+              - finishAt
+              - totalIdleMinutes
+              - deadlineMet
+              - placedUnits
+              - unplacedUnits
+          description: Every strategy that was tried, for explainability.
+        warnings:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                $ref: "#/components/schemas/SimulationWarningCode"
+            required:
+              - code
+      required:
+        - projectId
+        - goal
+        - startAt
+        - strategy
+        - baseline
+        - optimized
+        - comparison
+        - candidates
+        - warnings
+    OptimizationStrategy:
+      type: string
+      enum:
+        - naive
+        - queue_order
+        - longest_first
+        - shortest_first
+        - best_fit
+      description: The strategy whose plan is `optimized`.
     GcodeAnalysis:
       type: object
       properties:
@@ -3227,6 +3580,63 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+  /api/v1/planning/settings:
+    get:
+      operationId: getPlanningSettings
+      tags:
+        - Planning
+      summary: Get the planning settings
+      description: Before the first save it answers a zero saving with version 0. It never writes.
+      responses:
+        "200":
+          description: The settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanningSettings"
+        "503":
+          description: The settings are temporarily unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    put:
+      operationId: savePlanningSettings
+      tags:
+        - Planning
+      summary: Save the planning settings
+      description: Send the batch saving (basis points, 0 to 5000) and the version last seen (0 for the
+        first save).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePlanningSettingsRequest"
+      responses:
+        "200":
+          description: The saved settings, with the new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanningSettings"
+        "400":
+          description: Invalid input or an unknown field.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Stale version (issue path "version").
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: The settings are temporarily unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
   /api/v1/queues:
     post:
       operationId: createQueue
@@ -3434,6 +3844,43 @@ paths:
                 $ref: "#/components/schemas/Problem"
         "503":
           description: The queue, project, part, printer or schedule data is temporarily unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/simulations/optimizations:
+    post:
+      operationId: optimizePlanning
+      tags:
+        - Simulations
+      summary: Optimise the print order of a project for its goal
+      description: "Stateless: nothing is saved. Tries several explainable strategies with the same
+        scheduler (earliest-free printer, starts and collections only at intervention minutes,
+        14-day horizon) and returns the best for the queue goal, never worse than the naive
+        baseline. Identical pieces of a part may share a plate (never different parts). `candidates`
+        lists what was tried. All times are Argentina wall-clock `YYYY-MM-DDTHH:mm`."
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SimulationRequest"
+      responses:
+        "200":
+          description: The optimised plan, the naive baseline and their comparison.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Optimization"
+        "400":
+          description: 'Invalid input. Issue path "projectId": the project does not exist or has no queue;
+            "lines": more than 1000 units left; "printerIds": no selected printer is available.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: The queue, project, part, printer, schedule or planning settings data is temporarily
+            unavailable.
           content:
             application/problem+json:
               schema:

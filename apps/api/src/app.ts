@@ -17,6 +17,7 @@ import {
   createPartLookup,
   createPartsModule,
   createQueuePartLookup,
+  createSimulationPartLookup,
 } from './modules/parts/index.js';
 import {
   createPrinterCostReader,
@@ -29,6 +30,7 @@ import {
   createQueueProjectReader,
   createSimulationProjectReader,
 } from './modules/projects/index.js';
+import { createPlanningModule, createPlanningSettingsReader } from './modules/planning/index.js';
 import { createQueuesModule, createSimulationQueueReader } from './modules/queues/index.js';
 import { createSimulationsModule } from './modules/simulations/index.js';
 import { AppError } from './shared/errors/app-error.js';
@@ -54,7 +56,9 @@ export interface AppDependencies {
   availability?: Partial<Omit<Parameters<typeof createAvailabilityModule>[0], 'clock'>>;
   /** Lets tests replace the queues repository and the three read ports with fakes. */
   queues?: Partial<Omit<Parameters<typeof createQueuesModule>[0], 'clock'>>;
-  /** Lets tests replace any of the five read ports of the simulations with fakes. */
+  /** Lets tests replace the planning settings repository with a fake. */
+  planning?: Partial<Omit<Parameters<typeof createPlanningModule>[0], 'clock'>>;
+  /** Lets tests replace any of the six read ports of the simulations with fakes. */
   simulations?: Partial<Parameters<typeof createSimulationsModule>[0]>;
 }
 
@@ -72,6 +76,7 @@ export function createApp({
   costs = {},
   availability = {},
   queues = {},
+  planning = {},
   simulations = {},
 }: AppDependencies): Express {
   const app = express();
@@ -167,16 +172,19 @@ export function createApp({
       ...queues,
     }).router,
   );
-  // Simulations are stateless and read the queue, project, parts, printers and schedule only
-  // through ports built here (ADR 0017, 0026). They share the real repositories with the modules.
+  v1.use('/planning', createPlanningModule({ clock, ...planning }).router);
+  // Simulations and the optimiser are stateless and read the queue, project, parts, printers,
+  // schedule and planning settings only through ports built here (ADR 0017, 0026, 0027). They
+  // share the real repositories with the modules.
   v1.use(
     '/simulations',
     createSimulationsModule({
       queueReader: createSimulationQueueReader(queues.repository),
       projectReader: createSimulationProjectReader(projects.repository),
-      partLookup: createQueuePartLookup(parts.repository),
+      partLookup: createSimulationPartLookup(parts.repository),
       printerLookup: createSimulationPrinterLookup(printers.repository),
       scheduleReader: createScheduleReader(availability.repository),
+      planningReader: createPlanningSettingsReader(planning.repository),
       ...simulations,
     }).router,
   );

@@ -9,7 +9,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongoDatabase, type Database } from '../../infrastructure/database/mongo.js';
 import { createTestApp, testConfig } from '../../testing/test-app.js';
-import { simulationSchema } from './simulations.schemas.js';
+import { optimizationSchema, simulationSchema } from './simulations.schemas.js';
 
 const partBody = (name: string, seconds: number) => ({
   name,
@@ -59,7 +59,14 @@ describe('simulations API on a real MongoDB with the real wiring', () => {
   });
 
   beforeEach(async () => {
-    for (const name of ['availability', 'queues', 'projects', 'parts', 'printers']) {
+    for (const name of [
+      'availability',
+      'queues',
+      'projects',
+      'parts',
+      'printers',
+      'planningSettings',
+    ]) {
       await mongoose.connection.collection(name).deleteMany({});
     }
   });
@@ -130,6 +137,60 @@ describe('simulations API on a real MongoDB with the real wiring', () => {
       [first, '2026-03-02T11:00'],
     ]);
     expect(dto.warnings).toEqual([{ code: 'printer_unavailable' }]);
+  });
+
+  it('optimises with the real wiring: part size, printer bed and the saved batch saving', async () => {
+    // 60 x 40 mm pieces on a 220 x 220 bed: 12 fit on a plate, so 4 share one.
+    const part = await makePart('Soporte', 3600);
+    const printer = await makePrinter('Ender 3');
+    const project = await makeProject([{ partId: part, quantity: 4 }]);
+    await request(app)
+      .post('/api/v1/queues')
+      .send({ projectId: project, goal: 'fastest', mode: 'single', printerIds: [printer] })
+      .expect(201);
+    await request(app)
+      .put('/api/v1/planning/settings')
+      .send({ batchSavingBasisPoints: 2500, version: 0 })
+      .expect(200);
+
+    const response = await request(app)
+      .post('/api/v1/simulations/optimizations')
+      .send({ projectId: project, startAt: '2026-03-02T08:00' });
+
+    expect(response.status).toBe(200);
+    const dto = optimizationSchema.parse(response.body);
+    // 4 * 3600 s * 75 % = 180 min, against four 60 min prints one after the other.
+    expect(dto.strategy).toBe('queue_order');
+    expect(dto.optimized.jobs).toMatchObject([
+      { units: 4, printerId: printer, startAt: '2026-03-02T08:00', endAt: '2026-03-02T11:00' },
+    ]);
+    expect(dto.baseline.totals.finishAt).toBe('2026-03-02T12:00');
+    expect(dto.comparison.finishDeltaMinutes).toBe(-60);
+    expect(dto.warnings).toEqual([
+      { code: 'availability_not_configured' },
+      { code: 'batching_applied' },
+    ]);
+    expect(await mongoose.connection.collection('planningSettings').countDocuments()).toBe(1);
+  });
+
+  it('optimises with the default saving of zero when the settings were never saved', async () => {
+    const part = await makePart('Soporte', 3600);
+    const printer = await makePrinter('Ender 3');
+    const project = await makeProject([{ partId: part, quantity: 2 }]);
+    await request(app)
+      .post('/api/v1/queues')
+      .send({ projectId: project, goal: 'fastest', mode: 'single', printerIds: [printer] })
+      .expect(201);
+
+    const response = await request(app)
+      .post('/api/v1/simulations/optimizations')
+      .send({ projectId: project, startAt: '2026-03-02T08:00' });
+
+    expect(response.status).toBe(200);
+    const dto = optimizationSchema.parse(response.body);
+    // Two pieces on one plate take as long as two separate prints, so naive wins the tie.
+    expect(dto.strategy).toBe('naive');
+    expect(await mongoose.connection.collection('planningSettings').countDocuments()).toBe(0);
   });
 
   it('answers 400 when the project has no queue', async () => {
