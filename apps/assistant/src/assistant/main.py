@@ -1,16 +1,19 @@
 """HTTP surface of the assistant: thin routes over `assistant.chat`."""
 
 import logging
+from collections.abc import AsyncIterator
 from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from langchain_core.language_models import BaseChatModel
 
+from assistant.api_client import ApiClient
 from assistant.chat import AssistantUnavailableError, answer
 from assistant.config import Settings, get_settings
 from assistant.llm import build_chat_model
 from assistant.schemas import ChatRequest, ChatResponse, ErrorResponse, HealthResponse
+from assistant.tools import Toolbox
 
 logger = logging.getLogger("assistant")
 
@@ -29,7 +32,16 @@ def get_chat_model() -> BaseChatModel:
 
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
+
+
+async def get_toolbox(settings: SettingsDep) -> AsyncIterator[Toolbox]:
+    """FastAPI dependency: read tools on a client for the configured API. Tests replace it."""
+    async with ApiClient(str(settings.api_base_url)) as api:
+        yield Toolbox(api)
+
+
 ChatModelDep = Annotated[BaseChatModel, Depends(get_chat_model)]
+ToolboxDep = Annotated[Toolbox, Depends(get_toolbox)]
 
 
 def create_app() -> FastAPI:
@@ -48,12 +60,12 @@ def create_app() -> FastAPI:
         },
     )
     async def chat(
-        request: ChatRequest, settings: SettingsDep, model: ChatModelDep
+        request: ChatRequest, settings: SettingsDep, model: ChatModelDep, toolbox: ToolboxDep
     ) -> ChatResponse:
         if len(request.message) > settings.max_message_chars:
             raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, TOO_LONG_MESSAGE)
         try:
-            return ChatResponse(reply=await answer(model, request.message))
+            return ChatResponse(reply=await answer(model, request.message, toolbox))
         except AssistantUnavailableError:
             # Log the cause for the operator; the client gets a safe, generic message.
             logger.exception("chat model failed")

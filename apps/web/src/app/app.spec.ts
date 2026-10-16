@@ -24,6 +24,15 @@ describe('App', () => {
     expect(link?.textContent.trim()).toBe('Disponibilidad');
   });
 
+  it('links to the assistant page from the main navigation', async () => {
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+
+    const element = fixture.nativeElement as HTMLElement;
+    const link = element.querySelector('nav a[href="/asistente"]');
+    expect(link?.textContent.trim()).toBe('Asistente');
+  });
+
   it('offers a skip link that targets the main landmark', async () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();

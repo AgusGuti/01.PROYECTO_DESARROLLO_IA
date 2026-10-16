@@ -1,0 +1,53 @@
+.note {
+  color: var(--color-muted);
+}
+
+.over {
+  color: var(--color-error);
+}
+
+.log {
+  display: grid;
+  gap: 0.75rem;
+  margin-block: 1rem;
+}
+
+.message {
+  border-inline-start: 0.25rem solid var(--color-border);
+  padding: 0.5rem 1rem;
+
+  &--user {
+    border-color: var(--color-ok);
+  }
+
+  &--error {
+    border-color: var(--color-error);
+  }
+}
+
+.who {
+  display: block;
+}
+
+.text {
+  margin-block: 0.25rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.composer {
+  display: grid;
+  gap: 0.5rem;
+  margin-block: 1rem;
+}
+
+textarea {
+  font: inherit;
+  max-inline-size: 100%;
+  resize: vertical;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+}

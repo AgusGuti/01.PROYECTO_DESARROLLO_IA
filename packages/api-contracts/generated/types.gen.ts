@@ -1062,6 +1062,20 @@ export type AnalyzeGcodeRequest = {
     material?: Material & unknown;
 };
 
+export type ChatResponse = {
+    /**
+     * The assistant reply.
+     */
+    reply: string;
+};
+
+export type ChatRequest = {
+    /**
+     * The user message, trimmed. It is never stored or logged.
+     */
+    message: string;
+};
+
 export type GetLivenessData = {
     body?: never;
     path?: never;
@@ -2321,3 +2335,32 @@ export type AnalyzeGcodeResponses = {
 };
 
 export type AnalyzeGcodeResponse = AnalyzeGcodeResponses[keyof AnalyzeGcodeResponses];
+
+export type AskAssistantData = {
+    body?: ChatRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/chat';
+};
+
+export type AskAssistantErrors = {
+    /**
+     * Invalid input. Issue path "message": empty, too long (over 2000) or unknown key.
+     */
+    400: Problem;
+    /**
+     * The assistant is unreachable, timed out or answered something unusable.
+     */
+    503: Problem;
+};
+
+export type AskAssistantError = AskAssistantErrors[keyof AskAssistantErrors];
+
+export type AskAssistantResponses = {
+    /**
+     * The assistant reply.
+     */
+    200: ChatResponse;
+};
+
+export type AskAssistantResponse = AskAssistantResponses[keyof AskAssistantResponses];

@@ -2,6 +2,7 @@
 // `npm run contract` writes it to packages/api-contracts/openapi.yaml; never edit that file.
 import { OpenApiGeneratorV31, OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { registerAvailabilityPaths } from '../modules/availability/index.js';
+import { registerChatPaths } from '../modules/chat/index.js';
 import { registerCostsPaths } from '../modules/costs/index.js';
 import { registerHealthPaths } from '../modules/health/index.js';
 import { registerFilamentsPaths } from '../modules/filaments/index.js';
@@ -29,6 +30,7 @@ export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV31['generate
   registerQueuesPaths(registry);
   registerSimulationsPaths(registry);
   registerGcodePaths(registry);
+  registerChatPaths(registry);
   // Feature modules register their paths here as they are added.
 
   return new OpenApiGeneratorV31(registry.definitions).generateDocument({

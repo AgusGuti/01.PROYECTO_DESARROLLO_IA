@@ -4,7 +4,7 @@ Source of requirements: [the project proposal](propuesta-proyecto-impresion-3d.m
 One item at a time, each through the `new-feature` workflow, each merged by pull request with
 green CI before the next starts.
 
-**Current:** M4 – Chat assistant (not started). M1, M2 and M3 (CU09, CU07, CU10, CU08) are merged.
+**Current:** M4.3 – Proposal tools with confirmation in the UI (not started). M1–M3 and M4.1 (chat endpoint and panel) and M4.2 (read tools) are merged.
 
 The session-start hook reads the line above. Update it when an item is merged.
 

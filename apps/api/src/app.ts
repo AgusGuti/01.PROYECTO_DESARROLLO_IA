@@ -10,6 +10,7 @@ import type { Config } from './config/env.js';
 import { createHealthModule, type Clock, type DependencyProbe } from './modules/health/index.js';
 import { createFilamentCostReader, createFilamentsModule } from './modules/filaments/index.js';
 import { createAvailabilityModule, createScheduleReader } from './modules/availability/index.js';
+import { createChatModule, type AssistantClient } from './modules/chat/index.js';
 import { createCostsModule } from './modules/costs/index.js';
 import { createGcodeModule } from './modules/gcode/index.js';
 import {
@@ -60,6 +61,8 @@ export interface AppDependencies {
   planning?: Partial<Omit<Parameters<typeof createPlanningModule>[0], 'clock'>>;
   /** Lets tests replace any of the six read ports of the simulations with fakes. */
   simulations?: Partial<Parameters<typeof createSimulationsModule>[0]>;
+  /** Lets tests replace the HTTP client of the assistant with a fake. */
+  chat?: { assistantClient?: AssistantClient };
 }
 
 const systemClock: Clock = { now: () => new Date() };
@@ -78,6 +81,7 @@ export function createApp({
   queues = {},
   planning = {},
   simulations = {},
+  chat = {},
 }: AppDependencies): Express {
   const app = express();
 
@@ -189,6 +193,7 @@ export function createApp({
     }).router,
   );
   v1.use('/gcode-analyses', createGcodeModule().router);
+  v1.use('/chat', createChatModule({ assistantUrl: config.assistantUrl, logger, ...chat }).router);
 
   // 7. Fallbacks: unknown route, then the single error handler. These stay last.
   app.use(notFoundHandler);

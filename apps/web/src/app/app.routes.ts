@@ -126,6 +126,11 @@ export const routes: Routes = [
       import('./features/availability/availability-page').then((module) => module.AvailabilityPage),
   },
   {
+    path: 'asistente',
+    title: 'Asistente · Print3D Planner',
+    loadComponent: () => import('./features/chat/chat-page').then((module) => module.ChatPage),
+  },
+  {
     path: '**',
     title: 'Página no encontrada · Print3D Planner',
     loadComponent: () =>
