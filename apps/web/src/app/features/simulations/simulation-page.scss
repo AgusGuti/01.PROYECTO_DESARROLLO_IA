@@ -1,0 +1,140 @@
+.page-header {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+form {
+  display: grid;
+  gap: 1rem;
+  max-inline-size: 30rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.25rem;
+}
+
+input[type='text'] {
+  border: 1px solid var(--color-muted);
+  border-radius: 0.375rem;
+  font: inherit;
+  inline-size: 10rem;
+  padding: 0.5rem;
+
+  &[aria-invalid='true'] {
+    border-color: var(--color-error);
+  }
+}
+
+.field-error {
+  color: var(--color-error);
+  margin: 0;
+}
+
+.status {
+  border-inline-start: 0.25rem solid var(--color-border);
+  margin-block: 1rem;
+  padding: 0.75rem 1rem;
+
+  &--error {
+    border-color: var(--color-error);
+  }
+}
+
+.result {
+  margin-block-start: 1.5rem;
+}
+
+.warnings {
+  list-style: none;
+  margin-block: 1rem;
+  padding: 0;
+
+  li {
+    border-inline-start: 0.25rem solid var(--color-warn);
+    margin-block-end: 0.5rem;
+    padding: 0.5rem 1rem;
+  }
+}
+
+.totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2rem;
+  margin-block: 1rem;
+
+  dt {
+    color: var(--color-muted);
+  }
+
+  dd {
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    margin: 0;
+  }
+}
+
+.printer {
+  margin-block-start: 1.5rem;
+}
+
+.timeline {
+  background: var(--color-border);
+  block-size: 1.5rem;
+  border-radius: 0.25rem;
+  margin-block: 0.5rem 1rem;
+  position: relative;
+}
+
+.bar {
+  background: var(--color-accent);
+  block-size: 100%;
+  border-radius: 0.125rem;
+  position: absolute;
+
+  &--unattended {
+    background: var(--color-warn);
+  }
+}
+
+.axis {
+  color: var(--color-muted);
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+table {
+  border-collapse: collapse;
+  inline-size: 100%;
+}
+
+th,
+td {
+  border-block-end: 1px solid var(--color-border);
+  padding: 0.5rem;
+  text-align: start;
+  vertical-align: top;
+}
+
+.badge {
+  background: var(--color-warn);
+  border-radius: 0.25rem;
+  color: #ffffff;
+  display: inline-block;
+  font-size: 0.85rem;
+  padding: 0.125rem 0.5rem;
+}
+
+.visually-hidden {
+  block-size: 1px;
+  clip-path: inset(50%);
+  inline-size: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+}

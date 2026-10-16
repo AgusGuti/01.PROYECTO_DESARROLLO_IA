@@ -94,6 +94,12 @@ export const routes: Routes = [
     loadComponent: () => import('./features/queues/queue-page').then((module) => module.QueuePage),
   },
   {
+    path: 'proyectos/:id/simulacion',
+    title: 'Simulación · Print3D Planner',
+    loadComponent: () =>
+      import('./features/simulations/simulation-page').then((module) => module.SimulationPage),
+  },
+  {
     path: 'costos',
     title: 'Calcular costo · Print3D Planner',
     loadComponent: () =>

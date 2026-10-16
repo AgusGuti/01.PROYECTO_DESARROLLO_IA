@@ -32,6 +32,20 @@ export function createQueueProjectReader(
   };
 }
 
+/**
+ * Builds the simulations module's project port (ADR 0026): whether a project is live and its
+ * deadline as `YYYY-MM-DD` (stored as UTC midnight, ADR 0011) or null.
+ */
+export function createSimulationProjectReader(
+  repository: Pick<ProjectRepository, 'findLiveById'> = createMongoProjectRepository(),
+): (id: string) => Promise<{ deadline: string | null } | null> {
+  return async (id) => {
+    const project = await repository.findLiveById(id);
+    if (project === null) return null;
+    return { deadline: project.deadline?.toISOString().slice(0, 10) ?? null };
+  };
+}
+
 export function createProjectsModule(deps: {
   clock: Clock;
   /** Which parts are live, with their name and material. Built in app.ts (ADR 0017). */

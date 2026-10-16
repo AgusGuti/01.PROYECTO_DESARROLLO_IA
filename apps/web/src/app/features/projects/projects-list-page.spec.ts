@@ -417,6 +417,16 @@ describe('ProjectsListPage', () => {
     expect(link?.getAttribute('aria-label')).toBe('Cola de Soportes para el taller');
   });
 
+  it('gives each row a Simular link to the simulation page named after the project', async () => {
+    const page = await render();
+
+    await page.answer(0, pageOf([makeProject({ id: 'abc' })]));
+
+    const link = page.element.querySelector('tbody tr a[href="/proyectos/abc/simulacion"]');
+    expect(link?.textContent).toBe('Simular');
+    expect(link?.getAttribute('aria-label')).toBe('Simular Soportes para el taller');
+  });
+
   describe('deleting a project', () => {
     async function withOne() {
       const page = await render();

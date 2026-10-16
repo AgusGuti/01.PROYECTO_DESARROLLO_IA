@@ -4,7 +4,7 @@ Source of requirements: [the project proposal](propuesta-proyecto-impresion-3d.m
 One item at a time, each through the `new-feature` workflow, each merged by pull request with
 green CI before the next starts.
 
-**Current:** M3.3 – CU10 Simular la planificación (not started). M1, M2, M3.1 (CU09) and M3.2 (CU07 print queue) are merged.
+**Current:** M3.4 – CU08 Optimizar el orden de impresión (not started). M1, M2, M3.1 (CU09), M3.2 (CU07) and M3.3 (CU10 naive simulation) are merged.
 
 The session-start hook reads the line above. Update it when an item is merged.
 

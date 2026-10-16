@@ -776,6 +776,93 @@ export type QueueLineEdit = {
     completed: number;
 };
 
+export type Simulation = {
+    projectId: string;
+    /**
+     * Echoed for display. The naive ordering does not use it.
+     */
+    goal: 'deadline' | 'fastest' | 'minimal_idle';
+    /**
+     * Wall-clock time of America/Argentina/Buenos_Aires: YYYY-MM-DDTHH:mm.
+     */
+    startAt: string;
+    jobs: Array<{
+        order: number;
+        partId: string;
+        partName: string;
+        /**
+         * 1-based unit within its queue line.
+         */
+        unit: number;
+        unitsInLine: number;
+        printerId: string;
+        /**
+         * Wall-clock time of America/Argentina/Buenos_Aires: YYYY-MM-DDTHH:mm.
+         */
+        startAt: string;
+        /**
+         * Wall-clock time of America/Argentina/Buenos_Aires: YYYY-MM-DDTHH:mm.
+         */
+        endAt: string;
+        /**
+         * When the piece is removed: the first intervention minute at or after endAt.
+         */
+        handoffAt: string;
+        /**
+         * Some minute of the print has no intervention possible (for example the night).
+         */
+        unattended: boolean;
+    }>;
+    printers: Array<{
+        printerId: string;
+        name: string;
+        jobs: number;
+        /**
+         * Sum of the printing time of its jobs (endAt - startAt).
+         */
+        busyMinutes: number;
+        /**
+         * Sum of the waiting time of its jobs: finished, not yet collected (handoffAt - endAt).
+         */
+        idleMinutes: number;
+    }>;
+    totals: {
+        placedJobs: number;
+        unplacedJobs: number;
+        /**
+         * The last handoff, if any.
+         */
+        finishAt: string | null;
+        totalBusyMinutes: number;
+        totalIdleMinutes: number;
+    };
+    deadline: {
+        date: string | null;
+        /**
+         * Null without a deadline or with nothing to place; false if anything is unplaced.
+         */
+        met: boolean | null;
+    };
+    unplaced: Array<{
+        partId: string;
+        partName: string;
+        units: number;
+    }>;
+    warnings: Array<{
+        code: SimulationWarningCode;
+    }>;
+};
+
+export type SimulationWarningCode = 'part_deleted' | 'printer_unavailable' | 'availability_not_configured' | 'nothing_to_print';
+
+export type SimulationRequest = {
+    projectId: string;
+    /**
+     * When the simulation starts, in Argentina time, without seconds and without a zone suffix.
+     */
+    startAt: string;
+};
+
 export type GcodeAnalysis = {
     slicer: 'cura';
     estimatedPrintSeconds: number;
@@ -1929,6 +2016,35 @@ export type UpdateQueueResponses = {
 };
 
 export type UpdateQueueResponse = UpdateQueueResponses[keyof UpdateQueueResponses];
+
+export type SimulatePlanningData = {
+    body?: SimulationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/simulations';
+};
+
+export type SimulatePlanningErrors = {
+    /**
+     * Invalid input. Issue path "projectId": the project does not exist or has no queue; "lines": more than 1000 units left; "printerIds": no selected printer is available.
+     */
+    400: Problem;
+    /**
+     * The queue, project, part, printer or schedule data is temporarily unavailable.
+     */
+    503: Problem;
+};
+
+export type SimulatePlanningError = SimulatePlanningErrors[keyof SimulatePlanningErrors];
+
+export type SimulatePlanningResponses = {
+    /**
+     * The simulated timeline.
+     */
+    200: Simulation;
+};
+
+export type SimulatePlanningResponse = SimulatePlanningResponses[keyof SimulatePlanningResponses];
 
 export type AnalyzeGcodeData = {
     body?: AnalyzeGcodeRequest;

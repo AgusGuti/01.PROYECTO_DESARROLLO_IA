@@ -94,6 +94,11 @@
                   [attr.aria-label]="'Cola de ' + project.name"
                   >Cola</a
                 >
+                <a
+                  [routerLink]="['/proyectos', project.id, 'simulacion']"
+                  [attr.aria-label]="'Simular ' + project.name"
+                  >Simular</a
+                >
                 <button
                   type="button"
                   class="link-danger"
