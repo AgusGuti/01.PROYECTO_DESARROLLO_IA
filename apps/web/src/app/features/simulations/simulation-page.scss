@@ -130,6 +130,27 @@ td {
   padding: 0.125rem 0.5rem;
 }
 
+.actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.deltas {
+  margin-block: 1rem;
+}
+
+tr.chosen {
+  background: var(--color-border);
+  font-weight: 700;
+}
+
+.badge--ok {
+  background: var(--color-accent);
+  margin-inline-start: 0.5rem;
+}
+
 .visually-hidden {
   block-size: 1px;
   clip-path: inset(50%);

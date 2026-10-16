@@ -60,17 +60,35 @@ export function createSelectablePrinterLookup(
 }
 
 /**
- * Builds the simulations module's printer port (ADR 0026): the name of each id that is live and
+ * Builds the simulations module's printer port (ADR 0026, 0027): the name and build volume of each id that is live and
  * NOT archived. An id missing from the answer is unknown, deleted or archived.
  */
 export function createSimulationPrinterLookup(
   repository: Pick<PrinterRepository, 'findLiveById'> = createMongoPrinterRepository(),
-): (ids: string[]) => Promise<ReadonlyMap<string, { name: string }>> {
+): (
+  ids: string[],
+) => Promise<
+  ReadonlyMap<string, { name: string; buildVolume: { x: number; y: number; z: number } }>
+> {
   return async (ids) => {
     const found = await Promise.all(ids.map((id) => repository.findLiveById(id)));
     return new Map(
       found.flatMap((printer) =>
-        printer?.archivedAt === null ? [[printer.id, { name: printer.name }] as const] : [],
+        printer?.archivedAt === null
+          ? [
+              [
+                printer.id,
+                {
+                  name: printer.name,
+                  buildVolume: {
+                    x: printer.buildVolume.x,
+                    y: printer.buildVolume.y,
+                    z: printer.buildVolume.z,
+                  },
+                },
+              ] as const,
+            ]
+          : [],
       ),
     );
   };

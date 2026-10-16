@@ -7,6 +7,7 @@ import { registerHealthPaths } from '../modules/health/index.js';
 import { registerFilamentsPaths } from '../modules/filaments/index.js';
 import { registerGcodePaths } from '../modules/gcode/index.js';
 import { registerPartsPaths } from '../modules/parts/index.js';
+import { registerPlanningPaths } from '../modules/planning/index.js';
 import { registerPrintersPaths } from '../modules/printers/index.js';
 import { registerProjectsPaths } from '../modules/projects/index.js';
 import { registerQueuesPaths } from '../modules/queues/index.js';
@@ -24,6 +25,7 @@ export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV31['generate
   registerProjectsPaths(registry);
   registerCostsPaths(registry);
   registerAvailabilityPaths(registry);
+  registerPlanningPaths(registry);
   registerQueuesPaths(registry);
   registerSimulationsPaths(registry);
   registerGcodePaths(registry);

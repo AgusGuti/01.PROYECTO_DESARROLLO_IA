@@ -404,7 +404,7 @@ describe('parts repository on a real MongoDB', () => {
   });
 
   describe('findLiveByIds', () => {
-    it('returns only the name, material and print time of the live parts among the ids', async () => {
+    it('returns only the name, material, print time and size of the live parts among the ids', async () => {
       const live = await make({ name: 'Viva', material: 'PETG' });
       const gone = await make({ name: 'Borrada' });
       await repository.softDelete(gone.id, T1);
@@ -417,6 +417,7 @@ describe('parts repository on a real MongoDB', () => {
           name: 'Viva',
           material: 'PETG',
           estimatedPrintSeconds: live.estimatedPrintSeconds,
+          dimensionsMm: live.dimensionsMm,
         },
       ]);
     });

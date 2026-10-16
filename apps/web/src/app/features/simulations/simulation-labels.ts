@@ -1,4 +1,8 @@
-import type { SimulationWarningCode } from '@print3d/api-contracts';
+import type {
+  Optimization,
+  OptimizationStrategy,
+  SimulationWarningCode,
+} from '@print3d/api-contracts';
 
 export const HORIZON_DAYS = 14;
 const MINUTE_MS = 60_000;
@@ -12,6 +16,26 @@ export const WARNING_MESSAGES: Readonly<Record<SimulationWarningCode, string>> =
   availability_not_configured:
     'Todavía no cargaste tus ventanas de intervención: sin ellas no se puede ubicar ningún trabajo.',
   nothing_to_print: 'La cola no tiene unidades pendientes para imprimir.',
+  batching_applied: 'Se agruparon piezas iguales en una misma placa.',
+};
+
+/** A `Record` over the contract type: a new strategy fails to compile until it has a label. */
+export const STRATEGY_LABELS: Readonly<Record<OptimizationStrategy, string>> = {
+  naive: 'Orden simple',
+  queue_order: 'Orden de la cola agrupando piezas',
+  longest_first: 'Las más largas primero',
+  shortest_first: 'Las más cortas primero',
+  best_fit: 'Mejor encaje con tus ventanas',
+};
+
+export function isStrategy(value: unknown): value is OptimizationStrategy {
+  return typeof value === 'string' && Object.hasOwn(STRATEGY_LABELS, value);
+}
+
+export const GOAL_LABELS: Readonly<Record<Optimization['goal'], string>> = {
+  deadline: 'cumplir la fecha límite',
+  fastest: 'terminar lo antes posible',
+  minimal_idle: 'tener el menor tiempo muerto',
 };
 
 const pad = (value: number): string => String(value).padStart(2, '0');
@@ -60,6 +84,34 @@ export function formatDate(value: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   return match === null ? value : `${match[3] ?? ''}-${match[2] ?? ''}-${match[1] ?? ''}`;
 }
+
+/** The deadline cell of a plan: the date and whether it is met. */
+export function deadlineText({ date, met }: { date: string | null; met: boolean | null }): string {
+  if (date === null) return 'Sin fecha límite';
+  if (met === null) return `${formatDate(date)}: sin trabajos ubicados para evaluar`;
+  return `${formatDate(date)}: ${met ? 'cumple' : 'no cumple'}`;
+}
+
+/** The comparison deltas are optimised minus baseline, so a negative number is an improvement. */
+export function finishDeltaText(delta: number | null): string {
+  if (delta === null) return 'No se puede comparar la hora de fin.';
+  if (delta === 0) return 'Sin diferencia en la hora de fin.';
+  return `Termina ${formatMinutes(Math.abs(delta))} ${delta < 0 ? 'antes' : 'después'}.`;
+}
+
+export function idleDeltaText(delta: number): string {
+  if (delta === 0) return 'Sin diferencia en el tiempo muerto.';
+  return `Tiempo muerto: ${formatMinutes(Math.abs(delta))} ${delta < 0 ? 'menos' : 'más'}.`;
+}
+
+export const DEADLINE_CHANGE_TEXT: Readonly<
+  Record<Optimization['comparison']['deadlineChanged'], string>
+> = {
+  gained: 'Ahora cumple la fecha límite.',
+  lost: 'Ya no cumple la fecha límite.',
+  same: 'La fecha límite queda igual.',
+  unknown: 'No se puede comparar la fecha límite.',
+};
 
 /** 150 becomes "2 h 30 min". */
 export function formatMinutes(total: number): string {

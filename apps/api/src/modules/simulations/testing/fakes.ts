@@ -2,7 +2,10 @@
 import type { ScheduleRules } from '../../availability/index.js';
 import type {
   Goal,
+  PartData,
   PartLookup,
+  PlanningReader,
+  PrinterData,
   PrinterLookup,
   ProjectReader,
   QueueReader,
@@ -21,7 +24,12 @@ export const DAY_SHIFT: ScheduleRules = {
   exceptions: [],
 };
 
-export type Failing = 'queue' | 'project' | 'parts' | 'printers' | 'schedule';
+/** Ender-3 V2 Neo bed. */
+export const ENDER_BED = { x: 220, y: 220, z: 250 };
+/** Too big to share a plate (210 + 10 = 220 fills a side): batching never applies by default. */
+export const BIG_PART = { x: 210, y: 100, z: 50 };
+
+export type Failing = 'queue' | 'project' | 'parts' | 'printers' | 'schedule' | 'planning';
 
 export interface FakePorts {
   readonly queueReader: QueueReader;
@@ -29,6 +37,7 @@ export interface FakePorts {
   readonly partLookup: PartLookup;
   readonly printerLookup: PrinterLookup;
   readonly scheduleReader: ScheduleReader;
+  readonly planningReader: PlanningReader;
   /** project id -> queue. Anything else has no queue. */
   readonly queues: Map<
     string,
@@ -41,10 +50,11 @@ export interface FakePorts {
   >;
   /** project id -> deadline. Anything else is unknown or removed. */
   readonly projects: Map<string, string | null>;
-  readonly parts: Map<string, { name: string; estimatedPrintSeconds: number }>;
+  readonly parts: Map<string, PartData>;
   /** Live, not archived printers. */
-  readonly printers: Map<string, { name: string }>;
+  readonly printers: Map<string, PrinterData>;
   schedule: ScheduleRules & { version: number };
+  batchSavingBasisPoints: number;
   /** When set, the named port rejects with this error (a dependency failure). */
   failing: Failing | undefined;
 }
@@ -73,14 +83,15 @@ export function createFakePorts(): FakePorts {
     projects: new Map([[PROJECT_ID, null]]),
     // 2 hours per unit.
     parts: new Map([
-      [PART_A, { name: 'Soporte en L', estimatedPrintSeconds: 7200 }],
-      [PART_B, { name: 'Florero', estimatedPrintSeconds: 3600 }],
+      [PART_A, { name: 'Soporte en L', estimatedPrintSeconds: 7200, dimensionsMm: BIG_PART }],
+      [PART_B, { name: 'Florero', estimatedPrintSeconds: 3600, dimensionsMm: BIG_PART }],
     ]),
     printers: new Map([
-      [PRINTER_1, { name: 'Ender 3' }],
-      [PRINTER_2, { name: 'Prusa' }],
+      [PRINTER_1, { name: 'Ender 3', buildVolume: ENDER_BED }],
+      [PRINTER_2, { name: 'Prusa', buildVolume: ENDER_BED }],
     ]),
     schedule: { ...DAY_SHIFT, version: 1 },
+    batchSavingBasisPoints: 0,
     failing: undefined,
 
     queueReader(id) {
@@ -103,6 +114,10 @@ export function createFakePorts(): FakePorts {
     scheduleReader() {
       fail('schedule');
       return Promise.resolve(ports.schedule);
+    },
+    planningReader() {
+      fail('planning');
+      return Promise.resolve({ batchSavingBasisPoints: ports.batchSavingBasisPoints });
     },
   };
   return ports;

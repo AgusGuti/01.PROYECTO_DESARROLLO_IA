@@ -1,7 +1,7 @@
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import type { Simulation } from '@print3d/api-contracts';
+import type { Optimization, Simulation } from '@print3d/api-contracts';
 import { firstValueFrom } from 'rxjs';
 import { API_BASE_URL } from '../../core/api/api-config';
 import { ApiError } from '../../core/api/api-error';
@@ -97,5 +97,108 @@ describe('SimulationsApi', () => {
 
     await expect(result).rejects.toBeInstanceOf(ApiError);
     await expect(result).rejects.toMatchObject({ code: 'unexpected_response' });
+  });
+
+  describe('optimize', () => {
+    const URL = 'http://api.test/api/v1/simulations/optimizations';
+    const totals = {
+      placedPlates: 1,
+      placedUnits: 2,
+      unplacedUnits: 0,
+      finishAt: '2026-10-16T12:30',
+      totalBusyMinutes: 150,
+      totalIdleMinutes: 0,
+    };
+    const deadline = { date: null, met: null };
+    const OPTIMIZATION: Optimization = {
+      projectId: 'p1',
+      goal: 'fastest',
+      startAt: '2026-10-16T10:00',
+      strategy: 'queue_order',
+      baseline: { totals: { ...totals, placedPlates: 2 }, deadline, unplaced: [] },
+      optimized: {
+        jobs: [
+          {
+            order: 1,
+            partId: 'a',
+            partName: 'Soporte',
+            units: 2,
+            plateIndex: 1,
+            platesInLine: 1,
+            printerId: 'pr1',
+            startAt: '2026-10-16T10:00',
+            endAt: '2026-10-16T12:00',
+            handoffAt: '2026-10-16T12:30',
+            unattended: false,
+          },
+        ],
+        printers: [{ printerId: 'pr1', name: 'Ender', jobs: 1, busyMinutes: 150, idleMinutes: 0 }],
+        totals,
+        deadline,
+        unplaced: [],
+      },
+      comparison: { finishDeltaMinutes: null, idleDeltaMinutes: 0, deadlineChanged: 'unknown' },
+      candidates: [
+        {
+          strategy: 'naive',
+          finishAt: '2026-10-16T12:30',
+          totalIdleMinutes: 0,
+          deadlineMet: null,
+          placedUnits: 2,
+          unplacedUnits: 0,
+        },
+      ],
+      warnings: [{ code: 'batching_applied' }],
+    };
+    const body = { projectId: 'p1', startAt: '2026-10-16T10:00' };
+
+    it('posts the request and returns the optimisation', async () => {
+      const result = firstValueFrom(api.optimize(body));
+
+      const request = http.expectOne({ method: 'POST', url: URL });
+      expect(request.request.body).toEqual(body);
+      request.flush(OPTIMIZATION);
+
+      await expect(result).resolves.toEqual(OPTIMIZATION);
+    });
+
+    it('fails with the safe error on a 503 and does not retry', async () => {
+      const result = firstValueFrom(api.optimize(body));
+
+      http.expectOne(URL).flush({ detail: 'boom' }, { status: 503, statusText: 'x' });
+
+      await expect(result).rejects.toMatchObject({ status: 503 });
+    });
+
+    it.each([
+      ['not an object', 'nope'],
+      ['an unknown strategy', { ...OPTIMIZATION, strategy: 'magic' }],
+      ['an unknown goal', { ...OPTIMIZATION, goal: 'whenever' }],
+      [
+        'a plate without units',
+        { ...OPTIMIZATION, optimized: { ...OPTIMIZATION.optimized, jobs: [{ order: 1 }] } },
+      ],
+      [
+        'a fractional delta',
+        { ...OPTIMIZATION, comparison: { ...OPTIMIZATION.comparison, idleDeltaMinutes: 1.5 } },
+      ],
+      [
+        'an unknown deadline change',
+        { ...OPTIMIZATION, comparison: { ...OPTIMIZATION.comparison, deadlineChanged: 'maybe' } },
+      ],
+      [
+        'a candidate with an unknown strategy',
+        { ...OPTIMIZATION, candidates: [{ strategy: 'magic' }] },
+      ],
+      ['a baseline without totals', { ...OPTIMIZATION, baseline: { deadline, unplaced: [] } }],
+      ['an unknown warning', { ...OPTIMIZATION, warnings: [{ code: 'surprise' }] }],
+    ])('rejects %s as an unexpected response', async (_name, response) => {
+      const result = firstValueFrom(api.optimize(body));
+
+      http.expectOne(URL).flush(response);
+
+      await expect(result).rejects.toBeInstanceOf(ApiError);
+      await expect(result).rejects.toMatchObject({ code: 'unexpected_response' });
+    });
   });
 });

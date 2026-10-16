@@ -1,18 +1,29 @@
+import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, ElementRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import type { Simulation, SimulationWarningCode } from '@print3d/api-contracts';
-import { catchError, map, of, startWith, Subject, switchMap } from 'rxjs';
+import type {
+  Optimization,
+  Simulation,
+  SimulationRequest,
+  SimulationWarningCode,
+} from '@print3d/api-contracts';
+import { catchError, map, type Observable, of, startWith, Subject, switchMap } from 'rxjs';
 import { ApiError } from '../../core/api/api-error';
 import {
+  DEADLINE_CHANGE_TEXT,
+  deadlineText,
   defaultStart,
-  formatDate,
+  finishDeltaText,
   formatDateTime,
   formatMinutes,
+  GOAL_LABELS,
   HORIZON_DAYS,
+  idleDeltaText,
   parseDate,
   parseTime,
+  STRATEGY_LABELS,
   wallMinutes,
   WARNING_MESSAGES,
 } from './simulation-labels';
@@ -38,12 +49,24 @@ interface PrinterView {
   readonly jobs: readonly JobRow[];
 }
 
+type Mode = 'simulate' | 'optimize';
+
+interface RunRequest {
+  readonly mode: Mode;
+  readonly startAt: string;
+}
+
 type RunState =
   | { readonly kind: 'idle' }
-  | { readonly kind: 'running' }
+  | { readonly kind: 'running'; readonly mode: Mode }
   | { readonly kind: 'noQueue' }
   | { readonly kind: 'failed'; readonly message: string; readonly queueLink?: boolean }
-  | { readonly kind: 'done'; readonly simulation: Simulation; readonly printers: PrinterView[] };
+  | { readonly kind: 'done'; readonly simulation: Simulation; readonly printers: PrinterView[] }
+  | {
+      readonly kind: 'optimized';
+      readonly optimization: Optimization;
+      readonly printers: PrinterView[];
+    };
 
 const GENERIC_ERROR = 'Ocurrió un error inesperado. Intentá de nuevo.';
 const HORIZON_MINUTES = HORIZON_DAYS * 24 * 60;
@@ -56,19 +79,40 @@ const TIME_MESSAGE = 'Ingresá una hora entre 00:00 y 23:59 con el formato HH:MM
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
 
-function buildPrinters(simulation: Simulation): PrinterView[] {
-  const origin = wallMinutes(simulation.startAt);
-  return simulation.printers.map((printer) => ({
+interface TimedJob {
+  readonly order: number;
+  readonly printerId: string;
+  readonly startAt: string;
+  readonly endAt: string;
+  readonly handoffAt: string;
+  readonly unattended: boolean;
+}
+
+/** Rows and timeline bars per printer; `describe` words the piece of each job. */
+function buildPrinters<J extends TimedJob>(
+  startAt: string,
+  printers: readonly {
+    printerId: string;
+    name: string;
+    jobs: number;
+    busyMinutes: number;
+    idleMinutes: number;
+  }[],
+  jobs: readonly J[],
+  describe: (job: J) => string,
+): PrinterView[] {
+  const origin = wallMinutes(startAt);
+  return printers.map((printer) => ({
     id: printer.printerId,
     name: printer.name,
     summary: `${String(printer.jobs)} trabajo(s) · ocupada ${formatMinutes(printer.busyMinutes)} · tiempo muerto ${formatMinutes(printer.idleMinutes)}`,
-    jobs: simulation.jobs
+    jobs: jobs
       .filter((job) => job.printerId === printer.printerId)
       .map((job) => {
         const left = clamp(((wallMinutes(job.startAt) - origin) / HORIZON_MINUTES) * 100, 0, 100);
         const length =
           ((wallMinutes(job.handoffAt) - wallMinutes(job.startAt)) / HORIZON_MINUTES) * 100;
-        const part = `${job.partName} (${String(job.unit)} de ${String(job.unitsInLine)})`;
+        const part = describe(job);
         return {
           order: job.order,
           part,
@@ -83,6 +127,9 @@ function buildPrinters(simulation: Simulation): PrinterView[] {
       }),
   }));
 }
+
+const piecesPerPlate = (units: number): string =>
+  `${String(units)} ${units === 1 ? 'pieza' : 'piezas'} por placa`;
 
 function failureOf(error: unknown): RunState {
   if (!(error instanceof ApiError)) return { kind: 'failed', message: GENERIC_ERROR };
@@ -113,7 +160,7 @@ function failureOf(error: unknown): RunState {
 
 @Component({
   selector: 'app-simulation-page',
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [NgTemplateOutlet, ReactiveFormsModule, RouterLink],
   templateUrl: './simulation-page.html',
   styleUrl: './simulation-page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -133,24 +180,20 @@ export class SimulationPage {
   });
   protected readonly submitted = signal(false);
 
-  /** A start text runs a simulation; `null` clears the result (an input changed). */
-  private readonly runs = new Subject<string | null>();
+  /** A request runs a simulation or an optimisation; `null` clears the result (an input changed). */
+  private readonly runs = new Subject<RunRequest | null>();
 
   // `switchMap` cancels the run still in flight when a new one starts or the inputs change.
   protected readonly run = toSignal(
     this.runs.pipe(
-      switchMap((startAt) => {
+      switchMap((request) => {
         const id = this.projectId;
-        if (startAt === null) return of<RunState>(IDLE);
+        if (request === null) return of<RunState>(IDLE);
         if (id === null) return of<RunState>({ kind: 'failed', message: GENERIC_ERROR });
-        return this.api.simulate({ projectId: id, startAt }).pipe(
-          map((simulation): RunState => ({
-            kind: 'done',
-            simulation,
-            printers: buildPrinters(simulation),
-          })),
+        const body: SimulationRequest = { projectId: id, startAt: request.startAt };
+        return this.execute(request.mode, body).pipe(
           catchError((error: unknown) => of(failureOf(error))),
-          startWith<RunState>({ kind: 'running' }),
+          startWith<RunState>({ kind: 'running', mode: request.mode }),
         );
       }),
     ),
@@ -163,9 +206,44 @@ export class SimulationPage {
     });
   }
 
+  private execute(mode: Mode, body: SimulationRequest): Observable<RunState> {
+    if (mode === 'optimize') {
+      return this.api.optimize(body).pipe(
+        map((optimization): RunState => ({
+          kind: 'optimized',
+          optimization,
+          printers: buildPrinters(
+            optimization.startAt,
+            optimization.optimized.printers,
+            optimization.optimized.jobs,
+            (job) =>
+              `${job.partName}: ${piecesPerPlate(job.units)} (placa ${String(job.plateIndex)} de ${String(job.platesInLine)})`,
+          ),
+        })),
+      );
+    }
+    return this.api.simulate(body).pipe(
+      map((simulation): RunState => ({
+        kind: 'done',
+        simulation,
+        printers: buildPrinters(
+          simulation.startAt,
+          simulation.printers,
+          simulation.jobs,
+          (job) => `${job.partName} (${String(job.unit)} de ${String(job.unitsInLine)})`,
+        ),
+      })),
+    );
+  }
+
   /** The only text announced by the live region. */
   protected statusText(state: RunState): string {
-    if (state.kind === 'running') return 'Simulando…';
+    if (state.kind === 'running') {
+      return state.mode === 'optimize' ? 'Optimizando…' : 'Simulando…';
+    }
+    if (state.kind === 'optimized') {
+      return `Optimización lista: ${STRATEGY_LABELS[state.optimization.strategy]}`;
+    }
     if (state.kind !== 'done') return '';
     return `Simulación lista: ${String(state.simulation.totals.placedJobs)} trabajos ubicados`;
   }
@@ -185,15 +263,56 @@ export class SimulationPage {
   protected warningText = (code: SimulationWarningCode): string => WARNING_MESSAGES[code];
   protected formatMinutes = formatMinutes;
   protected formatDateTime = formatDateTime;
+  protected deadlineText = deadlineText;
+  protected strategyLabel = STRATEGY_LABELS;
 
-  protected deadlineText(simulation: Simulation): string {
-    const { date, met } = simulation.deadline;
-    if (date === null) return 'Sin fecha límite';
-    if (met === null) return `${formatDate(date)}: sin trabajos ubicados para evaluar`;
-    return `${formatDate(date)}: ${met ? 'cumple' : 'no cumple'}`;
+  protected explanation(optimization: Optimization): string {
+    return `Probamos ${String(optimization.candidates.length)} estrategias y elegimos la mejor según el objetivo: ${GOAL_LABELS[optimization.goal]}.`;
   }
 
-  protected submit(): void {
+  protected deltaLines(optimization: Optimization): string[] {
+    const { finishDeltaMinutes, idleDeltaMinutes, deadlineChanged } = optimization.comparison;
+    return [
+      finishDeltaText(finishDeltaMinutes),
+      idleDeltaText(idleDeltaMinutes),
+      DEADLINE_CHANGE_TEXT[deadlineChanged],
+    ];
+  }
+
+  protected finishText(finishAt: string | null): string {
+    return finishAt === null ? 'Sin trabajos ubicados' : formatDateTime(finishAt);
+  }
+
+  protected candidateDeadline(met: boolean | null): string {
+    if (met === null) return 'No aplica';
+    return met ? 'Cumple' : 'No cumple';
+  }
+
+  /** The two columns of the side-by-side comparison, one row per figure. */
+  protected comparisonRows(
+    optimization: Optimization,
+  ): readonly { label: string; baseline: string; optimized: string }[] {
+    const { baseline, optimized } = optimization;
+    const both = (
+      label: string,
+      pick: (plan: Optimization['baseline']) => string,
+    ): { label: string; baseline: string; optimized: string } => ({
+      label,
+      baseline: pick(baseline),
+      optimized: pick(optimized),
+    });
+    return [
+      both('Hora de fin', (plan) => this.finishText(plan.totals.finishAt)),
+      both('Tiempo ocupado', (plan) => formatMinutes(plan.totals.totalBusyMinutes)),
+      both('Tiempo muerto', (plan) => formatMinutes(plan.totals.totalIdleMinutes)),
+      both('Piezas ubicadas', (plan) => String(plan.totals.placedUnits)),
+      both('Piezas no ubicadas', (plan) => String(plan.totals.unplacedUnits)),
+      both('Placas impresas', (plan) => String(plan.totals.placedPlates)),
+      both('Fecha límite', (plan) => deadlineText(plan.deadline)),
+    ];
+  }
+
+  protected launch(mode: Mode): void {
     this.submitted.set(true);
     const date = parseDate(this.form.controls.date.value);
     const time = parseTime(this.form.controls.time.value);
@@ -202,6 +321,6 @@ export class SimulationPage {
       this.host.nativeElement.querySelector<HTMLElement>(target)?.focus();
       return;
     }
-    this.runs.next(`${date}T${time}`);
+    this.runs.next({ mode, startAt: `${date}T${time}` });
   }
 }

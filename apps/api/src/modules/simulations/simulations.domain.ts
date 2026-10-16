@@ -10,11 +10,14 @@ export const MAX_UNITS = 1000;
 const HANDOFF_SEARCH_DAYS = 60;
 const MS_PER_DAY = 86_400_000;
 
+export type Goal = 'deadline' | 'fastest' | 'minimal_idle';
+
 export const SIMULATION_WARNING_CODES = [
   'part_deleted',
   'printer_unavailable',
   'availability_not_configured',
   'nothing_to_print',
+  'batching_applied',
 ] as const;
 export type SimulationWarningCode = (typeof SIMULATION_WARNING_CODES)[number];
 
@@ -111,6 +114,46 @@ function rangesByDay(
   };
 }
 
+/** Questions about when the user can intervene, shared by the naive and optimised planners. */
+export interface Timeline {
+  /** First intervention minute >= from and <= until, or null. */
+  readonly nextIntervention: (from: number, until: number) => number | null;
+  /** Minutes of [from, to) in which the user can intervene. */
+  readonly interventionMinutes: (from: number, to: number) => number;
+  /** When a print that ended at `end` is collected: the first intervention minute, or null. */
+  readonly handoffFor: (end: number) => number | null;
+}
+
+export function createTimeline(schedule: ScheduleRules): Timeline {
+  const dayRanges = rangesByDay(schedule);
+  const nextIntervention = (from: number, until: number): number | null => {
+    const lastDay = Math.floor(until / MINUTES_PER_DAY);
+    for (let day = Math.floor(from / MINUTES_PER_DAY); day <= lastDay; day++) {
+      for (const [start, end] of dayRanges(day)) {
+        if (end <= from) continue;
+        const candidate = Math.max(start, from);
+        return candidate <= until ? candidate : null;
+      }
+    }
+    return null;
+  };
+  const interventionMinutes = (from: number, to: number): number => {
+    let total = 0;
+    const lastDay = Math.floor((to - 1) / MINUTES_PER_DAY);
+    for (let day = Math.floor(from / MINUTES_PER_DAY); day <= lastDay; day++) {
+      for (const [start, end] of dayRanges(day)) {
+        total += Math.max(0, Math.min(end, to) - Math.max(start, from));
+      }
+    }
+    return total;
+  };
+  return {
+    nextIntervention,
+    interventionMinutes,
+    handoffFor: (end) => nextIntervention(end, end + HANDOFF_SEARCH_DAYS * MINUTES_PER_DAY),
+  };
+}
+
 interface PrinterState {
   readonly printerId: string;
   free: number;
@@ -132,33 +175,8 @@ export function simulateNaive(input: {
   printerIds: readonly string[];
 }): Simulation {
   const { startAt, lines, printerIds } = input;
-  const dayRanges = rangesByDay(input.schedule);
+  const { nextIntervention, interventionMinutes, handoffFor } = createTimeline(input.schedule);
   const limit = startAt + HORIZON_DAYS * MINUTES_PER_DAY;
-
-  /** First intervention minute >= from and <= until, or null. */
-  const nextIntervention = (from: number, until: number): number | null => {
-    const lastDay = Math.floor(until / MINUTES_PER_DAY);
-    for (let day = Math.floor(from / MINUTES_PER_DAY); day <= lastDay; day++) {
-      for (const [start, end] of dayRanges(day)) {
-        if (end <= from) continue;
-        const candidate = Math.max(start, from);
-        return candidate <= until ? candidate : null;
-      }
-    }
-    return null;
-  };
-
-  /** Minutes of [from, to) in which the user can intervene. */
-  const interventionMinutes = (from: number, to: number): number => {
-    let total = 0;
-    const lastDay = Math.floor((to - 1) / MINUTES_PER_DAY);
-    for (let day = Math.floor(from / MINUTES_PER_DAY); day <= lastDay; day++) {
-      for (const [start, end] of dayRanges(day)) {
-        total += Math.max(0, Math.min(end, to) - Math.max(start, from));
-      }
-    }
-    return total;
-  };
 
   const state: PrinterState[] = printerIds.map((printerId) => ({
     printerId,
@@ -178,8 +196,7 @@ export function simulateNaive(input: {
       );
       const start = nextIntervention(printer.free, limit);
       const end = start === null ? 0 : start + line.minutes;
-      const handoff =
-        start === null ? null : nextIntervention(end, end + HANDOFF_SEARCH_DAYS * MINUTES_PER_DAY);
+      const handoff = start === null ? null : handoffFor(end);
       if (start === null || handoff === null) {
         unplaced.set(line.partId, (unplaced.get(line.partId) ?? 0) + 1);
         continue;

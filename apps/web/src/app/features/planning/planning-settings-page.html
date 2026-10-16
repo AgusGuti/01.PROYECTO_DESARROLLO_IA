@@ -1,0 +1,89 @@
+<section aria-labelledby="settings-title">
+  <h1 id="settings-title">Ajustes de planificación</h1>
+
+  @let view = load();
+  @switch (view.kind) {
+    @case ('loading') {
+      <p class="status" role="status">Cargando los ajustes…</p>
+    }
+    @case ('failed') {
+      <div class="status status--error" role="alert">
+        <p>{{ view.message }}</p>
+        <button type="button" (click)="reload()">Reintentar</button>
+      </div>
+    }
+    @case ('ready') {
+      @let saving = save().kind === 'saving';
+      @let result = save();
+
+      @if (neverSaved()) {
+        <p class="notice">
+          Todavía no guardaste este ajuste: al agrupar piezas no se ahorra tiempo (0 %).
+        </p>
+      }
+
+      <section class="help" aria-labelledby="help-title">
+        <h2 id="help-title">Cómo funciona</h2>
+        <ul>
+          <li>
+            Cuando varias piezas iguales se imprimen juntas en una misma placa, la impresora
+            calienta y hace las primeras capas una sola vez.
+            <strong>Ahorro al agrupar piezas</strong> es el porcentaje de tiempo que se ahorra por
+            eso.
+          </li>
+          <li>Escribí un número de 0 a 50, con hasta 2 decimales (por ejemplo 12,5).</li>
+          <li>
+            Cuántas piezas entran en una placa: se deja una separación de 10 mm alrededor de cada
+            pieza y no se usa más del 90 % de la cama de la impresora.
+          </li>
+          <li>
+            Con <strong>0</strong> no se ahorra tiempo: dejalo así hasta que lo midas en tus
+            impresiones reales.
+          </li>
+          <li>Después de guardar, volvé a optimizar un proyecto para ver el efecto.</li>
+        </ul>
+      </section>
+
+      <div class="notices" aria-live="polite">
+        @if (savedNotice()) {
+          <p class="notice notice--success">Ajustes guardados.</p>
+        }
+      </div>
+
+      <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+        @if (result.kind === 'failed') {
+          <div class="status status--error" role="alert">
+            <p>{{ result.message }}</p>
+            @if (result.stale) {
+              <button type="button" (click)="reload()">Recargar</button>
+            }
+          </div>
+        }
+
+        @let savingError = fieldError();
+        <div class="field">
+          <label for="field-saving">Ahorro al agrupar piezas (%)</label>
+          <input
+            id="field-saving"
+            type="text"
+            inputmode="decimal"
+            autocomplete="off"
+            formControlName="saving"
+            [attr.aria-invalid]="savingError ? 'true' : null"
+            [attr.aria-describedby]="savingError ? 'saving-error' : null"
+          />
+          @if (savingError) {
+            <p id="saving-error" class="field-error">{{ savingError }}</p>
+          }
+        </div>
+
+        <div class="actions">
+          <button type="submit" [disabled]="saving">
+            {{ saving ? 'Guardando…' : 'Guardar' }}
+          </button>
+          <a routerLink="/proyectos">Ir a mis proyectos</a>
+        </div>
+      </form>
+    }
+  }
+</section>

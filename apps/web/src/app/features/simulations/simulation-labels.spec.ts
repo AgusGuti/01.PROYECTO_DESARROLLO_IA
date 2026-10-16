@@ -1,6 +1,8 @@
 import {
   defaultStart,
+  finishDeltaText,
   formatDate,
+  idleDeltaText,
   formatDateTime,
   formatMinutes,
   parseDate,
@@ -80,6 +82,23 @@ describe('formatting', () => {
     [150, '2 h 30 min'],
   ])('formats %i minutes as %s', (minutes, text) => {
     expect(formatMinutes(minutes)).toBe(text);
+  });
+
+  it.each([
+    [-270, 'Termina 4 h 30 min antes.'],
+    [45, 'Termina 45 min después.'],
+    [0, 'Sin diferencia en la hora de fin.'],
+    [null, 'No se puede comparar la hora de fin.'],
+  ])('words a finish delta of %s as %s', (delta, text) => {
+    expect(finishDeltaText(delta)).toBe(text);
+  });
+
+  it.each([
+    [-90, 'Tiempo muerto: 1 h 30 min menos.'],
+    [30, 'Tiempo muerto: 30 min más.'],
+    [0, 'Sin diferencia en el tiempo muerto.'],
+  ])('words an idle delta of %i as %s', (delta, text) => {
+    expect(idleDeltaText(delta)).toBe(text);
   });
 
   it('measures the minutes between two wall-clock timestamps', () => {
