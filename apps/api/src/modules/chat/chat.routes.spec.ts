@@ -13,21 +13,41 @@ function appWith(assistantClient: AssistantClient) {
 }
 
 describe('POST /api/v1/chat', () => {
-  it('answers 200 with only { reply } and passes the trimmed message on', async () => {
+  it('answers 200 with { reply, proposal: null } and passes the trimmed message on', async () => {
     const received: string[] = [];
     const app = appWith({
       ask: (message) => {
         received.push(message);
-        return Promise.resolve('Hola');
+        return Promise.resolve({ reply: 'Hola' });
       },
     });
 
     const response = await request(app).post(URL).send({ message: '  hola  ' });
 
     expect(response.status).toBe(200);
-    expect(chatResponseSchema.parse(response.body)).toEqual({ reply: 'Hola' });
-    expect(Object.keys(response.body as object)).toEqual(['reply']);
+    expect(chatResponseSchema.parse(response.body)).toEqual({ reply: 'Hola', proposal: null });
+    expect(Object.keys(response.body as object)).toEqual(['reply', 'proposal']);
     expect(received).toEqual(['hola']);
+  });
+
+  it('returns a valid proposal and drops an invalid one with a 200', async () => {
+    const proposal = {
+      kind: 'create_project',
+      payload: { name: 'Soportes', deadline: '2026-12-01' },
+      itemNames: [],
+    };
+    const good = await request(appWith({ ask: () => Promise.resolve({ reply: 'ok', proposal }) }))
+      .post(URL)
+      .send({ message: 'hola' });
+    const bad = await request(
+      appWith({ ask: () => Promise.resolve({ reply: 'ok', proposal: { ...proposal, id: 1 } }) }),
+    )
+      .post(URL)
+      .send({ message: 'hola' });
+
+    expect(good.body).toEqual({ reply: 'ok', proposal });
+    expect(bad.status).toBe(200);
+    expect(bad.body).toEqual({ reply: 'ok', proposal: null });
   });
 
   it.each([
@@ -40,7 +60,7 @@ describe('POST /api/v1/chat', () => {
     const app = appWith({
       ask: () => {
         calls += 1;
-        return Promise.resolve('x');
+        return Promise.resolve({ reply: 'x' });
       },
     });
 

@@ -3,7 +3,8 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
-  type ElementRef,
+  DestroyRef,
+  ElementRef,
   inject,
   Injector,
   signal,
@@ -12,16 +13,57 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { catchError, EMPTY, of, Subject, switchMap, tap } from 'rxjs';
 import { ApiError } from '../../core/api/api-error';
-import { ChatApi } from './chat-api';
+import { RouterLink } from '@angular/router';
+import { ChatApi, type Proposal } from './chat-api';
 
 const MAX_LENGTH = 2000;
 const UNAVAILABLE = 'El asistente no está disponible en este momento. Intentá de nuevo más tarde.';
 const INVALID = `El mensaje no es válido. Tiene que tener entre 1 y ${MAX_LENGTH} caracteres.`;
 
+const PRIORITY_LABELS = { low: 'Baja', normal: 'Normal', high: 'Alta', urgent: 'Urgente' } as const;
+const REJECTED = 'La API no aceptó la propuesta; revisá los datos en Proyectos.';
+// Only a 400 proves nothing was created; any other failure may have created the project.
+const UNCERTAIN =
+  'No pudimos confirmar si se creó el proyecto. Revisá Proyectos antes de reintentar.';
+
+/** Everything the card shows, built here from the payload and never from model text. */
+interface ProposalView {
+  readonly title: string;
+  readonly description: string | null;
+  readonly priority: string | null;
+  readonly deadline: string | null;
+  readonly items: readonly string[];
+}
+
 interface ChatMessage {
   readonly id: number;
   readonly role: 'user' | 'assistant';
   readonly text: string;
+  readonly proposal?: Proposal;
+  readonly view?: ProposalView;
+}
+
+/** One card, one confirmation: only `pending` and `failed` accept a click on Confirmar. */
+type CardState =
+  | { readonly kind: 'pending' }
+  | { readonly kind: 'sending' }
+  | { readonly kind: 'failed'; readonly message: string; readonly uncertain: boolean }
+  | { readonly kind: 'created'; readonly id: string; readonly name: string }
+  | { readonly kind: 'discarded' };
+
+function proposalView(proposal: Proposal): ProposalView {
+  const { payload, itemNames } = proposal;
+  const [year, month, day] = payload.deadline?.split('-') ?? [];
+  return {
+    title: `Crear el proyecto «${payload.name}»`,
+    description: payload.description === '' ? null : (payload.description ?? null),
+    priority: payload.priority ? PRIORITY_LABELS[payload.priority] : null,
+    deadline: payload.deadline ? `${day}-${month}-${year}` : null,
+    items: (payload.items ?? []).map(
+      (line) =>
+        `${line.quantity} × ${itemNames.find((n) => n.partId === line.partId)?.name ?? 'Pieza'}`,
+    ),
+  };
 }
 
 /** What the conversation is doing right now. A union avoids impossible flag combinations. */
@@ -34,6 +76,7 @@ type Outgoing = { readonly text: string } | null; // null = cancel (clear)
 
 @Component({
   selector: 'app-chat-page',
+  imports: [RouterLink],
   templateUrl: './chat-page.html',
   styleUrl: './chat-page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -48,6 +91,13 @@ export class ChatPage {
   protected readonly messages = signal<readonly ChatMessage[]>([]);
   protected readonly draft = signal('');
   protected readonly state = signal<ViewState>({ kind: 'idle' });
+  protected readonly cards = signal<Readonly<Record<number, CardState>>>({});
+  protected readonly announcement = signal('');
+  protected readonly confirming = computed(() =>
+    Object.values(this.cards()).some((card) => card.kind === 'sending'),
+  );
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   protected readonly canSend = computed(() => {
     const length = this.draft().trim().length;
@@ -69,8 +119,10 @@ export class ChatPage {
         switchMap((item) => {
           if (item === null) return EMPTY;
           return this.api.ask(item.text).pipe(
-            tap((reply) => {
-              this.messages.update((list) => [...list, this.message('assistant', reply)]);
+            tap(({ reply, proposal }) => {
+              const added = this.message('assistant', reply, proposal);
+              this.messages.update((list) => [...list, added]);
+              if (proposal) this.setCard(added.id, { kind: 'pending' });
               this.state.set({ kind: 'idle' });
             }),
             catchError((error: unknown) => {
@@ -120,8 +172,54 @@ export class ChatPage {
   protected clear(): void {
     this.outgoing.next(null);
     this.messages.set([]);
+    this.cards.set({});
+    this.announcement.set('');
     this.state.set({ kind: 'idle' });
     this.input()?.nativeElement.focus();
+  }
+
+  protected confirm(message: ChatMessage): void {
+    const card = this.cards()[message.id];
+    // Single confirmation: a second click, or a click after discard, finds no valid state.
+    if (!message.proposal || (card?.kind !== 'pending' && card?.kind !== 'failed')) return;
+    this.setCard(message.id, { kind: 'sending' });
+    this.api
+      .createProject(message.proposal.payload)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (project) => {
+          // After "Limpiar conversación" the card is gone: do not resurrect it.
+          if (!this.cards()[message.id]) return;
+          this.setCard(message.id, { kind: 'created', id: project.id, name: project.name });
+          this.announcement.set(`Proyecto creado: «${project.name}».`);
+          afterNextRender(
+            () =>
+              this.host.nativeElement
+                .querySelector<HTMLElement>(`#proposal-link-${message.id}`)
+                ?.focus(),
+            { injector: this.injector },
+          );
+        },
+        error: (error: unknown) => {
+          if (!this.cards()[message.id]) return;
+          const certain = error instanceof ApiError && error.status === 400;
+          const text = certain ? REJECTED : UNCERTAIN;
+          this.setCard(message.id, { kind: 'failed', message: text, uncertain: !certain });
+          this.announcement.set(text);
+        },
+      });
+  }
+
+  protected discard(message: ChatMessage): void {
+    const kind = this.cards()[message.id]?.kind;
+    if (kind !== 'pending' && kind !== 'failed') return;
+    this.setCard(message.id, { kind: 'discarded' });
+    this.announcement.set('Propuesta descartada.');
+    this.input()?.nativeElement.focus();
+  }
+
+  private setCard(id: number, card: CardState): void {
+    this.cards.update((all) => ({ ...all, [id]: card }));
   }
 
   private submit(text: string): void {
@@ -129,8 +227,15 @@ export class ChatPage {
     this.outgoing.next({ text });
   }
 
-  private message(role: ChatMessage['role'], text: string): ChatMessage {
+  private message(
+    role: ChatMessage['role'],
+    text: string,
+    proposal?: Proposal | null,
+  ): ChatMessage {
     this.nextId += 1;
-    return { id: this.nextId, role, text };
+    const id = this.nextId;
+    return proposal
+      ? { id, role, text, proposal, view: proposalView(proposal) }
+      : { id, role, text };
   }
 }

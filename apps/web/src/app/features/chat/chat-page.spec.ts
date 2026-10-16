@@ -1,7 +1,9 @@
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
+import type { Project } from '@print3d/api-contracts';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { ApiError } from '../../core/api/api-error';
-import { ChatApi } from './chat-api';
+import { ChatApi, type ChatReply, type Proposal } from './chat-api';
 import { ChatPage } from './chat-page';
 
 const UNAVAILABLE = 'El asistente no está disponible en este momento. Intentá de nuevo más tarde.';
@@ -11,10 +13,34 @@ function required<T>(value: T | null): T {
   return value;
 }
 
-async function render(ask: (message: string) => Observable<string>) {
+function reply(text: string, proposal: Proposal | null = null): ChatReply {
+  return { reply: text, proposal };
+}
+
+const HOSTILE = '<img src=x onerror="alert(1)">';
+const PROPOSAL: Proposal = {
+  kind: 'create_project',
+  payload: {
+    name: HOSTILE,
+    description: 'Para la feria',
+    priority: 'high',
+    deadline: '2026-12-31',
+    items: [
+      { partId: 'p1', quantity: 3 },
+      { partId: 'p2', quantity: 1 },
+    ],
+  },
+  itemNames: [{ partId: 'p1', name: 'Soporte <b>x</b>' }],
+};
+const CREATED: Pick<Project, 'id' | 'name'> = { id: 'abc123', name: HOSTILE };
+
+async function render(
+  ask: (message: string) => Observable<ChatReply>,
+  createProject: (payload: unknown) => Observable<Pick<Project, 'id' | 'name'>> = () => of(CREATED),
+) {
   TestBed.configureTestingModule({
     imports: [ChatPage],
-    providers: [{ provide: ChatApi, useValue: { ask } }],
+    providers: [provideRouter([]), { provide: ChatApi, useValue: { ask, createProject } }],
   });
   const fixture = TestBed.createComponent(ChatPage);
   await fixture.whenStable();
@@ -49,7 +75,7 @@ async function render(ask: (message: string) => Observable<string>) {
 
 describe('ChatPage', () => {
   it('has one h1 and disables sending while the message is empty', async () => {
-    const page = await render(() => of('x'));
+    const page = await render(() => of(reply('x')));
 
     expect(page.element.querySelectorAll('h1')).toHaveLength(1);
     expect(page.element.querySelector('h1')?.textContent).toBe('Asistente');
@@ -57,7 +83,7 @@ describe('ChatPage', () => {
   });
 
   it('shows the user message and the reply in the conversation', async () => {
-    const ask = vi.fn(() => of('Tenés 3 proyectos.'));
+    const ask = vi.fn(() => of(reply('Tenés 3 proyectos.')));
     const page = await render(ask);
 
     await page.type('  ¿Cuántos proyectos hay?  ');
@@ -72,7 +98,7 @@ describe('ChatPage', () => {
 
   it('renders hostile text as plain text, never as markup', async () => {
     const hostile = '<img src=x onerror="alert(1)"><b>negrita</b>';
-    const page = await render(() => of(hostile));
+    const page = await render(() => of(reply(hostile)));
 
     await page.type('<script>alert(1)</script>');
     await page.click('Enviar');
@@ -83,18 +109,18 @@ describe('ChatPage', () => {
   });
 
   it('preserves line breaks with CSS instead of markup', async () => {
-    const page = await render(() => of('uno\ndos'));
+    const page = await render(() => of(reply('uno\ndos')));
 
     await page.type('hola');
     await page.click('Enviar');
 
-    const reply = required(page.log().querySelector('.message:not(.message--user) .text'));
-    expect(reply.textContent).toBe('uno\ndos');
-    expect(getComputedStyle(reply).whiteSpace).toBe('pre-wrap');
+    const answer = required(page.log().querySelector('.message:not(.message--user) .text'));
+    expect(answer.textContent).toBe('uno\ndos');
+    expect(getComputedStyle(answer).whiteSpace).toBe('pre-wrap');
   });
 
   it('counts characters and blocks a message over 2000 characters', async () => {
-    const page = await render(() => of('x'));
+    const page = await render(() => of(reply('x')));
 
     await page.type('a'.repeat(2000));
     expect(page.element.textContent).toContain('2000 / 2000');
@@ -105,7 +131,7 @@ describe('ChatPage', () => {
   });
 
   it('shows a thinking status and prevents double submission', async () => {
-    const pending = new Subject<string>();
+    const pending = new Subject<ChatReply>();
     const ask = vi.fn(() => pending);
     const page = await render(ask);
 
@@ -119,14 +145,14 @@ describe('ChatPage', () => {
     expect(page.button('Enviar')?.disabled).toBe(true);
     expect(ask).toHaveBeenCalledTimes(1);
 
-    pending.next('listo');
+    pending.next(reply('listo'));
     await page.fixture.whenStable();
 
     expect(page.element.querySelector('[role="status"]')).toBeNull();
   });
 
   it('sends with Enter and keeps a newline with Shift+Enter', async () => {
-    const ask = vi.fn(() => of('ok'));
+    const ask = vi.fn(() => of(reply('ok')));
     const page = await render(ask);
 
     await page.type('hola');
@@ -171,7 +197,7 @@ describe('ChatPage', () => {
       calls += 1;
       return calls === 1
         ? throwError(() => new ApiError(503, 'service_unavailable', 'x'))
-        : of('ahora sí');
+        : of(reply('ahora sí'));
     });
     const page = await render(ask);
 
@@ -202,7 +228,7 @@ describe('ChatPage', () => {
     let unsubscribed = false;
     const page = await render(
       () =>
-        new Observable<string>(() => () => {
+        new Observable<ChatReply>(() => () => {
           unsubscribed = true;
         }),
     );
@@ -212,5 +238,157 @@ describe('ChatPage', () => {
     page.fixture.destroy();
 
     expect(unsubscribed).toBe(true);
+  });
+
+  describe('assistant proposal card', () => {
+    type Created = Pick<Project, 'id' | 'name'>;
+    async function withCard(createProject?: (payload: unknown) => Observable<Created>) {
+      const page = await render(() => of(reply('Te armé una propuesta.', PROPOSAL)), createProject);
+      await page.type('creá un proyecto');
+      await page.click('Enviar');
+      return page;
+    }
+    const card = (page: { element: HTMLElement }) =>
+      page.element.querySelector('[role="group"][aria-label="Propuesta del asistente"]');
+
+    it('renders the Spanish description built from the payload, hostile text as text', async () => {
+      const page = await withCard();
+      const text = card(page)?.textContent ?? '';
+
+      expect(text).toContain(`Crear el proyecto «${HOSTILE}»`);
+      expect(text).toContain('Para la feria');
+      expect(text).toContain('Alta');
+      expect(text).toContain('31-12-2026');
+      expect(text).toContain('3 × Soporte <b>x</b>');
+      expect(text).toContain('1 × Pieza');
+      expect(text).toContain('Todavía no se creó nada.');
+      expect(card(page)?.querySelector('img, b')).toBeNull();
+      expect(page.button('Confirmar')).toBeDefined();
+      expect(page.button('Descartar')).toBeDefined();
+    });
+
+    it('sends the exact payload on Confirmar, then shows the link and focuses it', async () => {
+      const createProject = vi.fn((_payload: unknown) => of(CREATED));
+      const page = await withCard(createProject);
+
+      await page.click('Confirmar');
+
+      expect(createProject).toHaveBeenCalledExactlyOnceWith(PROPOSAL.payload);
+      expect(card(page)?.textContent).toContain(`Proyecto creado: «${HOSTILE}»`);
+      expect(card(page)?.textContent).not.toContain('Todavía no se creó nada.');
+      const link = required(card(page)?.querySelector('a') ?? null);
+      expect(link.getAttribute('href')).toBe('/proyectos/abc123/editar');
+      expect(document.activeElement).toBe(link);
+      expect(page.button('Confirmar')).toBeUndefined();
+      expect(page.button('Descartar')).toBeUndefined();
+    });
+
+    it('sends only one request when Confirmar is clicked twice', async () => {
+      const pending = new Subject<Created>();
+      const createProject = vi.fn((_payload: unknown) => pending);
+      const page = await withCard(createProject);
+
+      page.button('Confirmar')?.click();
+      page.button('Confirmar')?.click();
+      await page.fixture.whenStable();
+
+      expect(createProject).toHaveBeenCalledTimes(1);
+      expect(page.button('Confirmar')?.disabled).toBe(true);
+    });
+
+    it('shows a fixed message on 400 and retries with the same payload', async () => {
+      let calls = 0;
+      const createProject = vi.fn((_payload: unknown) => {
+        calls += 1;
+        return calls === 1
+          ? throwError(() => new ApiError(400, 'validation_error', 'SENTINEL detail'))
+          : of(CREATED);
+      });
+      const page = await withCard(createProject);
+
+      await page.click('Confirmar');
+      expect(card(page)?.textContent).toContain(
+        'La API no aceptó la propuesta; revisá los datos en Proyectos.',
+      );
+      expect(page.element.textContent).not.toContain('SENTINEL');
+
+      await page.click('Reintentar');
+      expect(createProject).toHaveBeenCalledTimes(2);
+      expect(createProject).toHaveBeenNthCalledWith(2, PROPOSAL.payload);
+      expect(card(page)?.textContent).toContain('Proyecto creado');
+    });
+
+    it('shows a generic fixed message on 409 without backend text', async () => {
+      const page = await withCard(() =>
+        throwError(() => new ApiError(409, 'conflict', 'SENTINEL conflict')),
+      );
+
+      await page.click('Confirmar');
+
+      expect(card(page)?.textContent).toContain(
+        'No pudimos confirmar si se creó el proyecto. Revisá Proyectos antes de reintentar.',
+      );
+      expect(card(page)?.querySelector('a')?.getAttribute('href')).toBe('/proyectos');
+      expect(page.button('Reintentar')).toBeDefined();
+      expect(page.element.textContent).not.toContain('SENTINEL');
+    });
+
+    it('warns it may exist after a network failure (status 0)', async () => {
+      const page = await withCard(() =>
+        throwError(() => new ApiError(0, 'network_error', 'SENTINEL net')),
+      );
+
+      await page.click('Confirmar');
+
+      expect(card(page)?.textContent).toContain('No pudimos confirmar si se creó');
+      expect(page.element.textContent).not.toContain('SENTINEL');
+    });
+
+    it('shows no Proyectos link after a certain 400 rejection', async () => {
+      const page = await withCard(() =>
+        throwError(() => new ApiError(400, 'validation_error', 'x')),
+      );
+
+      await page.click('Confirmar');
+
+      expect(card(page)?.querySelector('a')).toBeNull();
+    });
+
+    it('disables Limpiar conversación while a confirmation is in flight', async () => {
+      const pending = new Subject<Created>();
+      const page = await withCard(() => pending);
+
+      await page.click('Confirmar');
+
+      const clear = required(page.button('Limpiar conversación') ?? null);
+      expect(clear.disabled).toBe(true);
+      expect(clear.getAttribute('aria-describedby')).toBe('clear-hint');
+      expect(page.element.querySelector('#clear-hint')?.textContent).toContain('Esperá');
+
+      pending.next(CREATED);
+      await page.fixture.whenStable();
+      expect(page.button('Limpiar conversación')?.disabled).toBe(false);
+    });
+
+    it('discards the card, removes the buttons and focuses the textarea', async () => {
+      const createProject = vi.fn((_payload: unknown) => of(CREATED));
+      const page = await withCard(createProject);
+
+      await page.click('Descartar');
+
+      expect(card(page)?.textContent).toContain('Descartada');
+      expect(page.button('Confirmar')).toBeUndefined();
+      expect(page.button('Descartar')).toBeUndefined();
+      expect(document.activeElement).toBe(page.textarea());
+      expect(createProject).not.toHaveBeenCalled();
+    });
+
+    it('removes the cards when the conversation is cleared', async () => {
+      const page = await withCard();
+
+      await page.click('Limpiar conversación');
+
+      expect(card(page)).toBeNull();
+    });
   });
 });

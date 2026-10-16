@@ -1067,6 +1067,30 @@ export type ChatResponse = {
      * The assistant reply.
      */
     reply: string;
+    proposal: AssistantProposal;
+};
+
+/**
+ * A suggested action. It is NOT executed: the browser shows it, and only after the user confirms does it send the payload to POST /api/v1/projects, which validates it again.
+ */
+export type AssistantProposal = {
+    kind: 'create_project';
+    payload: ProposalCreateProjectPayload;
+    itemNames: Array<{
+        partId: string;
+        name: string;
+    }>;
+} | null;
+
+export type ProposalCreateProjectPayload = {
+    name: string;
+    description?: string;
+    priority?: 'low' | 'normal' | 'high' | 'urgent';
+    deadline?: string;
+    items?: Array<{
+        partId: string;
+        quantity: number;
+    }>;
 };
 
 export type ChatRequest = {

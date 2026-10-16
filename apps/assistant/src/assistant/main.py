@@ -65,7 +65,9 @@ def create_app() -> FastAPI:
         if len(request.message) > settings.max_message_chars:
             raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, TOO_LONG_MESSAGE)
         try:
-            return ChatResponse(reply=await answer(model, request.message, toolbox))
+            reply = await answer(model, request.message, toolbox)
+            # The proposal comes from the toolbox state, never from the model's text.
+            return ChatResponse(reply=reply, proposal=toolbox.proposal)
         except AssistantUnavailableError:
             # Log the cause for the operator; the client gets a safe, generic message.
             logger.exception("chat model failed")

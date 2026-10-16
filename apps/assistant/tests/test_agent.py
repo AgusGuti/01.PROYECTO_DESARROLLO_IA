@@ -193,8 +193,9 @@ def test_the_prompt_declares_the_rules_the_tools_rely_on() -> None:
         assert fragment in SYSTEM_PROMPT
 
 
-def test_the_model_is_given_only_read_tools() -> None:
+def test_the_model_is_given_only_read_tools_and_one_proposal_tool() -> None:
     assert FakeApi({}).toolbox().names == {
+        "propose_create_project",
         "list_projects",
         "get_project",
         "get_queue_progress",

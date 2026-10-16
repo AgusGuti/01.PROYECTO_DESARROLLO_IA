@@ -26,7 +26,7 @@ export function createHttpAssistantClient(options: {
       if (response.status === 413) throw new AssistantMessageTooLongError();
       if (!response.ok) throw new Error(`assistant answered ${response.status}`);
       // Throws on a body that is not JSON or not the expected shape; the service maps it to 503.
-      return assistantReplySchema.parse(await response.json()).reply;
+      return assistantReplySchema.parse(await response.json());
     },
   };
 }

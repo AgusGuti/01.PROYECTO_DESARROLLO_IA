@@ -13,18 +13,20 @@ import re
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 from typing import Annotated, Literal
 
 from pydantic import (
     AfterValidator,
     BaseModel,
     ConfigDict,
+    Field,
     StringConstraints,
     ValidationError,
 )
 
 from assistant.api_client import ApiClient, ToolError
+from assistant.schemas import Proposal, ProposalItem, ProposalItemName, ProposalPayload
 
 logger = logging.getLogger("assistant.tools")
 
@@ -101,6 +103,43 @@ class ProjectIdArgs(_Args):
 class SimulateArgs(_Args):
     proyecto: ProjectRef
     start_at: StartAt | None = None
+
+
+def _iso_date(value: str) -> str:
+    """DD-MM-AAAA or AAAA-MM-DD to AAAA-MM-DD; a day that does not exist is rejected."""
+    match = _DATE.fullmatch(value.strip())
+    if match is None:
+        raise ValueError("date format")
+    first, second, third = match.groups()
+    year, month, day = (int(first), int(second), int(third))
+    if len(first) == 2:
+        year, month, day = day, month, year
+    if not 2000 <= year <= 2099:  # the contract's range
+        raise ValueError("year out of range")
+    return date(year, month, day).isoformat()  # ValueError for 31-02-2026
+
+
+_DATE = re.compile(r"(\d{2,4})-(\d{2})-(\d{2,4})")
+Deadline = Annotated[str, AfterValidator(_iso_date)]
+ProjectName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+ProjectDescription = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)
+]
+SpanishPriority = Literal["baja", "normal", "alta", "urgente", "low", "high", "urgent"]
+_API_PRIORITY = {"baja": "low", "alta": "high", "urgente": "urgent"}
+
+
+class ProposedItemArgs(_Args):
+    pieza: ProjectRef  # a part id or name; resolved to an id in code
+    cantidad: Annotated[int, Field(ge=1, le=1000)]
+
+
+class ProposeCreateProjectArgs(_Args):
+    name: ProjectName
+    description: ProjectDescription | None = None
+    priority: SpanishPriority | None = None
+    deadline: Deadline | None = None
+    items: Annotated[list[ProposedItemArgs], Field(max_length=100)] | None = None
 
 
 # --- what the API answers (unknown fields are dropped) ---------------------------------------
@@ -390,6 +429,10 @@ class HorarioDeIntervencion(BaseModel):
     horario_guardado_por_el_usuario: bool
 
 
+class PropuestaResult(BaseModel):
+    mensaje: str
+
+
 class PiezaSinUbicar(BaseModel):
     pieza: str
     unidades: int
@@ -515,7 +558,13 @@ class Toolbox:
     def __init__(self, api: ApiClient, now: Callable[[], datetime] | None = None) -> None:
         self._api = api
         self._now = now or (lambda: datetime.now(UTC))
+        self._proposal: Proposal | None = None
         self._tools = {tool.name: tool for tool in self._build()}
+
+    @property
+    def proposal(self) -> Proposal | None:
+        """The proposal built this turn by code (at most one); model text never fills it."""
+        return self._proposal
 
     @property
     def names(self) -> set[str]:
@@ -762,7 +811,75 @@ class Toolbox:
                 avisos=[_WARNING.get(w.code, w.code) for w in s.warnings],
             )
 
+        async def resolve_parts(refs: list[ProposedItemArgs]) -> list[ApiPart]:
+            """Part ids for the requested names, found in code; a name never reaches a URL."""
+            page = await api.request(
+                "GET", "/api/v1/parts", ApiPartsPage, params={"page": 1, "pageSize": PAGE_SIZE}
+            )
+            found: list[ApiPart] = []
+            for ref in refs:
+                needle = ref.pieza.casefold()
+                if _ID.fullmatch(ref.pieza):
+                    matches = [p for p in page.items if p.id.casefold() == needle]
+                else:
+                    matches = [p for p in page.items if p.name.casefold() == needle] or [
+                        p for p in page.items if needle in p.name.casefold()
+                    ]
+                if not matches:
+                    raise ToolError(
+                        f"No encontré una pieza que coincida con «{_clip(ref.pieza[:40])}»."
+                    )
+                if len(matches) > 1:
+                    names = json.dumps([p.name for p in matches[:5]], ensure_ascii=False)
+                    raise ToolError(
+                        f"Hay varias piezas que coinciden: {names.replace('<', '')}. "
+                        "Pedile al usuario que sea más específico."
+                    )
+                found.append(matches[0])
+            if len({p.id for p in found}) != len(found):
+                raise ToolError("Una pieza aparece más de una vez; indicala una sola vez.")
+            return found
+
+        async def propose_create_project(args: ProposeCreateProjectArgs) -> BaseModel:
+            parts = await resolve_parts(args.items) if args.items else []
+            priority = _API_PRIORITY.get(args.priority or "", args.priority)
+            proposal = Proposal(
+                kind="create_project",
+                payload=ProposalPayload.model_validate(
+                    {
+                        "name": args.name,
+                        "description": args.description,
+                        "priority": priority,
+                        "deadline": args.deadline,
+                        "items": [
+                            ProposalItem(partId=p.id.lower(), quantity=i.cantidad)
+                            for p, i in zip(parts, args.items or [], strict=True)
+                        ]
+                        or None,
+                    }
+                ),
+                itemNames=[ProposalItemName(partId=p.id.lower(), name=p.name[:100]) for p in parts],
+            )
+            if self._proposal is not None and self._proposal != proposal:
+                raise ToolError("Ya hay una propuesta en esta conversación; solo se admite una.")
+            self._proposal = proposal
+            return PropuestaResult(
+                mensaje="Propuesta lista; el usuario debe confirmarla en pantalla. "
+                "No está creado nada todavía."
+            )
+
         return [
+            _tool(
+                "propose_create_project",
+                "PROPONE crear un proyecto; no crea nada: el usuario debe confirmar en "
+                "pantalla. Usala cuando el usuario pida crear un proyecto. Pasá solo lo que el "
+                "usuario dijo: 'name' es obligatorio; 'description', 'priority' (baja, normal, "
+                "alta, urgente), 'deadline' (DD-MM-AAAA) e 'items' son opcionales y no debés "
+                "inventarlos. Cada ítem de 'items' lleva 'pieza' (nombre o id de una pieza que "
+                "ya existe) y 'cantidad' (1 a 1000). Máximo una propuesta por conversación.",
+                ProposeCreateProjectArgs,
+                propose_create_project,
+            ),
             _tool(
                 "list_projects",
                 "Lista los proyectos del usuario (nombre, prioridad, fecha límite, cantidad de "
