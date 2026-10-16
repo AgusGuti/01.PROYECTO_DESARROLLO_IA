@@ -199,6 +199,12 @@ describe('QueuePage', () => {
     };
   });
 
+  it('links to the simulation of the project from the header', async () => {
+    const page = await render();
+
+    expect(page.q('.page-header a[href="/proyectos/p1/simulacion"]')?.textContent).toBe('Simular');
+  });
+
   it('shows one h1 and a loading status, then the loaded view', async () => {
     const page = await render();
 

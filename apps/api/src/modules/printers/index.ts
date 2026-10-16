@@ -59,6 +59,23 @@ export function createSelectablePrinterLookup(
   };
 }
 
+/**
+ * Builds the simulations module's printer port (ADR 0026): the name of each id that is live and
+ * NOT archived. An id missing from the answer is unknown, deleted or archived.
+ */
+export function createSimulationPrinterLookup(
+  repository: Pick<PrinterRepository, 'findLiveById'> = createMongoPrinterRepository(),
+): (ids: string[]) => Promise<ReadonlyMap<string, { name: string }>> {
+  return async (ids) => {
+    const found = await Promise.all(ids.map((id) => repository.findLiveById(id)));
+    return new Map(
+      found.flatMap((printer) =>
+        printer?.archivedAt === null ? [[printer.id, { name: printer.name }] as const] : [],
+      ),
+    );
+  };
+}
+
 // The assignments check (and so the archived -> deleted step, ADR 0006) is a follow-up of CU07:
 // the queues module stores printerIds but nothing answers this yet, so only the idle-delete
 // path is reachable.

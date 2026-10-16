@@ -9,7 +9,7 @@ import { pinoHttp } from 'pino-http';
 import type { Config } from './config/env.js';
 import { createHealthModule, type Clock, type DependencyProbe } from './modules/health/index.js';
 import { createFilamentCostReader, createFilamentsModule } from './modules/filaments/index.js';
-import { createAvailabilityModule } from './modules/availability/index.js';
+import { createAvailabilityModule, createScheduleReader } from './modules/availability/index.js';
 import { createCostsModule } from './modules/costs/index.js';
 import { createGcodeModule } from './modules/gcode/index.js';
 import {
@@ -22,9 +22,15 @@ import {
   createPrinterCostReader,
   createPrintersModule,
   createSelectablePrinterLookup,
+  createSimulationPrinterLookup,
 } from './modules/printers/index.js';
-import { createProjectsModule, createQueueProjectReader } from './modules/projects/index.js';
-import { createQueuesModule } from './modules/queues/index.js';
+import {
+  createProjectsModule,
+  createQueueProjectReader,
+  createSimulationProjectReader,
+} from './modules/projects/index.js';
+import { createQueuesModule, createSimulationQueueReader } from './modules/queues/index.js';
+import { createSimulationsModule } from './modules/simulations/index.js';
 import { AppError } from './shared/errors/app-error.js';
 import { createErrorHandler, notFoundHandler } from './shared/http/error-handler.js';
 import { assignRequestId, REQUEST_ID_HEADER } from './shared/http/request-id.js';
@@ -48,6 +54,8 @@ export interface AppDependencies {
   availability?: Partial<Omit<Parameters<typeof createAvailabilityModule>[0], 'clock'>>;
   /** Lets tests replace the queues repository and the three read ports with fakes. */
   queues?: Partial<Omit<Parameters<typeof createQueuesModule>[0], 'clock'>>;
+  /** Lets tests replace any of the five read ports of the simulations with fakes. */
+  simulations?: Partial<Parameters<typeof createSimulationsModule>[0]>;
 }
 
 const systemClock: Clock = { now: () => new Date() };
@@ -64,6 +72,7 @@ export function createApp({
   costs = {},
   availability = {},
   queues = {},
+  simulations = {},
 }: AppDependencies): Express {
   const app = express();
 
@@ -156,6 +165,19 @@ export function createApp({
       partLookup: createQueuePartLookup(parts.repository),
       printerLookup: createSelectablePrinterLookup(printers.repository),
       ...queues,
+    }).router,
+  );
+  // Simulations are stateless and read the queue, project, parts, printers and schedule only
+  // through ports built here (ADR 0017, 0026). They share the real repositories with the modules.
+  v1.use(
+    '/simulations',
+    createSimulationsModule({
+      queueReader: createSimulationQueueReader(queues.repository),
+      projectReader: createSimulationProjectReader(projects.repository),
+      partLookup: createQueuePartLookup(parts.repository),
+      printerLookup: createSimulationPrinterLookup(printers.repository),
+      scheduleReader: createScheduleReader(availability.repository),
+      ...simulations,
     }).router,
   );
   v1.use('/gcode-analyses', createGcodeModule().router);

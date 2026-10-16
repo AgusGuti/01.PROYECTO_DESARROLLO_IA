@@ -1,7 +1,10 @@
 <section aria-labelledby="queue-title">
   <div class="page-header">
     <h1 id="queue-title" tabindex="-1">Cola de impresión</h1>
-    <a routerLink="/proyectos">Volver a proyectos</a>
+    <span class="header-links">
+      <a [routerLink]="['/proyectos', projectId, 'simulacion']">Simular</a>
+      <a routerLink="/proyectos">Volver a proyectos</a>
+    </span>
   </div>
 
   <div class="notice" role="status">{{ notice() }}</div>

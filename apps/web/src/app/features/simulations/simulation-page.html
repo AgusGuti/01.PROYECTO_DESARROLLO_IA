@@ -1,0 +1,195 @@
+<section aria-labelledby="simulation-title">
+  <div class="page-header">
+    <h1 id="simulation-title" tabindex="-1">Simulación de la planificación</h1>
+    <a routerLink="/proyectos">Volver a proyectos</a>
+  </div>
+
+  <p>
+    La simulación usa un orden simple: el de la cola del proyecto. Solo se empieza y se retira una
+    pieza dentro de tus ventanas de intervención. Todas las horas son de Argentina y se calcula
+    hasta {{ horizonDays }} días desde el inicio. No se guarda nada.
+  </p>
+
+  @let startProblem = dateError();
+  @let timeProblem = timeError();
+  @let state = run();
+
+  <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+    <div class="field">
+      <label for="sim-date">Fecha de inicio (DD-MM-AAAA)</label>
+      <input
+        id="sim-date"
+        type="text"
+        inputmode="numeric"
+        autocomplete="off"
+        formControlName="date"
+        [attr.aria-invalid]="startProblem ? 'true' : null"
+        [attr.aria-describedby]="startProblem ? 'sim-date-error' : null"
+      />
+      @if (startProblem) {
+        <p class="field-error" id="sim-date-error">{{ startProblem }}</p>
+      }
+    </div>
+
+    <div class="field">
+      <label for="sim-time">Hora de inicio (HH:MM)</label>
+      <input
+        id="sim-time"
+        type="text"
+        inputmode="numeric"
+        autocomplete="off"
+        formControlName="time"
+        [attr.aria-invalid]="timeProblem ? 'true' : null"
+        [attr.aria-describedby]="timeProblem ? 'sim-time-error' : null"
+      />
+      @if (timeProblem) {
+        <p class="field-error" id="sim-time-error">{{ timeProblem }}</p>
+      }
+    </div>
+
+    <div class="actions">
+      <button type="submit" [disabled]="state.kind === 'running'">
+        {{ state.kind === 'running' ? 'Simulando…' : 'Simular' }}
+      </button>
+    </div>
+  </form>
+
+  <p class="visually-hidden" id="sim-status" aria-live="polite">{{ statusText(state) }}</p>
+
+  <div class="result">
+    @switch (state.kind) {
+      @case ('running') {
+        <p class="status">Simulando…</p>
+      }
+      @case ('noQueue') {
+        <p class="status status--error" id="no-queue" role="alert">
+          Este proyecto todavía no tiene una cola, o ya no existe.
+          <a [routerLink]="['/proyectos', projectId, 'cola']">Ir a la cola</a>
+        </p>
+      }
+      @case ('failed') {
+        <p class="status status--error" role="alert">
+          {{ state.message }}
+          @if (state.queueLink) {
+            <a [routerLink]="['/proyectos', projectId, 'cola']">Ir a la cola</a>
+          }
+        </p>
+      }
+      @case ('done') {
+        @let sim = state.simulation;
+        <h2>Resultado</h2>
+
+        @if (sim.warnings.length > 0) {
+          <ul class="warnings" id="warnings">
+            @for (warning of sim.warnings; track warning.code) {
+              <li><span aria-hidden="true">⚠</span> {{ warningText(warning.code) }}</li>
+            }
+          </ul>
+        }
+
+        <dl class="totals" id="summary">
+          <div>
+            <dt>Hora de fin</dt>
+            <dd>
+              {{
+                sim.totals.finishAt === null
+                  ? 'Sin trabajos ubicados'
+                  : formatDateTime(sim.totals.finishAt)
+              }}
+            </dd>
+          </div>
+          <div>
+            <dt>Tiempo ocupado</dt>
+            <dd>{{ formatMinutes(sim.totals.totalBusyMinutes) }}</dd>
+          </div>
+          <div>
+            <dt>Tiempo muerto</dt>
+            <dd>{{ formatMinutes(sim.totals.totalIdleMinutes) }}</dd>
+          </div>
+          <div>
+            <dt>Trabajos ubicados</dt>
+            <dd>{{ sim.totals.placedJobs }}</dd>
+          </div>
+          <div>
+            <dt>Trabajos no ubicados</dt>
+            <dd>{{ sim.totals.unplacedJobs }}</dd>
+          </div>
+          <div>
+            <dt>Fecha límite</dt>
+            <dd>{{ deadlineText(sim) }}</dd>
+          </div>
+        </dl>
+
+        @if (sim.unplaced.length > 0) {
+          <h3>No se pudieron ubicar</h3>
+          <ul id="unplaced">
+            @for (item of sim.unplaced; track item.partId) {
+              <li>{{ item.partName }}: {{ item.units }} unidad(es)</li>
+            }
+          </ul>
+        }
+
+        @for (printer of state.printers; track printer.id) {
+          <section class="printer" [attr.aria-labelledby]="'printer-' + printer.id">
+            <h3 [id]="'printer-' + printer.id">{{ printer.name }}</h3>
+            <p>{{ printer.summary }}</p>
+            @if (printer.jobs.length === 0) {
+              <p class="status">Sin trabajos en esta impresora.</p>
+            } @else {
+              <div class="timeline" aria-hidden="true">
+                @for (job of printer.jobs; track job.order) {
+                  <span
+                    class="bar"
+                    [class.bar--unattended]="job.unattended"
+                    [style.left.%]="job.left"
+                    [style.width.%]="job.width"
+                    [attr.title]="job.title"
+                  ></span>
+                }
+              </div>
+              <div class="table-scroll">
+                <table>
+                  <caption class="visually-hidden">
+                    Trabajos de
+                    {{
+                      printer.name
+                    }}
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Orden</th>
+                      <th scope="col">Pieza</th>
+                      <th scope="col">Inicio</th>
+                      <th scope="col">Fin</th>
+                      <th scope="col">Retiro</th>
+                      <th scope="col">Atención</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (job of printer.jobs; track job.order) {
+                      <tr>
+                        <td>{{ job.order }}</td>
+                        <th scope="row">{{ job.part }}</th>
+                        <td>{{ job.start }}</td>
+                        <td>{{ job.end }}</td>
+                        <td>{{ job.handoff }}</td>
+                        <td>
+                          @if (job.unattended) {
+                            <span class="badge">Sin atender</span>
+                          }
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+          </section>
+        }
+        <p class="axis" aria-hidden="true">
+          La línea de tiempo cubre {{ horizonDays }} días desde el inicio.
+        </p>
+      }
+    }
+  </div>
+</section>

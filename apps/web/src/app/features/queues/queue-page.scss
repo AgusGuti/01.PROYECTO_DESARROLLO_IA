@@ -6,6 +6,11 @@
   justify-content: space-between;
 }
 
+.header-links {
+  display: flex;
+  gap: 1rem;
+}
+
 form {
   display: grid;
   gap: 1.25rem;
