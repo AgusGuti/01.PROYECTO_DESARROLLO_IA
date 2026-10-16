@@ -1,0 +1,37 @@
+// Public surface of the queues module (standard §1.2).
+import type { Router } from 'express';
+import type { Clock } from '../health/index.js';
+import { createQueuesController } from './queues.controller.js';
+import { createMongoQueueRepository } from './queues.repository.js';
+import { createQueuesRouter } from './queues.routes.js';
+import {
+  createQueuesService,
+  type PartLookup,
+  type PrinterLookup,
+  type ProjectReader,
+  type QueueRepository,
+} from './queues.service.js';
+
+export { registerQueuesPaths } from './queues.openapi.js';
+export type { PartLookup, PrinterLookup, ProjectReader } from './queues.service.js';
+
+// There is no `ensureIndexes`: the queues collection has no index beyond `_id` (ADR 0025).
+
+export function createQueuesModule(deps: {
+  clock: Clock;
+  /** Read ports owned by this module, built in app.ts from each provider (ADR 0017). */
+  projectReader: ProjectReader;
+  partLookup: PartLookup;
+  printerLookup: PrinterLookup;
+  /** Tests inject a fake; production uses MongoDB. */
+  repository?: QueueRepository;
+}): { router: Router } {
+  const service = createQueuesService({
+    repository: deps.repository ?? createMongoQueueRepository(),
+    projectReader: deps.projectReader,
+    partLookup: deps.partLookup,
+    printerLookup: deps.printerLookup,
+    clock: deps.clock,
+  });
+  return { router: createQueuesRouter(createQueuesController(service)) };
+}

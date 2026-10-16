@@ -33,6 +33,7 @@ export interface LivePartSummary {
   readonly id: string;
   readonly name: string;
   readonly material: Part['material'];
+  readonly estimatedPrintSeconds: number;
 }
 
 export interface PartUsageProject {

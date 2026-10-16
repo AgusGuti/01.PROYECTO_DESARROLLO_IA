@@ -89,6 +89,11 @@
                   [attr.aria-label]="'Costo de ' + project.name"
                   >Costo</a
                 >
+                <a
+                  [routerLink]="['/proyectos', project.id, 'cola']"
+                  [attr.aria-label]="'Cola de ' + project.name"
+                  >Cola</a
+                >
                 <button
                   type="button"
                   class="link-danger"

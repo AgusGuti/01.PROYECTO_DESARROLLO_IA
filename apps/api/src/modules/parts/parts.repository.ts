@@ -179,12 +179,13 @@ export function createMongoPartRepository(): PartRepository {
       return guarded(async () => {
         if (ids.length === 0) return [];
         const found = await PartModel.find({ _id: { $in: [...ids] }, deletedAt: null })
-          .select({ name: 1, material: 1 })
-          .lean<Pick<StoredPart, '_id' | 'name' | 'material'>[]>();
+          .select({ name: 1, material: 1, estimatedPrintSeconds: 1 })
+          .lean<Pick<StoredPart, '_id' | 'name' | 'material' | 'estimatedPrintSeconds'>[]>();
         return found.map((stored): LivePartSummary => ({
           id: stored._id.toString(),
           name: stored.name,
           material: stored.material,
+          estimatedPrintSeconds: stored.estimatedPrintSeconds,
         }));
       });
     },

@@ -160,7 +160,14 @@ export function createFakePartRepository(): FakePartRepository {
           const part = live(id);
           return part === undefined
             ? []
-            : [{ id: part.id, name: part.name, material: part.material }];
+            : [
+                {
+                  id: part.id,
+                  name: part.name,
+                  material: part.material,
+                  estimatedPrintSeconds: part.estimatedPrintSeconds,
+                },
+              ];
         }),
       );
     },

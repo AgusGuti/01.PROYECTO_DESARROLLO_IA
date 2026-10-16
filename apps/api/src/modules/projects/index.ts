@@ -17,6 +17,21 @@ export type { PartLookup } from './projects.service.js';
 
 // There is no `ensureIndexes`: the module has no secondary index (ADR 0016).
 
+/**
+ * Builds the queues module's project port (ADR 0017, 0025): the lines of a live project, or null
+ * when it is unknown or removed.
+ */
+export function createQueueProjectReader(
+  repository: Pick<ProjectRepository, 'findLiveById'> = createMongoProjectRepository(),
+): (id: string) => Promise<{ items: { partId: string; quantity: number }[] } | null> {
+  return async (id) => {
+    const project = await repository.findLiveById(id);
+    return project === null
+      ? null
+      : { items: project.items.map(({ partId, quantity }) => ({ partId, quantity })) };
+  };
+}
+
 export function createProjectsModule(deps: {
   clock: Clock;
   /** Which parts are live, with their name and material. Built in app.ts (ADR 0017). */

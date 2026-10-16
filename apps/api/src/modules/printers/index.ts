@@ -45,8 +45,23 @@ export function createPrinterCostReader(
   };
 }
 
-// CU07 (the print queue) will implement this check and finish the archived -> deleted step
-// (ADR 0006). Until then no printer has assignments, so only the idle-delete path is reachable.
+/**
+ * Builds the queues module's printer port (ADR 0025): which of these ids are live and NOT
+ * archived. An archived printer is pending removal, so it cannot be selected for a new queue.
+ * One lookup per id (a queue selects at most 10).
+ */
+export function createSelectablePrinterLookup(
+  repository: Pick<PrinterRepository, 'findLiveById'> = createMongoPrinterRepository(),
+): (ids: string[]) => Promise<ReadonlySet<string>> {
+  return async (ids) => {
+    const found = await Promise.all(ids.map((id) => repository.findLiveById(id)));
+    return new Set(found.flatMap((printer) => (printer?.archivedAt === null ? [printer.id] : [])));
+  };
+}
+
+// The assignments check (and so the archived -> deleted step, ADR 0006) is a follow-up of CU07:
+// the queues module stores printerIds but nothing answers this yet, so only the idle-delete
+// path is reachable.
 const noAssignmentsYet: PrinterUsageCheck = () => Promise.resolve(false);
 
 function chooseRepository(injected: PrinterRepository | undefined): {

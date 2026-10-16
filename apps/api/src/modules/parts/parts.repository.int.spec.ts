@@ -404,14 +404,21 @@ describe('parts repository on a real MongoDB', () => {
   });
 
   describe('findLiveByIds', () => {
-    it('returns only the name and material of the live parts among the ids', async () => {
+    it('returns only the name, material and print time of the live parts among the ids', async () => {
       const live = await make({ name: 'Viva', material: 'PETG' });
       const gone = await make({ name: 'Borrada' });
       await repository.softDelete(gone.id, T1);
 
       const found = await repository.findLiveByIds([live.id, gone.id, '0'.repeat(24)]);
 
-      expect(found).toEqual([{ id: live.id, name: 'Viva', material: 'PETG' }]);
+      expect(found).toEqual([
+        {
+          id: live.id,
+          name: 'Viva',
+          material: 'PETG',
+          estimatedPrintSeconds: live.estimatedPrintSeconds,
+        },
+      ]);
     });
 
     it('answers an empty list for no ids without querying', async () => {

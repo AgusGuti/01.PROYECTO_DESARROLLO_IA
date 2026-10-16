@@ -407,6 +407,16 @@ describe('ProjectsListPage', () => {
     expect(link?.getAttribute('aria-label')).toBe('Costo de Soportes para el taller');
   });
 
+  it('gives each row a Cola link to the project queue page named after the project', async () => {
+    const page = await render();
+
+    await page.answer(0, pageOf([makeProject({ id: 'abc' })]));
+
+    const link = page.element.querySelector('tbody tr a[href="/proyectos/abc/cola"]');
+    expect(link?.textContent).toBe('Cola');
+    expect(link?.getAttribute('aria-label')).toBe('Cola de Soportes para el taller');
+  });
+
   describe('deleting a project', () => {
     async function withOne() {
       const page = await render();

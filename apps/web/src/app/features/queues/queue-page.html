@@ -1,0 +1,271 @@
+<section aria-labelledby="queue-title">
+  <div class="page-header">
+    <h1 id="queue-title" tabindex="-1">Cola de impresión</h1>
+    <a routerLink="/proyectos">Volver a proyectos</a>
+  </div>
+
+  <div class="notice" role="status">{{ notice() }}</div>
+
+  @let view = state();
+  @let failure = action();
+  @if (failure) {
+    <div class="status status--error" id="action-error" role="alert">
+      <p>{{ failure.message }}</p>
+      @if (failure.reload) {
+        <button type="button" (click)="reload()">Recargar</button>
+      }
+    </div>
+  }
+
+  @if (view.kind === 'loading') {
+    <p class="status" role="status">Cargando la cola…</p>
+  } @else if (view.kind === 'failed') {
+    <div class="status status--error" role="alert">
+      <p>{{ view.message }}</p>
+      <button type="button" (click)="retry()">Reintentar</button>
+    </div>
+  } @else {
+    @let ready = view.kind === 'ready';
+    @let options = printerOptions(view);
+    @let printerProblem = printerError();
+    @let server = serverErrors();
+
+    @if (view.kind === 'missing') {
+      <p class="status" id="no-queue">
+        Este proyecto todavía no tiene una cola ({{ view.project.name }}). Configurala y creala.
+      </p>
+    } @else {
+      @let totals = view.queue.totals;
+      <dl class="totals" id="totals">
+        <div>
+          <dt>Unidades pendientes</dt>
+          <dd>{{ totals.pendingUnits }}</dd>
+        </div>
+        <div>
+          <dt>Tiempo pendiente</dt>
+          <dd>{{ formatDuration(totals.pendingSeconds) }}</dd>
+        </div>
+        <div>
+          <dt>Unidades completadas</dt>
+          <dd>{{ totals.completedUnits }} de {{ totals.totalUnits }}</dd>
+        </div>
+      </dl>
+    }
+
+    <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+      <div class="field">
+        <label for="queue-goal">Objetivo de optimización</label>
+        <select
+          id="queue-goal"
+          formControlName="goal"
+          [attr.aria-invalid]="server.goal ? 'true' : null"
+          [attr.aria-describedby]="server.goal ? 'queue-goal-error' : null"
+        >
+          @for (goal of goals; track goal.value) {
+            <option [value]="goal.value">{{ goal.label }}</option>
+          }
+        </select>
+        @if (server.goal) {
+          <p class="field-error" id="queue-goal-error">{{ server.goal }}</p>
+        }
+      </div>
+
+      <fieldset class="field" [attr.aria-describedby]="server.mode ? 'queue-mode-error' : null">
+        <legend>Modo</legend>
+        @for (mode of modes; track mode.value) {
+          <label class="check">
+            <input type="radio" formControlName="mode" [value]="mode.value" />
+            {{ mode.label }}
+          </label>
+        }
+        @if (server.mode) {
+          <p class="field-error" id="queue-mode-error">{{ server.mode }}</p>
+        }
+      </fieldset>
+
+      @if (options.length === 0) {
+        <p class="status" id="no-printers">
+          No hay impresoras activas. <a routerLink="/impresoras/nueva">Cargar una impresora</a>
+        </p>
+      } @else if (isMulti()) {
+        <fieldset
+          class="field"
+          id="queue-printers"
+          tabindex="-1"
+          [attr.data-invalid]="printerProblem ? 'true' : null"
+          [attr.aria-describedby]="printerProblem ? 'queue-printers-error' : null"
+        >
+          <legend>Impresoras (de 2 a 10)</legend>
+          @for (printer of options; track printer.id) {
+            <label class="check">
+              <input
+                type="checkbox"
+                [checked]="isSelected(printer.id)"
+                (change)="toggle(printer.id, $event)"
+              />
+              {{ printer.name }}
+            </label>
+          }
+          @if (printerProblem) {
+            <p class="field-error" id="queue-printers-error">{{ printerProblem }}</p>
+          }
+        </fieldset>
+      } @else {
+        <div class="field">
+          <label for="queue-printer">Impresora</label>
+          <select
+            id="queue-printer"
+            (change)="pickSingle($event)"
+            [attr.aria-invalid]="printerProblem ? 'true' : null"
+            [attr.aria-describedby]="printerProblem ? 'queue-printer-error' : null"
+          >
+            <option value="" [selected]="selected().length === 0">Elegí una impresora</option>
+            @for (printer of options; track printer.id) {
+              <option [value]="printer.id" [selected]="isSelected(printer.id)">
+                {{ printer.name }}
+              </option>
+            }
+          </select>
+          @if (printerProblem) {
+            <p class="field-error" id="queue-printer-error">{{ printerProblem }}</p>
+          }
+        </div>
+      }
+
+      <div formArrayName="lines" class="table-scroll">
+        @if (lines.length === 0) {
+          <p class="status" id="no-lines">
+            {{
+              ready
+                ? 'La cola no tiene líneas.'
+                : 'El proyecto no tiene piezas: la cola se crea vacía.'
+            }}
+          </p>
+        } @else {
+          <table>
+            <caption class="visually-hidden">
+              Piezas de la cola
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Pieza</th>
+                <th scope="col">Cantidad</th>
+                @if (ready) {
+                  <th scope="col">Completadas</th>
+                }
+                <th scope="col">{{ ready ? 'Avance' : 'Acciones' }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (group of lines.controls; track group; let i = $index) {
+                @let lineProblem = lineError(i);
+                @let name = group.controls.name.value;
+                <tr [formGroupName]="i">
+                  <th scope="row">{{ name }}</th>
+                  <td>
+                    <label class="visually-hidden" [for]="'line-' + i + '-quantity'"
+                      >Cantidad de {{ name }}</label
+                    >
+                    <input
+                      [id]="'line-' + i + '-quantity'"
+                      type="text"
+                      inputmode="numeric"
+                      autocomplete="off"
+                      formControlName="quantity"
+                      [attr.aria-invalid]="lineProblem ? 'true' : null"
+                      [attr.aria-describedby]="lineProblem ? 'line-' + i + '-error' : null"
+                    />
+                    @if (lineProblem) {
+                      <p class="field-error" [id]="'line-' + i + '-error'">{{ lineProblem }}</p>
+                    }
+                  </td>
+                  @if (view.kind === 'ready') {
+                    @let line = view.queue.lines[i];
+                    @if (line) {
+                      <td>{{ line.completed }} de {{ line.quantity }}</td>
+                      <td class="progress-cell">
+                        <progress
+                          [max]="line.quantity"
+                          [value]="line.completed"
+                          [attr.aria-label]="line.completed + ' de ' + line.quantity + ' impresas'"
+                        ></progress>
+                        <button
+                          type="button"
+                          [id]="'line-' + i + '-plus'"
+                          [attr.aria-label]="'+1 impresa de ' + name"
+                          [disabled]="mutating() || !canStep(i, 1)"
+                          (click)="step(i, 1)"
+                        >
+                          +1 impresa
+                        </button>
+                        <button
+                          type="button"
+                          [id]="'line-' + i + '-minus'"
+                          [attr.aria-label]="'-1 impresa de ' + name"
+                          [disabled]="mutating() || !canStep(i, -1)"
+                          (click)="step(i, -1)"
+                        >
+                          -1
+                        </button>
+                        @if (line.partDeleted) {
+                          <button
+                            type="button"
+                            [id]="'line-' + i + '-remove'"
+                            [attr.aria-label]="'Quitar ' + name"
+                            [disabled]="mutating()"
+                            (click)="removeSavedLine(i)"
+                          >
+                            Quitar
+                          </button>
+                        }
+                      </td>
+                    }
+                  } @else {
+                    <td>
+                      <button
+                        type="button"
+                        [attr.aria-label]="'Quitar ' + name"
+                        (click)="removeLine(i)"
+                      >
+                        Quitar
+                      </button>
+                    </td>
+                  }
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      </div>
+
+      <div class="actions">
+        <button type="submit" [disabled]="mutating()">
+          @if (ready) {
+            {{ mutating() ? 'Guardando…' : 'Guardar cambios' }}
+          } @else {
+            {{ mutating() ? 'Creando…' : 'Crear cola' }}
+          }
+        </button>
+        @if (ready) {
+          <button
+            type="button"
+            class="danger"
+            id="delete-queue"
+            [disabled]="mutating()"
+            (click)="askToDelete($event)"
+          >
+            Eliminar cola
+          </button>
+        }
+      </div>
+    </form>
+
+    @if (confirmingDelete()) {
+      <app-queue-delete-dialog
+        [busy]="mutating()"
+        (confirmed)="confirmDelete()"
+        (cancelled)="cancelDelete()"
+      />
+    }
+  }
+</section>
