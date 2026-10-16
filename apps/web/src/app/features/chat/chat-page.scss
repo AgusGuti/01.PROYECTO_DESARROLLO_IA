@@ -25,6 +25,20 @@
   }
 }
 
+.proposal {
+  border: 1px solid var(--color-border);
+  margin-block: 0.5rem;
+  padding: 0.5rem 1rem;
+}
+
+.sr-only {
+  block-size: 1px;
+  inline-size: 1px;
+  margin: -1px;
+  overflow: hidden;
+  position: absolute;
+}
+
 .who {
   display: block;
 }

@@ -48,8 +48,29 @@ describe('chat against a fake assistant over HTTP', () => {
     const response = await request(appFor()).post('/api/v1/chat').send({ message: 'hola' });
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ reply: 'Hola desde el asistente' });
+    expect(response.body).toEqual({ reply: 'Hola desde el asistente', proposal: null });
     expect(seen).toEqual({ url: '/chat', body: '{"message":"hola"}' });
+  });
+
+  it('passes a valid proposal through and drops an invalid one', async () => {
+    const proposal = {
+      kind: 'create_project',
+      payload: { name: 'Soportes', items: [{ partId: 'a'.repeat(24), quantity: 3 }] },
+      itemNames: [{ partId: 'a'.repeat(24), name: 'Soporte' }],
+    };
+    handler = (_req, res) => {
+      json(res, 200, JSON.stringify({ reply: 'Propuesta', proposal }));
+    };
+    const good = await request(appFor()).post('/api/v1/chat').send({ message: 'hola' });
+
+    handler = (_req, res) => {
+      json(res, 200, JSON.stringify({ reply: 'Propuesta', proposal: { ...proposal, kind: 'x' } }));
+    };
+    const bad = await request(appFor()).post('/api/v1/chat').send({ message: 'hola' });
+
+    expect(good.body).toEqual({ reply: 'Propuesta', proposal });
+    expect(bad.status).toBe(200);
+    expect(bad.body).toEqual({ reply: 'Propuesta', proposal: null });
   });
 
   it('maps an assistant 413 to a 400 on message', async () => {

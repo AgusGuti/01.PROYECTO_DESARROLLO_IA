@@ -1,11 +1,12 @@
 // Use case: forward one message to the assistant. Stateless; nothing is stored.
 import type { Logger } from 'pino';
 import { AppError } from '../../shared/errors/app-error.js';
-import { MAX_REPLY_CHARACTERS } from './chat.schemas.js';
+import { MAX_REPLY_CHARACTERS, proposalSchema, type ChatDto } from './chat.schemas.js';
 
 /** Port owned by this module. The HTTP implementation lives in chat.assistant-client.ts. */
 export interface AssistantClient {
-  ask(message: string): Promise<string>;
+  /** `proposal` is untrusted: the service validates it before it reaches a client. */
+  ask(message: string): Promise<{ reply: string; proposal?: unknown }>;
 }
 
 /** The assistant answered 413: it judged the message too long. */
@@ -17,7 +18,7 @@ export class AssistantMessageTooLongError extends Error {
 }
 
 export interface ChatService {
-  ask(message: string): Promise<string>;
+  ask(message: string): Promise<ChatDto>;
 }
 
 const UNAVAILABLE = 'The assistant is not available right now. Try again later.';
@@ -33,16 +34,17 @@ export function createChatService(deps: {
     async ask(message) {
       const startedAt = now();
       // Only sizes, timings and the outcome are logged: the text may be personal data.
-      const log = (outcome: string, replyLength?: number): void => {
+      const log = (outcome: string, replyLength?: number, proposal?: string): void => {
         logger.info(
-          { outcome, messageLength: message.length, replyLength, ms: now() - startedAt },
+          { outcome, messageLength: message.length, replyLength, proposal, ms: now() - startedAt },
           'chat',
         );
       };
 
       let reply: string;
+      let rawProposal: unknown;
       try {
-        reply = await assistantClient.ask(message);
+        ({ reply, proposal: rawProposal } = await assistantClient.ask(message));
       } catch (error) {
         if (error instanceof AssistantMessageTooLongError) {
           log('too_long');
@@ -57,8 +59,14 @@ export function createChatService(deps: {
         log('reply_too_long', reply.length);
         throw new AppError('service_unavailable', UNAVAILABLE);
       }
-      log('ok', reply.length);
-      return reply;
+      // An invalid proposal is dropped, the reply is kept. Only the outcome is logged.
+      if (rawProposal === undefined || rawProposal === null) {
+        log('ok', reply.length, 'none');
+        return { reply, proposal: null };
+      }
+      const parsed = proposalSchema.safeParse(rawProposal);
+      log('ok', reply.length, parsed.success ? 'valid' : 'dropped');
+      return { reply, proposal: parsed.success ? parsed.data : null };
     },
   };
 }

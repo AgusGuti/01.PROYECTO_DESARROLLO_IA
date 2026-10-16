@@ -4,7 +4,7 @@ Source of requirements: [the project proposal](propuesta-proyecto-impresion-3d.m
 One item at a time, each through the `new-feature` workflow, each merged by pull request with
 green CI before the next starts.
 
-**Current:** M4.3 – Proposal tools with confirmation in the UI (not started). M1–M3 and M4.1 (chat endpoint and panel) and M4.2 (read tools) are merged.
+**Current:** M4.3b – More proposal tools (queue jobs, re-run the optimiser) and a first manual review of everything (not started). M1–M3, M4.1, M4.2 and M4.3a (propose create project) are merged.
 
 The session-start hook reads the line above. Update it when an item is merged.
 

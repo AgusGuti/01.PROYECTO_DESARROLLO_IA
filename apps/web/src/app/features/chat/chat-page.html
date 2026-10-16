@@ -10,11 +10,85 @@
     <div class="message" [class.message--user]="message.role === 'user'">
       <strong class="who">{{ message.role === 'user' ? 'Vos' : 'Asistente' }}</strong>
       <p class="text">{{ message.text }}</p>
+      @if (message.view; as view) {
+        @let card = cards()[message.id];
+        <div class="proposal" role="group" aria-label="Propuesta del asistente">
+          <p class="text">{{ view.title }}</p>
+          @if (view.description) {
+            <p class="text">Descripción: {{ view.description }}</p>
+          }
+          @if (view.priority) {
+            <p class="text">Prioridad: {{ view.priority }}</p>
+          }
+          @if (view.deadline) {
+            <p class="text">Fecha límite: {{ view.deadline }}</p>
+          }
+          @if (view.items.length > 0) {
+            <p class="text">Piezas:</p>
+            <ul>
+              @for (line of view.items; track $index) {
+                <li class="text">{{ line }}</li>
+              }
+            </ul>
+          }
+          @switch (card?.kind) {
+            @case ('created') {
+              @if (card?.kind === 'created') {
+                <p class="text">
+                  Proyecto creado: «{{ card.name }}».
+                  <a
+                    id="proposal-link-{{ message.id }}"
+                    [routerLink]="['/proyectos', card.id, 'editar']"
+                    >Abrir el proyecto</a
+                  >
+                </p>
+              }
+            }
+            @case ('discarded') {
+              <p class="text">Descartada.</p>
+            }
+            @default {
+              <p class="note">Todavía no se creó nada.</p>
+              @if (card?.kind === 'failed') {
+                <p class="text">{{ card.message }}</p>
+              }
+              @if (card?.kind === 'sending') {
+                <p class="note">Creando el proyecto…</p>
+              }
+              <div class="actions">
+                @if (card?.kind === 'failed') {
+                  <button type="button" (click)="confirm(message)">Reintentar</button>
+                  @if (card.uncertain) {
+                    <a routerLink="/proyectos">Ir a Proyectos</a>
+                  }
+                } @else {
+                  <button
+                    type="button"
+                    [disabled]="card?.kind === 'sending'"
+                    (click)="confirm(message)"
+                  >
+                    Confirmar
+                  </button>
+                }
+                <button
+                  type="button"
+                  [disabled]="card?.kind === 'sending'"
+                  (click)="discard(message)"
+                >
+                  Descartar
+                </button>
+              </div>
+            }
+          }
+        </div>
+      }
     </div>
   } @empty {
     <p class="note">Todavía no hay mensajes. Escribí tu primera pregunta.</p>
   }
 </div>
+
+<p class="sr-only" aria-live="polite">{{ announcement() }}</p>
 
 @switch (state().kind) {
   @case ('sending') {
@@ -46,6 +120,16 @@
   </p>
   <div class="actions">
     <button type="submit" [disabled]="!canSend()">Enviar</button>
-    <button type="button" (click)="clear()">Limpiar conversación</button>
+    <button
+      type="button"
+      [disabled]="confirming()"
+      [attr.aria-describedby]="confirming() ? 'clear-hint' : null"
+      (click)="clear()"
+    >
+      Limpiar conversación
+    </button>
+    @if (confirming()) {
+      <span id="clear-hint" class="note">Esperá a que termine de crearse el proyecto.</span>
+    }
   </div>
 </form>

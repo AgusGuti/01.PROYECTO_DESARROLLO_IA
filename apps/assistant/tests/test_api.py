@@ -49,7 +49,7 @@ def test_chat_returns_the_model_reply(client: TestClient) -> None:
     response = client.post("/chat", json={"message": "Hola"})
 
     assert response.status_code == 200
-    assert response.json() == {"reply": "Hola, ¿en qué te ayudo?"}
+    assert response.json() == {"reply": "Hola, ¿en qué te ayudo?", "proposal": None}
 
 
 @pytest.mark.parametrize(
