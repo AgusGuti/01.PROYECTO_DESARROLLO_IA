@@ -1395,6 +1395,130 @@ components:
         - defaultMarginBasisPoints
         - version
       additionalProperties: false
+    InterventionSchedule:
+      type: object
+      properties:
+        weekly:
+          type: array
+          items:
+            type: object
+            properties:
+              ranges:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    startMinute:
+                      type: integer
+                    endMinute:
+                      type: integer
+                  required:
+                    - startMinute
+                    - endMinute
+            required:
+              - ranges
+        exceptions:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+                example: 2026-12-25
+              ranges:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    startMinute:
+                      type: integer
+                    endMinute:
+                      type: integer
+                  required:
+                    - startMinute
+                    - endMinute
+            required:
+              - date
+              - ranges
+        version:
+          type: integer
+          description: 0 until the schedule is first saved.
+        updatedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+      required:
+        - weekly
+        - exceptions
+        - version
+        - updatedAt
+    UpdateScheduleRequest:
+      type: object
+      properties:
+        weekly:
+          type: array
+          items:
+            type: object
+            properties:
+              ranges:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InterventionRange"
+                maxItems: 6
+                description: Where the user CAN intervene. Outside these ranges the user cannot.
+            required:
+              - ranges
+            additionalProperties: false
+          description: "Exactly 7 entries: index 0 is Monday, 6 is Sunday."
+        exceptions:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+                example: 2026-12-25
+              ranges:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InterventionRange"
+                maxItems: 6
+                description: "Replaces that day. Empty: no intervention at all."
+            required:
+              - date
+              - ranges
+            additionalProperties: false
+          maxItems: 60
+        version:
+          type: integer
+          minimum: 0
+          description: 0 for the first save, otherwise the version last seen (ADR 0024).
+      required:
+        - weekly
+        - exceptions
+        - version
+      additionalProperties: false
+    InterventionRange:
+      type: object
+      properties:
+        startMinute:
+          type: integer
+          minimum: 0
+          maximum: 1440
+          description: Minute of the day, 0..1440 (480 is 08:00).
+        endMinute:
+          type: integer
+          minimum: 0
+          maximum: 1440
+          description: Exclusive end, greater than startMinute.
+      required:
+        - startMinute
+        - endMinute
+      additionalProperties: false
     GcodeAnalysis:
       type: object
       properties:
@@ -2637,6 +2761,65 @@ paths:
                 $ref: "#/components/schemas/Problem"
         "503":
           description: The settings are temporarily unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/availability/schedule:
+    get:
+      operationId: getInterventionSchedule
+      tags:
+        - Availability
+      summary: Get the intervention schedule
+      description: When the user CAN intervene (change a piece). Times are minutes of the day in
+        America/Argentina/Buenos_Aires. Before the first save it answers 08:00-18:00 every day with
+        version 0. It never writes.
+      responses:
+        "200":
+          description: The schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InterventionSchedule"
+        "503":
+          description: The schedule is temporarily unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    put:
+      operationId: saveInterventionSchedule
+      tags:
+        - Availability
+      summary: Save the intervention schedule
+      description: 'Full replacement: send the 7 weekly days, all exceptions and the version last seen (0
+        for the first save). Issue paths look like "weekly.2.ranges.1.endMinute".'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateScheduleRequest"
+      responses:
+        "200":
+          description: The saved schedule, with the new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InterventionSchedule"
+        "400":
+          description: Invalid input, an unknown field, overlapping ranges or a duplicate date.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Stale version (issue path "version").
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: The schedule is temporarily unavailable.
           content:
             application/problem+json:
               schema:

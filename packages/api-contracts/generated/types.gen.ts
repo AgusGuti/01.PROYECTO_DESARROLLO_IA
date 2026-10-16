@@ -625,6 +625,61 @@ export type UpdateCostSettingsRequest = {
     version: number;
 };
 
+export type InterventionSchedule = {
+    weekly: Array<{
+        ranges: Array<{
+            startMinute: number;
+            endMinute: number;
+        }>;
+    }>;
+    exceptions: Array<{
+        date: string;
+        ranges: Array<{
+            startMinute: number;
+            endMinute: number;
+        }>;
+    }>;
+    /**
+     * 0 until the schedule is first saved.
+     */
+    version: number;
+    updatedAt: string | null;
+};
+
+export type UpdateScheduleRequest = {
+    /**
+     * Exactly 7 entries: index 0 is Monday, 6 is Sunday.
+     */
+    weekly: Array<{
+        /**
+         * Where the user CAN intervene. Outside these ranges the user cannot.
+         */
+        ranges: Array<InterventionRange>;
+    }>;
+    exceptions: Array<{
+        date: string;
+        /**
+         * Replaces that day. Empty: no intervention at all.
+         */
+        ranges: Array<InterventionRange>;
+    }>;
+    /**
+     * 0 for the first save, otherwise the version last seen (ADR 0024).
+     */
+    version: number;
+};
+
+export type InterventionRange = {
+    /**
+     * Minute of the day, 0..1440 (480 is 08:00).
+     */
+    startMinute: number;
+    /**
+     * Exclusive end, greater than startMinute.
+     */
+    endMinute: number;
+};
+
 export type GcodeAnalysis = {
     slicer: 'cura';
     estimatedPrintSeconds: number;
@@ -1576,6 +1631,64 @@ export type SaveCostSettingsResponses = {
 };
 
 export type SaveCostSettingsResponse = SaveCostSettingsResponses[keyof SaveCostSettingsResponses];
+
+export type GetInterventionScheduleData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/availability/schedule';
+};
+
+export type GetInterventionScheduleErrors = {
+    /**
+     * The schedule is temporarily unavailable.
+     */
+    503: Problem;
+};
+
+export type GetInterventionScheduleError = GetInterventionScheduleErrors[keyof GetInterventionScheduleErrors];
+
+export type GetInterventionScheduleResponses = {
+    /**
+     * The schedule.
+     */
+    200: InterventionSchedule;
+};
+
+export type GetInterventionScheduleResponse = GetInterventionScheduleResponses[keyof GetInterventionScheduleResponses];
+
+export type SaveInterventionScheduleData = {
+    body?: UpdateScheduleRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/availability/schedule';
+};
+
+export type SaveInterventionScheduleErrors = {
+    /**
+     * Invalid input, an unknown field, overlapping ranges or a duplicate date.
+     */
+    400: Problem;
+    /**
+     * Stale version (issue path "version").
+     */
+    409: Problem;
+    /**
+     * The schedule is temporarily unavailable.
+     */
+    503: Problem;
+};
+
+export type SaveInterventionScheduleError = SaveInterventionScheduleErrors[keyof SaveInterventionScheduleErrors];
+
+export type SaveInterventionScheduleResponses = {
+    /**
+     * The saved schedule, with the new version.
+     */
+    200: InterventionSchedule;
+};
+
+export type SaveInterventionScheduleResponse = SaveInterventionScheduleResponses[keyof SaveInterventionScheduleResponses];
 
 export type AnalyzeGcodeData = {
     body?: AnalyzeGcodeRequest;
