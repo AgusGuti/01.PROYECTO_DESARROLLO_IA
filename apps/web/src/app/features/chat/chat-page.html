@@ -1,0 +1,51 @@
+<h1>Asistente</h1>
+<p>
+  Puede consultar proyectos, costos, stock y planificación. Todavía no modifica nada y sus
+  respuestas pueden contener errores.
+</p>
+<p class="note">Cada pregunta se responde por separado.</p>
+
+<div class="log" role="log" aria-live="polite" aria-label="Conversación">
+  @for (message of messages(); track message.id) {
+    <div class="message" [class.message--user]="message.role === 'user'">
+      <strong class="who">{{ message.role === 'user' ? 'Vos' : 'Asistente' }}</strong>
+      <p class="text">{{ message.text }}</p>
+    </div>
+  } @empty {
+    <p class="note">Todavía no hay mensajes. Escribí tu primera pregunta.</p>
+  }
+</div>
+
+@switch (state().kind) {
+  @case ('sending') {
+    <p role="status">Pensando…</p>
+  }
+  @case ('failed') {
+    <div class="message message--error" role="alert">
+      <strong class="who">Asistente</strong>
+      <p class="text">{{ failedMessage() }}</p>
+      <button #retryButton type="button" (click)="retry()">Reintentar</button>
+    </div>
+  }
+}
+
+<form class="composer" (submit)="$event.preventDefault(); send()">
+  <label for="chat-message">Tu mensaje</label>
+  <textarea
+    #input
+    id="chat-message"
+    rows="3"
+    [value]="draft()"
+    (input)="onInput($event)"
+    (keydown)="onKeydown($event)"
+    [attr.aria-invalid]="draft().trim().length > maxLength"
+    aria-describedby="chat-hint"
+  ></textarea>
+  <p id="chat-hint" class="note" [class.over]="draft().trim().length > maxLength">
+    {{ draft().length }} / {{ maxLength }} caracteres. Enter envía, Shift+Enter agrega una línea.
+  </p>
+  <div class="actions">
+    <button type="submit" [disabled]="!canSend()">Enviar</button>
+    <button type="button" (click)="clear()">Limpiar conversación</button>
+  </div>
+</form>

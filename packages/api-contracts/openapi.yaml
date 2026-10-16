@@ -2361,6 +2361,27 @@ components:
       required:
         - head
       additionalProperties: false
+    ChatResponse:
+      type: object
+      properties:
+        reply:
+          type: string
+          maxLength: 10000
+          description: The assistant reply.
+      required:
+        - reply
+      additionalProperties: false
+    ChatRequest:
+      type: object
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: The user message, trimmed. It is never stored or logged.
+      required:
+        - message
+      additionalProperties: false
   parameters: {}
 paths:
   /health/live:
@@ -3913,6 +3934,39 @@ paths:
                 $ref: "#/components/schemas/Problem"
         "413":
           description: The request body is over the size limit.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/chat:
+    post:
+      operationId: askAssistant
+      tags:
+        - Chat
+      summary: Send one message to the assistant
+      description: "Stateless: nothing is stored and there is no conversation history. The API forwards
+        the message to the assistant (ADR 0004, 0029) and returns its reply. It can take many
+        seconds."
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatRequest"
+      responses:
+        "200":
+          description: The assistant reply.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatResponse"
+        "400":
+          description: 'Invalid input. Issue path "message": empty, too long (over 2000) or unknown key.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: The assistant is unreachable, timed out or answered something unusable.
           content:
             application/problem+json:
               schema:

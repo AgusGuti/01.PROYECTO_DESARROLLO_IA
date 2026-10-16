@@ -5,15 +5,19 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 from langchain_core.language_models import BaseChatModel
-from langchain_core.language_models.fake_chat_models import FakeListChatModel
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.outputs import ChatResult
 
 from assistant.config import Settings, get_settings
 from assistant.main import create_app, get_chat_model
+from fakes import ScriptedModel
 
 
-class BrokenChatModel(FakeListChatModel):
+def reply(text: str) -> ScriptedModel:
+    return ScriptedModel(script=[AIMessage(content=text)])
+
+
+class BrokenChatModel(ScriptedModel):
     """A model whose provider is down."""
 
     def _generate(self, messages: list[BaseMessage], *args: object, **kwargs: object) -> ChatResult:
@@ -30,7 +34,7 @@ def client_with(model: BaseChatModel, max_message_chars: int = 2000) -> TestClie
 
 @pytest.fixture
 def client() -> Iterator[TestClient]:
-    with client_with(FakeListChatModel(responses=["Hola, ¿en qué te ayudo?"])) as test_client:
+    with client_with(reply("Hola, ¿en qué te ayudo?")) as test_client:
         yield test_client
 
 
@@ -65,14 +69,14 @@ def test_chat_rejects_invalid_input(client: TestClient, body: dict[str, object])
 
 
 def test_chat_rejects_a_message_over_the_configured_limit() -> None:
-    with client_with(FakeListChatModel(responses=["ok"]), max_message_chars=10) as client:
+    with client_with(reply("ok"), max_message_chars=10) as client:
         response = client.post("/chat", json={"message": "x" * 11})
 
     assert response.status_code == 413
 
 
 def test_chat_hides_provider_details_when_the_model_fails() -> None:
-    with client_with(BrokenChatModel(responses=[])) as client:
+    with client_with(BrokenChatModel(script=[])) as client:
         response = client.post("/chat", json={"message": "Hola"})
 
     assert response.status_code == 503
@@ -81,7 +85,7 @@ def test_chat_hides_provider_details_when_the_model_fails() -> None:
 
 
 def test_chat_treats_an_empty_answer_as_unavailable() -> None:
-    with client_with(FakeListChatModel(responses=["   "])) as client:
+    with client_with(reply("   ")) as client:
         response = client.post("/chat", json={"message": "Hola"})
 
     assert response.status_code == 503
