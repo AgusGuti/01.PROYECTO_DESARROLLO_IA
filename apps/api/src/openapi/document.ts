@@ -1,6 +1,7 @@
 // Assembles the OpenAPI document from the Zod schemas each module registers.
 // `npm run contract` writes it to packages/api-contracts/openapi.yaml; never edit that file.
 import { OpenApiGeneratorV31, OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
+import { registerAvailabilityPaths } from '../modules/availability/index.js';
 import { registerCostsPaths } from '../modules/costs/index.js';
 import { registerHealthPaths } from '../modules/health/index.js';
 import { registerFilamentsPaths } from '../modules/filaments/index.js';
@@ -20,6 +21,7 @@ export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV31['generate
   registerPartsPaths(registry);
   registerProjectsPaths(registry);
   registerCostsPaths(registry);
+  registerAvailabilityPaths(registry);
   registerGcodePaths(registry);
   // Feature modules register their paths here as they are added.
 

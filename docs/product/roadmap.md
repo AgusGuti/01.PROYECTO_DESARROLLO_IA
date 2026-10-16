@@ -4,7 +4,7 @@ Source of requirements: [the project proposal](propuesta-proyecto-impresion-3d.m
 One item at a time, each through the `new-feature` workflow, each merged by pull request with
 green CI before the next starts.
 
-**Current:** M3 – Planificación (planning: open questions to settle with Agustín first, see M3). M1, M2.1 (CU03) and M2.2 (CU04 project cost) are merged.
+**Current:** M3.2 – CU07 Crear cola de impresión (not started). M1, M2 and M3.1 (CU09 intervention windows) are merged.
 
 The session-start hook reads the line above. Update it when an item is merged.
 
@@ -42,14 +42,14 @@ The core of the product and its hardest part.
 | M3.3 | **CU10** Simular la planificación        | The timeline view and the schedule data structure, first with a naive ordering. Gives something visible to compare the optimiser against.                                                                                           |
 | M3.4 | **CU08** Optimizar el orden de impresión | Pure domain code, no I/O. Start with an explainable heuristic and a measured baseline (idle time, deadlines met). Property tests: no overlap, no intervention needed inside a no-intervention window, every job placed or reported. |
 
-Open questions to settle with Agustín before M3 (do not assume answers):
+Decisions taken by Agustín (2026-10-15):
 
-- Is an intervention needed only at the _end_ of a print (remove the piece, start the next), or
-  also at the start?
-- Can identical small pieces be batched on one plate, and does that change duration?
-- One printer or several in the first version of the optimiser?
-- What is optimised first when goals conflict: deadlines, priority, or idle time?
-- Time zone and the planning horizon (one day, several days).
+- Intervention is needed at both the start and the end of a print.
+- Identical pieces may share a plate (each occupying less than half the bed). Different pieces on
+  the same plate are not planned. Whether batching changes duration is still open.
+- Single or multi printer is chosen per project, with the printers selected when multi.
+- The optimisation goal is chosen per project at creation.
+- Time zone America/Argentina/Buenos_Aires; planning horizon up to 14 days.
 
 ## M4. Chat assistant
 

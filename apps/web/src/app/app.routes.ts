@@ -101,6 +101,12 @@ export const routes: Routes = [
       import('./features/costs/cost-settings-page').then((module) => module.CostSettingsPage),
   },
   {
+    path: 'disponibilidad',
+    title: 'Disponibilidad · Print3D Planner',
+    loadComponent: () =>
+      import('./features/availability/availability-page').then((module) => module.AvailabilityPage),
+  },
+  {
     path: '**',
     title: 'Página no encontrada · Print3D Planner',
     loadComponent: () =>

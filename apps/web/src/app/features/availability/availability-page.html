@@ -1,0 +1,145 @@
+<section aria-labelledby="availability-title">
+  <h1 id="availability-title">Disponibilidad para intervenir</h1>
+
+  @let view = load();
+  @switch (view.kind) {
+    @case ('loading') {
+      <p class="status" role="status">Cargando la disponibilidad…</p>
+    }
+    @case ('failed') {
+      <div class="status status--error" role="alert">
+        <p>{{ view.message }}</p>
+        <button type="button" (click)="reload()">Reintentar</button>
+      </div>
+    }
+    @case ('ready') {
+      @let saving = save().kind === 'saving';
+      @let result = save();
+      @let problems = errors();
+
+      <section class="help" aria-labelledby="help-title">
+        <h2 id="help-title">Cómo funciona</h2>
+        <p>
+          Indicá en qué horarios podés intervenir la impresora, por ejemplo para cambiar una pieza.
+          Fuera de esos horarios (de noche, por ejemplo) las impresiones tienen que correr solas. El
+          planificador va a poner las impresiones largas en esos tramos sin supervisión.
+        </p>
+        <p>
+          Todos los horarios son hora de Argentina. El plan mira los próximos 14 días. Un día sin
+          rangos significa que no intervenís ese día.
+        </p>
+      </section>
+
+      @if (neverSaved()) {
+        <p class="notice">
+          Todavía no guardaste tu disponibilidad: se usa de 08:00 a 18:00 todos los días.
+        </p>
+      }
+
+      <div class="notices" aria-live="polite">
+        @if (announcement()) {
+          <p class="notice notice--success">{{ announcement() }}</p>
+        }
+      </div>
+
+      <form (submit)="$event.preventDefault(); submit()" novalidate>
+        @if (result.kind === 'failed') {
+          <div class="status status--error" role="alert">
+            <p>{{ result.message }}</p>
+            @if (result.stale) {
+              <button type="button" (click)="reload()">Recargar</button>
+            }
+          </div>
+        }
+
+        <h2>Semana</h2>
+        @for (day of weekly.controls; track day; let d = $index) {
+          <fieldset>
+            <legend>{{ dayNames[d] }}</legend>
+            <app-ranges-editor
+              [ranges]="day.controls.ranges"
+              [prefix]="'w-' + d"
+              [name]="dayNames[d] ?? ''"
+              [errors]="problems"
+              emptyText="Sin rangos: no intervenís este día."
+              (addRange)="addRange(day.controls.ranges, 'w-' + d, dayNames[d] ?? '')"
+              (removeRange)="removeRange(day.controls.ranges, $event, 'w-' + d, dayNames[d] ?? '')"
+            />
+            <button type="button" class="secondary" (click)="copyToAll(d)">
+              Copiar a todos los días
+              <span class="visually-hidden">los rangos de {{ dayNames[d] }}</span>
+            </button>
+          </fieldset>
+        }
+
+        <h2>Excepciones</h2>
+        <p class="hint">
+          Una excepción reemplaza los rangos de la semana para una fecha puntual. Sin rangos
+          significa «No intervengo ese día».
+        </p>
+        @for (row of exceptions.controls; track $index; let i = $index) {
+          @let dateId = 'x-' + i + '-date';
+          @let dateError = problems[dateId];
+          <fieldset>
+            <legend>{{ exceptionName(i) }}</legend>
+            <div class="field">
+              <label [for]="dateId">Fecha (DD-MM-AAAA)</label>
+              <input
+                [id]="dateId"
+                type="text"
+                inputmode="numeric"
+                autocomplete="off"
+                placeholder="25-12-2026"
+                [formControl]="row.controls.date"
+                [attr.aria-invalid]="dateError ? 'true' : null"
+                [attr.aria-describedby]="dateError ? dateId + '-error' : null"
+              />
+              @if (dateError) {
+                <p [id]="dateId + '-error'" class="field-error">{{ dateError }}</p>
+              }
+            </div>
+            <app-ranges-editor
+              [ranges]="row.controls.ranges"
+              [prefix]="'x-' + i"
+              [name]="exceptionName(i)"
+              [errors]="problems"
+              emptyText="No intervengo ese día"
+              (addRange)="addRange(row.controls.ranges, 'x-' + i, exceptionName(i))"
+              (removeRange)="removeRange(row.controls.ranges, $event, 'x-' + i, exceptionName(i))"
+            />
+            <button
+              type="button"
+              class="secondary"
+              [attr.aria-label]="'Quitar ' + exceptionName(i)"
+              (click)="removeException(i)"
+            >
+              Quitar excepción
+            </button>
+          </fieldset>
+        } @empty {
+          <p>No hay excepciones cargadas.</p>
+        }
+        @let addExceptionError = problems['x-add'];
+        <button
+          type="button"
+          id="x-add"
+          [disabled]="exceptions.length >= maxExceptions"
+          [attr.data-invalid]="addExceptionError ? 'true' : null"
+          [attr.aria-describedby]="addExceptionError ? 'x-add-error' : null"
+          (click)="addException()"
+        >
+          Agregar excepción
+        </button>
+        @if (addExceptionError) {
+          <p id="x-add-error" class="field-error">{{ addExceptionError }}</p>
+        }
+
+        <div class="actions">
+          <button type="submit" [disabled]="saving">
+            {{ saving ? 'Guardando…' : 'Guardar' }}
+          </button>
+        </div>
+      </form>
+    }
+  }
+</section>

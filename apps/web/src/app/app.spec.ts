@@ -15,6 +15,15 @@ describe('App', () => {
     expect(element.querySelector('.app-name')?.textContent).toContain('Print3D Planner');
   });
 
+  it('links to the availability page from the main navigation', async () => {
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+
+    const element = fixture.nativeElement as HTMLElement;
+    const link = element.querySelector('nav a[href="/disponibilidad"]');
+    expect(link?.textContent.trim()).toBe('Disponibilidad');
+  });
+
   it('offers a skip link that targets the main landmark', async () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();

@@ -9,6 +9,7 @@ import { pinoHttp } from 'pino-http';
 import type { Config } from './config/env.js';
 import { createHealthModule, type Clock, type DependencyProbe } from './modules/health/index.js';
 import { createFilamentCostReader, createFilamentsModule } from './modules/filaments/index.js';
+import { createAvailabilityModule } from './modules/availability/index.js';
 import { createCostsModule } from './modules/costs/index.js';
 import { createGcodeModule } from './modules/gcode/index.js';
 import {
@@ -37,6 +38,8 @@ export interface AppDependencies {
   projects?: Partial<Omit<Parameters<typeof createProjectsModule>[0], 'clock'>>;
   /** Lets tests replace the settings repository and the three read ports with fakes. */
   costs?: Partial<Omit<Parameters<typeof createCostsModule>[0], 'clock'>>;
+  /** Lets tests replace the schedule repository with a fake. */
+  availability?: Partial<Omit<Parameters<typeof createAvailabilityModule>[0], 'clock'>>;
 }
 
 const systemClock: Clock = { now: () => new Date() };
@@ -51,6 +54,7 @@ export function createApp({
   parts = {},
   projects = {},
   costs = {},
+  availability = {},
 }: AppDependencies): Express {
   const app = express();
 
@@ -133,6 +137,7 @@ export function createApp({
       ...costs,
     }).router,
   );
+  v1.use('/availability', createAvailabilityModule({ clock, ...availability }).router);
   v1.use('/gcode-analyses', createGcodeModule().router);
 
   // 7. Fallbacks: unknown route, then the single error handler. These stay last.
