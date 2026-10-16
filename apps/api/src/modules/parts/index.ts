@@ -49,6 +49,26 @@ export function createPartCostReader(
   };
 }
 
+/**
+ * Builds the queues module's part port (ADR 0017, 0025): name and print time of the live parts
+ * among the ids, in one query. An id missing from the answer is unknown or deleted.
+ */
+export function createQueuePartLookup(
+  repository: Pick<PartRepository, 'findLiveByIds'> = createMongoPartRepository(),
+): (
+  ids: string[],
+) => Promise<ReadonlyMap<string, { name: string; estimatedPrintSeconds: number }>> {
+  return async (ids) => {
+    const found = await repository.findLiveByIds(ids);
+    return new Map(
+      found.map((part) => [
+        part.id,
+        { name: part.name, estimatedPrintSeconds: part.estimatedPrintSeconds },
+      ]),
+    );
+  };
+}
+
 export function createPartsModule(deps: {
   clock: Clock;
   /** Tests inject a fake; production uses MongoDB. */

@@ -9,6 +9,7 @@ import { registerGcodePaths } from '../modules/gcode/index.js';
 import { registerPartsPaths } from '../modules/parts/index.js';
 import { registerPrintersPaths } from '../modules/printers/index.js';
 import { registerProjectsPaths } from '../modules/projects/index.js';
+import { registerQueuesPaths } from '../modules/queues/index.js';
 import { problemSchema } from '../shared/http/problem.js';
 
 export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV31['generateDocument']> {
@@ -22,6 +23,7 @@ export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV31['generate
   registerProjectsPaths(registry);
   registerCostsPaths(registry);
   registerAvailabilityPaths(registry);
+  registerQueuesPaths(registry);
   registerGcodePaths(registry);
   // Feature modules register their paths here as they are added.
 

@@ -1519,6 +1519,220 @@ components:
         - startMinute
         - endMinute
       additionalProperties: false
+    Queue:
+      type: object
+      properties:
+        projectId:
+          type: string
+        goal:
+          type: string
+          enum:
+            - deadline
+            - fastest
+            - minimal_idle
+          description: "deadline: meet deadlines. fastest: finish earliest. minimal_idle: least idle time."
+        mode:
+          type: string
+          enum:
+            - single
+            - multi
+          description: "single: one printer. multi: 2 to 10."
+        printerIds:
+          type: array
+          items:
+            type: string
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/QueueLine"
+        totals:
+          $ref: "#/components/schemas/QueueTotals"
+        version:
+          type: integer
+          description: Send this back when editing.
+        createdAt:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+        updatedAt:
+          type: string
+          format: date-time
+          example: 2026-01-01T12:00:00.000Z
+      required:
+        - projectId
+        - goal
+        - mode
+        - printerIds
+        - lines
+        - totals
+        - version
+        - createdAt
+        - updatedAt
+    QueueLine:
+      type: object
+      properties:
+        partId:
+          type: string
+        quantity:
+          type: integer
+        completed:
+          type: integer
+        pendingUnits:
+          type: integer
+        partName:
+          type:
+            - string
+            - "null"
+        estimatedPrintSeconds:
+          type:
+            - integer
+            - "null"
+        partDeleted:
+          type: boolean
+          description: The part is no longer live.
+      required:
+        - partId
+        - quantity
+        - completed
+        - pendingUnits
+        - partName
+        - estimatedPrintSeconds
+        - partDeleted
+    QueueTotals:
+      type: object
+      properties:
+        totalUnits:
+          type: integer
+        completedUnits:
+          type: integer
+        pendingUnits:
+          type: integer
+        pendingSeconds:
+          type: integer
+          description: Pending units times print time. Lines with a deleted part count 0.
+      required:
+        - totalUnits
+        - completedUnits
+        - pendingUnits
+        - pendingSeconds
+    CreateQueueRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          pattern: ^[0-9a-f]{24}$/i
+          example: 66f0c0ffee0123456789abcd
+        goal:
+          type: string
+          enum:
+            - deadline
+            - fastest
+            - minimal_idle
+          description: "deadline: meet deadlines. fastest: finish earliest. minimal_idle: least idle time."
+        mode:
+          type: string
+          enum:
+            - single
+            - multi
+          description: "single: one printer. multi: 2 to 10."
+        printerIds:
+          type: array
+          items:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          maxItems: 10
+          description: "Live, not archived printers. Single mode: exactly 1. Multi mode: 2 to 10. No repeats."
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/QueueLineInput"
+          maxItems: 100
+          description: "Omit to copy the project lines with completed 0. The queue keeps its own copy: later
+            edits to the project do not change it."
+      required:
+        - projectId
+        - goal
+        - mode
+        - printerIds
+      additionalProperties: false
+    QueueLineInput:
+      type: object
+      properties:
+        partId:
+          type: string
+          pattern: ^[0-9a-f]{24}$/i
+          example: 66f0c0ffee0123456789abcd
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        completed:
+          type: integer
+          minimum: 0
+          maximum: 1000
+          default: 0
+      required:
+        - partId
+        - quantity
+      additionalProperties: false
+    UpdateQueueRequest:
+      type: object
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        goal:
+          type: string
+          enum:
+            - deadline
+            - fastest
+            - minimal_idle
+          description: "deadline: meet deadlines. fastest: finish earliest. minimal_idle: least idle time."
+        mode:
+          type: string
+          enum:
+            - single
+            - multi
+          description: "single: one printer. multi: 2 to 10."
+        printerIds:
+          type: array
+          items:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          maxItems: 10
+          description: "Live, not archived printers. Single mode: exactly 1. Multi mode: 2 to 10. No repeats."
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/QueueLineEdit"
+          maxItems: 100
+          description: Up to 100 lines, each part at most once, completed at most the quantity. completed is
+            required.
+      required:
+        - version
+      additionalProperties: false
+    QueueLineEdit:
+      type: object
+      properties:
+        partId:
+          type: string
+          pattern: ^[0-9a-f]{24}$/i
+          example: 66f0c0ffee0123456789abcd
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        completed:
+          type: integer
+          minimum: 0
+          maximum: 1000
+      required:
+        - partId
+        - quantity
+        - completed
+      additionalProperties: false
     GcodeAnalysis:
       type: object
       properties:
@@ -2820,6 +3034,182 @@ paths:
                 $ref: "#/components/schemas/Problem"
         "503":
           description: The schedule is temporarily unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/queues:
+    post:
+      operationId: createQueue
+      tags:
+        - Queues
+      summary: Create the print queue of a project
+      description: A project has at most one queue; its id is the project id. Without `lines` they are
+        copied from the project items. Every problem is reported at once with indexed paths
+        ("lines.2.partId", "printerIds.1"). Archived printers cannot be selected.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateQueueRequest"
+      responses:
+        "201":
+          description: Created. The Location header points to the queue.
+          headers:
+            Location:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Queue"
+        "400":
+          description: Invalid input, unknown project, part or printer, or a wrong printer count.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: The project already has a queue (issue path "projectId").
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: The project, part or printer data is temporarily unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/queues/{projectId}:
+    get:
+      operationId: getQueue
+      tags:
+        - Queues
+      summary: Get the print queue of a project
+      description: Each line shows the part as it is now (`partDeleted` when it is gone) and the progress
+        of the project is summed in `totals`.
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: projectId
+          in: path
+      responses:
+        "200":
+          description: The queue.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Queue"
+        "400":
+          description: Malformed id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: The project has no queue.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: The part data is temporarily unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    patch:
+      operationId: updateQueue
+      tags:
+        - Queues
+      summary: Edit the print queue of a project
+      description: Send the version last seen and any of goal, mode, printerIds and lines (replaced
+        whole). The rules apply to the merged result, so changing `mode` may need new `printerIds`.
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: projectId
+          in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateQueueRequest"
+      responses:
+        "200":
+          description: The updated queue, with the new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Queue"
+        "400":
+          description: Invalid input, unknown part or printer, or a wrong printer count.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: The project has no queue.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Stale version (issue path "version").
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: The part, printer or queue data is temporarily unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    delete:
+      operationId: deleteQueue
+      tags:
+        - Queues
+      summary: Delete the print queue of a project
+      description: "Permanent: the queue is derived data and can be created again. Needs `?version=N`."
+      parameters:
+        - schema:
+            type: string
+            pattern: ^[0-9a-f]{24}$/i
+            example: 66f0c0ffee0123456789abcd
+          required: true
+          name: projectId
+          in: path
+        - schema:
+            type: integer
+            minimum: 1
+          required: true
+          name: version
+          in: query
+      responses:
+        "204":
+          description: Deleted.
+        "400":
+          description: Malformed id or missing version.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: The project has no queue.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Stale version (issue path "version").
           content:
             application/problem+json:
               schema:

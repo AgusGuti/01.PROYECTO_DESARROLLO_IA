@@ -680,6 +680,102 @@ export type InterventionRange = {
     endMinute: number;
 };
 
+export type Queue = {
+    projectId: string;
+    /**
+     * deadline: meet deadlines. fastest: finish earliest. minimal_idle: least idle time.
+     */
+    goal: 'deadline' | 'fastest' | 'minimal_idle';
+    /**
+     * single: one printer. multi: 2 to 10.
+     */
+    mode: 'single' | 'multi';
+    printerIds: Array<string>;
+    lines: Array<QueueLine>;
+    totals: QueueTotals;
+    /**
+     * Send this back when editing.
+     */
+    version: number;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type QueueLine = {
+    partId: string;
+    quantity: number;
+    completed: number;
+    pendingUnits: number;
+    partName: string | null;
+    estimatedPrintSeconds: number | null;
+    /**
+     * The part is no longer live.
+     */
+    partDeleted: boolean;
+};
+
+export type QueueTotals = {
+    totalUnits: number;
+    completedUnits: number;
+    pendingUnits: number;
+    /**
+     * Pending units times print time. Lines with a deleted part count 0.
+     */
+    pendingSeconds: number;
+};
+
+export type CreateQueueRequest = {
+    projectId: string;
+    /**
+     * deadline: meet deadlines. fastest: finish earliest. minimal_idle: least idle time.
+     */
+    goal: 'deadline' | 'fastest' | 'minimal_idle';
+    /**
+     * single: one printer. multi: 2 to 10.
+     */
+    mode: 'single' | 'multi';
+    /**
+     * Live, not archived printers. Single mode: exactly 1. Multi mode: 2 to 10. No repeats.
+     */
+    printerIds: Array<string>;
+    /**
+     * Omit to copy the project lines with completed 0. The queue keeps its own copy: later edits to the project do not change it.
+     */
+    lines?: Array<QueueLineInput>;
+};
+
+export type QueueLineInput = {
+    partId: string;
+    quantity: number;
+    completed?: number;
+};
+
+export type UpdateQueueRequest = {
+    version: number;
+    /**
+     * deadline: meet deadlines. fastest: finish earliest. minimal_idle: least idle time.
+     */
+    goal?: 'deadline' | 'fastest' | 'minimal_idle';
+    /**
+     * single: one printer. multi: 2 to 10.
+     */
+    mode?: 'single' | 'multi';
+    /**
+     * Live, not archived printers. Single mode: exactly 1. Multi mode: 2 to 10. No repeats.
+     */
+    printerIds?: Array<string>;
+    /**
+     * Up to 100 lines, each part at most once, completed at most the quantity. completed is required.
+     */
+    lines?: Array<QueueLineEdit>;
+};
+
+export type QueueLineEdit = {
+    partId: string;
+    quantity: number;
+    completed: number;
+};
+
 export type GcodeAnalysis = {
     slicer: 'cura';
     estimatedPrintSeconds: number;
@@ -1689,6 +1785,150 @@ export type SaveInterventionScheduleResponses = {
 };
 
 export type SaveInterventionScheduleResponse = SaveInterventionScheduleResponses[keyof SaveInterventionScheduleResponses];
+
+export type CreateQueueData = {
+    body?: CreateQueueRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/queues';
+};
+
+export type CreateQueueErrors = {
+    /**
+     * Invalid input, unknown project, part or printer, or a wrong printer count.
+     */
+    400: Problem;
+    /**
+     * The project already has a queue (issue path "projectId").
+     */
+    409: Problem;
+    /**
+     * The project, part or printer data is temporarily unavailable.
+     */
+    503: Problem;
+};
+
+export type CreateQueueError = CreateQueueErrors[keyof CreateQueueErrors];
+
+export type CreateQueueResponses = {
+    /**
+     * Created. The Location header points to the queue.
+     */
+    201: Queue;
+};
+
+export type CreateQueueResponse = CreateQueueResponses[keyof CreateQueueResponses];
+
+export type DeleteQueueData = {
+    body?: never;
+    path: {
+        projectId: string;
+    };
+    query: {
+        version: number;
+    };
+    url: '/api/v1/queues/{projectId}';
+};
+
+export type DeleteQueueErrors = {
+    /**
+     * Malformed id or missing version.
+     */
+    400: Problem;
+    /**
+     * The project has no queue.
+     */
+    404: Problem;
+    /**
+     * Stale version (issue path "version").
+     */
+    409: Problem;
+};
+
+export type DeleteQueueError = DeleteQueueErrors[keyof DeleteQueueErrors];
+
+export type DeleteQueueResponses = {
+    /**
+     * Deleted.
+     */
+    204: void;
+};
+
+export type DeleteQueueResponse = DeleteQueueResponses[keyof DeleteQueueResponses];
+
+export type GetQueueData = {
+    body?: never;
+    path: {
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/v1/queues/{projectId}';
+};
+
+export type GetQueueErrors = {
+    /**
+     * Malformed id.
+     */
+    400: Problem;
+    /**
+     * The project has no queue.
+     */
+    404: Problem;
+    /**
+     * The part data is temporarily unavailable.
+     */
+    503: Problem;
+};
+
+export type GetQueueError = GetQueueErrors[keyof GetQueueErrors];
+
+export type GetQueueResponses = {
+    /**
+     * The queue.
+     */
+    200: Queue;
+};
+
+export type GetQueueResponse = GetQueueResponses[keyof GetQueueResponses];
+
+export type UpdateQueueData = {
+    body?: UpdateQueueRequest;
+    path: {
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/v1/queues/{projectId}';
+};
+
+export type UpdateQueueErrors = {
+    /**
+     * Invalid input, unknown part or printer, or a wrong printer count.
+     */
+    400: Problem;
+    /**
+     * The project has no queue.
+     */
+    404: Problem;
+    /**
+     * Stale version (issue path "version").
+     */
+    409: Problem;
+    /**
+     * The part, printer or queue data is temporarily unavailable.
+     */
+    503: Problem;
+};
+
+export type UpdateQueueError = UpdateQueueErrors[keyof UpdateQueueErrors];
+
+export type UpdateQueueResponses = {
+    /**
+     * The updated queue, with the new version.
+     */
+    200: Queue;
+};
+
+export type UpdateQueueResponse = UpdateQueueResponses[keyof UpdateQueueResponses];
 
 export type AnalyzeGcodeData = {
     body?: AnalyzeGcodeRequest;

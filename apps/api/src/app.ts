@@ -16,9 +16,15 @@ import {
   createPartCostReader,
   createPartLookup,
   createPartsModule,
+  createQueuePartLookup,
 } from './modules/parts/index.js';
-import { createPrinterCostReader, createPrintersModule } from './modules/printers/index.js';
-import { createProjectsModule } from './modules/projects/index.js';
+import {
+  createPrinterCostReader,
+  createPrintersModule,
+  createSelectablePrinterLookup,
+} from './modules/printers/index.js';
+import { createProjectsModule, createQueueProjectReader } from './modules/projects/index.js';
+import { createQueuesModule } from './modules/queues/index.js';
 import { AppError } from './shared/errors/app-error.js';
 import { createErrorHandler, notFoundHandler } from './shared/http/error-handler.js';
 import { assignRequestId, REQUEST_ID_HEADER } from './shared/http/request-id.js';
@@ -40,6 +46,8 @@ export interface AppDependencies {
   costs?: Partial<Omit<Parameters<typeof createCostsModule>[0], 'clock'>>;
   /** Lets tests replace the schedule repository with a fake. */
   availability?: Partial<Omit<Parameters<typeof createAvailabilityModule>[0], 'clock'>>;
+  /** Lets tests replace the queues repository and the three read ports with fakes. */
+  queues?: Partial<Omit<Parameters<typeof createQueuesModule>[0], 'clock'>>;
 }
 
 const systemClock: Clock = { now: () => new Date() };
@@ -55,6 +63,7 @@ export function createApp({
   projects = {},
   costs = {},
   availability = {},
+  queues = {},
 }: AppDependencies): Express {
   const app = express();
 
@@ -138,6 +147,17 @@ export function createApp({
     }).router,
   );
   v1.use('/availability', createAvailabilityModule({ clock, ...availability }).router);
+  // Queues read projects, parts and printers only through ports built here (ADR 0017, 0025).
+  v1.use(
+    '/queues',
+    createQueuesModule({
+      clock,
+      projectReader: createQueueProjectReader(projects.repository),
+      partLookup: createQueuePartLookup(parts.repository),
+      printerLookup: createSelectablePrinterLookup(printers.repository),
+      ...queues,
+    }).router,
+  );
   v1.use('/gcode-analyses', createGcodeModule().router);
 
   // 7. Fallbacks: unknown route, then the single error handler. These stay last.
