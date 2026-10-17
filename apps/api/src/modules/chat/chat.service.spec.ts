@@ -109,6 +109,51 @@ describe('chat service', () => {
       expect(lines.join('')).not.toContain('delete_project');
     });
 
+    describe('create_queue', () => {
+      const printerId = 'bbbbbbbbbbbbbbbbbbbbbbbb';
+      const queue = {
+        kind: 'create_queue',
+        payload: {
+          projectId: partId.toUpperCase(),
+          goal: 'fastest',
+          mode: 'single',
+          printerIds: [printerId],
+        },
+        projectName: 'Soportes',
+        printerNames: [{ printerId, name: 'Prusa' }],
+      };
+
+      it('passes a valid queue proposal through, ids lower-cased', async () => {
+        const { service, lines } = setup({
+          ask: () => Promise.resolve({ reply: 'Te propongo una cola', proposal: queue }),
+        });
+
+        const result = await service.ask('crea una cola');
+
+        expect(result.proposal).toEqual({
+          ...queue,
+          payload: { ...queue.payload, projectId: partId },
+        });
+        expect(lines.join('')).toContain('"proposal":"valid"');
+      });
+
+      it.each([
+        ['multi with one printer', { ...queue, payload: { ...queue.payload, mode: 'multi' } }],
+        ['a lines key', { ...queue, payload: { ...queue.payload, lines: [] } }],
+        [
+          'a name for another printer',
+          { ...queue, printerNames: [{ printerId: partId, name: 'x' }] },
+        ],
+      ])('drops %s but keeps the reply', async (_name, proposal) => {
+        const { service, lines } = setup({
+          ask: () => Promise.resolve({ reply: 'Hola', proposal }),
+        });
+
+        await expect(service.ask('x')).resolves.toEqual({ reply: 'Hola', proposal: null });
+        expect(lines.join('')).toContain('"proposal":"dropped"');
+      });
+    });
+
     it('answers null when the assistant sends no proposal or null', async () => {
       const absent = setup({ ask: () => Promise.resolve({ reply: 'a' }) });
       const nul = setup({ ask: () => Promise.resolve({ reply: 'a', proposal: null }) });

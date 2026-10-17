@@ -65,7 +65,7 @@ const proposalPayloadSchema = z
   })
   .openapi('ProposalCreateProjectPayload');
 
-export const proposalSchema = z
+const createProjectProposalSchema = z
   .strictObject({
     kind: z.literal('create_project'),
     payload: proposalPayloadSchema,
@@ -96,10 +96,65 @@ export const proposalSchema = z
       });
     }
   })
+  .openapi('ProposalCreateProject');
+
+// Create-queue rules DUPLICATE the create body of queues/queues.schemas.ts and queues.domain.ts
+// (without `lines`: the queues API copies them from the project). The queues module stays the authority.
+const QUEUE_GOALS = ['deadline', 'fastest', 'minimal_idle'] as const;
+const MAX_QUEUE_PRINTERS = 10;
+
+const createQueuePayloadSchema = z
+  .strictObject({
+    projectId: proposalPartId,
+    goal: z.enum(QUEUE_GOALS),
+    mode: z.enum(['single', 'multi']),
+    printerIds: z.array(proposalPartId).min(1).max(MAX_QUEUE_PRINTERS),
+  })
+  .openapi('ProposalCreateQueuePayload');
+
+const createQueueProposalSchema = z
+  .strictObject({
+    kind: z.literal('create_queue'),
+    payload: createQueuePayloadSchema,
+    projectName: proposalText(100, 'Soportes para el taller'),
+    printerNames: z
+      .array(z.strictObject({ printerId: proposalPartId, name: proposalText(100, 'Prusa MK4') }))
+      .max(MAX_QUEUE_PRINTERS),
+  })
+  .superRefine((proposal, ctx) => {
+    const { mode, printerIds } = proposal.payload;
+    if (new Set(printerIds).size !== printerIds.length) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'A printer appears twice.',
+        path: ['payload', 'printerIds'],
+      });
+    }
+    if (mode === 'single' ? printerIds.length !== 1 : printerIds.length < 2) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Single mode needs exactly 1 printer; multi mode 2 to 10.',
+        path: ['payload', 'printerIds'],
+      });
+    }
+    const named = proposal.printerNames.map((entry) => entry.printerId);
+    if (new Set(named).size !== named.length || named.some((id) => !printerIds.includes(id))) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'printerNames must be unique and only for printers in payload.printerIds.',
+        path: ['printerNames'],
+      });
+    }
+  })
+  .openapi('ProposalCreateQueue');
+
+export const proposalSchema = z
+  .discriminatedUnion('kind', [createProjectProposalSchema, createQueueProposalSchema])
   .openapi('AssistantProposal', {
     description:
       'A suggested action. It is NOT executed: the browser shows it, and only after the user ' +
-      'confirms does it send the payload to POST /api/v1/projects, which validates it again.',
+      'confirms does it send the payload to POST /api/v1/projects (create_project) or ' +
+      'POST /api/v1/queues (create_queue, the queues API copies the project lines), which validate it again.',
   });
 
 export const chatResponseSchema = z

@@ -43,7 +43,7 @@ describe('proposalSchema', () => {
       proposal({ name: 'N', items: [line(ID.toUpperCase(), 1)] }),
     );
 
-    expect(parsed.payload.items).toEqual([line(ID, 1)]);
+    expect(parsed.kind === 'create_project' && parsed.payload.items).toEqual([line(ID, 1)]);
   });
 
   it.each([
@@ -80,6 +80,81 @@ describe('proposalSchema', () => {
       'an item name with an unknown key',
       proposal({ name: 'N', items: [line(ID, 1)] }, [{ partId: ID, name: 'x', id: 1 }]),
     ],
+  ])('rejects %s', (_name, input) => {
+    expect(proposalSchema.safeParse(input).success).toBe(false);
+  });
+});
+
+const P1 = 'b'.repeat(24);
+const P2 = 'c'.repeat(24);
+const queue = (payload: object = {}, extra: object = {}) => ({
+  kind: 'create_queue',
+  payload: { projectId: ID, goal: 'fastest', mode: 'single', printerIds: [P1], ...payload },
+  projectName: 'Soportes',
+  printerNames: [{ printerId: P1, name: 'Prusa' }],
+  ...extra,
+});
+const ids = (n: number) => Array.from({ length: n }, (_v, i) => i.toString(16).padStart(24, '0'));
+const none = { printerNames: [] };
+
+describe('proposalSchema create_queue', () => {
+  it.each([
+    ['single with one printer', queue()],
+    ['multi with two printers', queue({ mode: 'multi', printerIds: [P1, P2] }, none)],
+    ['multi with ten printers', queue({ mode: 'multi', printerIds: ids(10) }, none)],
+    ['goal deadline', queue({ goal: 'deadline' })],
+    ['goal minimal_idle', queue({ goal: 'minimal_idle' })],
+  ])('accepts %s', (_name, input) => {
+    expect(proposalSchema.safeParse(input).success).toBe(true);
+  });
+
+  it('lower-cases ids', () => {
+    const parsed = proposalSchema.parse(queue({ projectId: ID.toUpperCase() }));
+
+    expect(parsed.kind === 'create_queue' && parsed.payload.projectId).toBe(ID);
+  });
+
+  it.each([
+    ['an unknown top-level key', queue({}, { extra: 1 })],
+    ['an unknown payload key', queue({ lines: [] })],
+    ['a bad project id', queue({ projectId: 'xyz' })],
+    ['a bad printer id', queue({ printerIds: ['xyz'] }, none)],
+    ['an unknown goal', queue({ goal: 'cheapest' })],
+    ['an unknown mode', queue({ mode: 'dual' })],
+    ['single with two printers', queue({ printerIds: [P1, P2] }, none)],
+    ['single with no printers', queue({ printerIds: [] }, none)],
+    ['multi with one printer', queue({ mode: 'multi' })],
+    ['multi with eleven printers', queue({ mode: 'multi', printerIds: ids(11) }, none)],
+    ['a repeated printer', queue({ mode: 'multi', printerIds: [P1, P1] }, none)],
+    [
+      'a name for a printer not selected',
+      queue({}, { printerNames: [{ printerId: P2, name: 'x' }] }),
+    ],
+    [
+      'a repeated printer name',
+      queue(
+        {},
+        {
+          printerNames: [
+            { printerId: P1, name: 'x' },
+            { printerId: P1, name: 'y' },
+          ],
+        },
+      ),
+    ],
+    ['no project name', queue({}, { projectName: undefined })],
+    ['an empty project name', queue({}, { projectName: ' ' })],
+    ['a 101-character project name', queue({}, { projectName: 'a'.repeat(101) })],
+    ['a control character in the project name', queue({}, { projectName: 'a\nb' })],
+    [
+      'a 101-character printer name',
+      queue({}, { printerNames: [{ printerId: P1, name: 'a'.repeat(101) }] }),
+    ],
+    [
+      'a printer name with an unknown key',
+      queue({}, { printerNames: [{ printerId: P1, name: 'x', id: 1 }] }),
+    ],
+    ['itemNames from the other kind', queue({}, { itemNames: [] })],
   ])('rejects %s', (_name, input) => {
     expect(proposalSchema.safeParse(input).success).toBe(false);
   });

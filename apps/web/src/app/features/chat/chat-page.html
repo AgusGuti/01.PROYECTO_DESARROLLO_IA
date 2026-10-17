@@ -14,33 +14,28 @@
         @let card = cards()[message.id];
         <div class="proposal" role="group" aria-label="Propuesta del asistente">
           <p class="text">{{ view.title }}</p>
-          @if (view.description) {
-            <p class="text">Descripción: {{ view.description }}</p>
+          @for (detail of view.details; track $index) {
+            <p class="text">{{ detail }}</p>
           }
-          @if (view.priority) {
-            <p class="text">Prioridad: {{ view.priority }}</p>
-          }
-          @if (view.deadline) {
-            <p class="text">Fecha límite: {{ view.deadline }}</p>
-          }
-          @if (view.items.length > 0) {
-            <p class="text">Piezas:</p>
+          @if (view.listTitle) {
+            <p class="text">{{ view.listTitle }}</p>
             <ul>
-              @for (line of view.items; track $index) {
+              @for (line of view.list; track $index) {
                 <li class="text">{{ line }}</li>
               }
             </ul>
+          }
+          @if (view.footnote) {
+            <p class="text">{{ view.footnote }}</p>
           }
           @switch (card?.kind) {
             @case ('created') {
               @if (card?.kind === 'created') {
                 <p class="text">
-                  Proyecto creado: «{{ card.name }}».
-                  <a
-                    id="proposal-link-{{ message.id }}"
-                    [routerLink]="['/proyectos', card.id, 'editar']"
-                    >Abrir el proyecto</a
-                  >
+                  {{ card.text }}
+                  <a id="proposal-link-{{ message.id }}" [routerLink]="card.link.commands">{{
+                    card.link.text
+                  }}</a>
                 </p>
               }
             }
@@ -53,13 +48,15 @@
                 <p class="text">{{ card.message }}</p>
               }
               @if (card?.kind === 'sending') {
-                <p class="note">Creando el proyecto…</p>
+                <p class="note">{{ view.sendingText }}</p>
               }
               <div class="actions">
                 @if (card?.kind === 'failed') {
-                  <button type="button" (click)="confirm(message)">Reintentar</button>
-                  @if (card.uncertain) {
-                    <a routerLink="/proyectos">Ir a Proyectos</a>
+                  @if (card.canRetry) {
+                    <button type="button" (click)="confirm(message)">Reintentar</button>
+                  }
+                  @if (card.link; as link) {
+                    <a [routerLink]="link.commands">{{ link.text }}</a>
                   }
                 } @else {
                   <button

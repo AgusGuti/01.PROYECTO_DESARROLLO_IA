@@ -57,7 +57,7 @@ class FakeApi:
         self.requests: list[httpx.Request] = []
         self._routes = routes
 
-    def _handle(self, request: httpx.Request) -> httpx.Response:
+    def handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         outcome = self._routes.get((request.method, request.url.path))
         if outcome is None:
@@ -67,5 +67,5 @@ class FakeApi:
         return outcome
 
     def toolbox(self) -> Toolbox:
-        transport = httpx.MockTransport(self._handle)
+        transport = httpx.MockTransport(self.handle)
         return Toolbox(ApiClient("http://api.test", transport=transport), now=lambda: NOW)

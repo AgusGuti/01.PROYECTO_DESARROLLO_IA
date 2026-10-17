@@ -20,6 +20,8 @@ _STATUS_MESSAGES = {
     400: "La API rechazó la consulta.",
     404: "No se encontró lo pedido.",
 }
+# The only POSTs the assistant may send: both are stateless and save nothing (ADR 0030).
+_POST_ALLOWED = frozenset({"/api/v1/simulations", "/api/v1/simulations/optimizations"})
 _UNAVAILABLE = "La API no está disponible en este momento."
 
 
@@ -57,6 +59,9 @@ class ApiClient:
     ) -> M:
         """Only GET and the stateless simulation POST are expressible here. `path` is built
         by the tools from validated values only."""
+        if method == "POST" and path not in _POST_ALLOWED:  # exact match: no query, no traversal
+            logger.error("blocked POST to a path that is not allowed")
+            raise ToolError("Esa operación no está permitida.")
         try:
             async with self._client.stream(
                 method, path, params=params, json=json_body, timeout=read_seconds

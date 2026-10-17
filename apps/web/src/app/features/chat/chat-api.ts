@@ -4,7 +4,9 @@ import type {
   AssistantProposal,
   ChatRequest,
   CreateProjectRequest,
+  CreateQueueRequest,
   Project,
+  Queue,
 } from '@print3d/api-contracts';
 import { map, type Observable } from 'rxjs';
 import { API_BASE_URL } from '../../core/api/api-config';
@@ -19,6 +21,9 @@ export interface ChatReply {
 
 const PRIORITIES: readonly unknown[] = ['low', 'normal', 'high', 'urgent'];
 
+const GOALS: readonly unknown[] = ['deadline', 'fastest', 'minimal_idle'];
+const MODES: readonly unknown[] = ['single', 'multi'];
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -27,12 +32,28 @@ function hasField(value: unknown, key: string, type: 'string' | 'number'): boole
   return isRecord(value) && typeof value[key] === type;
 }
 
+function isQueueProposal(value: Record<string, unknown>): boolean {
+  const payload = value['payload'];
+  if (!isRecord(payload) || typeof payload['projectId'] !== 'string') return false;
+  if (!GOALS.includes(payload['goal']) || !MODES.includes(payload['mode'])) return false;
+  const ids = payload['printerIds'];
+  if (!Array.isArray(ids) || !ids.every((id) => typeof id === 'string')) return false;
+  const names = value['printerNames'];
+  return (
+    typeof value['projectName'] === 'string' &&
+    Array.isArray(names) &&
+    names.every((n) => hasField(n, 'printerId', 'string') && hasField(n, 'name', 'string'))
+  );
+}
+
 /**
  * Runtime check of a proposal's SHAPE only (standard §9.3). Bounds were validated by the API
  * when it built the proposal, and POST /projects validates again on confirm.
  */
 export function isProposal(value: unknown): value is Proposal {
-  if (!isRecord(value) || value['kind'] !== 'create_project') return false;
+  if (!isRecord(value)) return false;
+  if (value['kind'] === 'create_queue') return isQueueProposal(value);
+  if (value['kind'] !== 'create_project') return false;
   const payload = value['payload'];
   if (!isRecord(payload) || typeof payload['name'] !== 'string') return false;
   if (payload['description'] !== undefined && typeof payload['description'] !== 'string') {
@@ -73,6 +94,11 @@ export function isCreatedProject(value: unknown): value is Project {
   return hasField(value, 'id', 'string') && hasField(value, 'name', 'string');
 }
 
+/** Runtime check of the created queue returned by POST /api/v1/queues. */
+export function isCreatedQueue(value: unknown): value is Queue {
+  return hasField(value, 'projectId', 'string') && hasField(value, 'goal', 'string');
+}
+
 @Injectable({ providedIn: 'root' })
 export class ChatApi {
   private readonly http = inject(HttpClient);
@@ -94,6 +120,18 @@ export class ChatApi {
           reply: response.reply,
           proposal: isProposal(response.proposal) ? response.proposal : null,
         };
+      }),
+    );
+  }
+
+  /** Sends a confirmed queue proposal. Not idempotent: never retried automatically. */
+  createQueue(payload: CreateQueueRequest): Observable<Queue> {
+    return this.http.post<unknown>(`${this.baseUrl}/api/v1/queues`, payload).pipe(
+      map((response) => {
+        if (!isCreatedQueue(response)) {
+          throw new ApiError(200, 'unexpected_response', 'El servidor respondió algo inesperado.');
+        }
+        return response;
       }),
     );
   }

@@ -37,10 +37,15 @@ const CREATED: Pick<Project, 'id' | 'name'> = { id: 'abc123', name: HOSTILE };
 async function render(
   ask: (message: string) => Observable<ChatReply>,
   createProject: (payload: unknown) => Observable<Pick<Project, 'id' | 'name'>> = () => of(CREATED),
+  createQueue: (payload: unknown) => Observable<{ projectId: string }> = () =>
+    of({ projectId: 'proj1' }),
 ) {
   TestBed.configureTestingModule({
     imports: [ChatPage],
-    providers: [provideRouter([]), { provide: ChatApi, useValue: { ask, createProject } }],
+    providers: [
+      provideRouter([]),
+      { provide: ChatApi, useValue: { ask, createProject, createQueue } },
+    ],
   });
   const fixture = TestBed.createComponent(ChatPage);
   await fixture.whenStable();
@@ -389,6 +394,109 @@ describe('ChatPage', () => {
       await page.click('Limpiar conversación');
 
       expect(card(page)).toBeNull();
+    });
+  });
+
+  describe('assistant queue proposal card', () => {
+    const QUEUE: Proposal = {
+      kind: 'create_queue',
+      payload: { projectId: 'proj1', goal: 'minimal_idle', mode: 'multi', printerIds: ['a', 'b'] },
+      projectName: HOSTILE,
+      printerNames: [{ printerId: 'a', name: 'Ender <b>3</b>' }],
+    };
+    type QueueCall = (payload: unknown) => Observable<{ projectId: string }>;
+    async function withQueueCard(createQueue?: QueueCall) {
+      const page = await render(() => of(reply('Armé una cola.', QUEUE)), undefined, createQueue);
+      await page.type('creá la cola');
+      await page.click('Enviar');
+      return page;
+    }
+    const card = (page: { element: HTMLElement }) =>
+      page.element.querySelector('[role="group"][aria-label="Propuesta del asistente"]');
+
+    it('renders the Spanish description from the payload, hostile text as text', async () => {
+      const page = await withQueueCard();
+      const text = card(page)?.textContent ?? '';
+
+      expect(text).toContain(`Crear la cola de impresión del proyecto «${HOSTILE}»`);
+      expect(text).toContain('Objetivo: Minimizar tiempos muertos');
+      expect(text).toContain('Modo: Varias impresoras');
+      expect(text).toContain('Ender <b>3</b>');
+      expect(text).toContain('Impresora');
+      expect(text).toContain('Las líneas se toman de las piezas del proyecto.');
+      expect(text).toContain('Todavía no se creó nada.');
+      expect(card(page)?.querySelector('img, b')).toBeNull();
+    });
+
+    it('sends the exact body once and shows Cola creada with a link', async () => {
+      const createQueue = vi.fn((_payload: unknown) => of({ projectId: 'proj1' }));
+      const page = await withQueueCard(createQueue);
+
+      page.button('Confirmar')?.click();
+      page.button('Confirmar')?.click();
+      await page.fixture.whenStable();
+
+      expect(createQueue).toHaveBeenCalledExactlyOnceWith(QUEUE.payload);
+      expect(card(page)?.textContent).toContain('Cola creada');
+      expect(card(page)?.querySelector('a')?.getAttribute('href')).toBe('/proyectos/proj1/cola');
+      expect(page.button('Confirmar')).toBeUndefined();
+    });
+
+    it('says the project already has a queue on 409, with no retry', async () => {
+      const page = await withQueueCard(() =>
+        throwError(() => new ApiError(409, 'conflict', 'SENTINEL dup')),
+      );
+
+      await page.click('Confirmar');
+
+      expect(card(page)?.textContent).toContain('Ese proyecto ya tiene una cola.');
+      expect(card(page)?.querySelector('a')?.getAttribute('href')).toBe('/proyectos/proj1/cola');
+      expect(page.button('Reintentar')).toBeUndefined();
+      expect(page.element.textContent).not.toContain('SENTINEL');
+    });
+
+    it('shows a fixed message on 400', async () => {
+      const page = await withQueueCard(() =>
+        throwError(() => new ApiError(400, 'validation_error', 'SENTINEL bad')),
+      );
+
+      await page.click('Confirmar');
+
+      expect(card(page)?.textContent).toContain('La API no aceptó la propuesta; revisá los datos.');
+      expect(page.button('Reintentar')).toBeDefined();
+      expect(page.element.textContent).not.toContain('SENTINEL');
+    });
+
+    it('warns it may exist on an uncertain failure', async () => {
+      const page = await withQueueCard(() =>
+        throwError(() => new ApiError(503, 'service_unavailable', 'SENTINEL down')),
+      );
+
+      await page.click('Confirmar');
+
+      expect(card(page)?.textContent).toContain('No pudimos confirmar si se creó');
+      expect(card(page)?.querySelector('a')?.getAttribute('href')).toBe('/proyectos');
+      expect(page.button('Reintentar')).toBeDefined();
+      expect(page.element.textContent).not.toContain('SENTINEL');
+    });
+
+    it('discards without sending anything', async () => {
+      const createQueue = vi.fn((_payload: unknown) => of({ projectId: 'proj1' }));
+      const page = await withQueueCard(createQueue);
+
+      await page.click('Descartar');
+
+      expect(card(page)?.textContent).toContain('Descartada');
+      expect(page.button('Confirmar')).toBeUndefined();
+      expect(createQueue).not.toHaveBeenCalled();
+    });
+
+    it('disables Limpiar conversación while the queue is being created', async () => {
+      const page = await withQueueCard(() => new Subject<{ projectId: string }>());
+
+      await page.click('Confirmar');
+
+      expect(page.button('Limpiar conversación')?.disabled).toBe(true);
     });
   });
 });
