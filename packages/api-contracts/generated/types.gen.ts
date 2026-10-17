@@ -1071,16 +1071,18 @@ export type ChatResponse = {
 };
 
 /**
- * A suggested action. It is NOT executed: the browser shows it, and only after the user confirms does it send the payload to POST /api/v1/projects, which validates it again.
+ * A suggested action. It is NOT executed: the browser shows it, and only after the user confirms does it send the payload to POST /api/v1/projects (create_project) or POST /api/v1/queues (create_queue, the queues API copies the project lines), which validate it again.
  */
-export type AssistantProposal = {
+export type AssistantProposal = ProposalCreateProject | ProposalCreateQueue | null;
+
+export type ProposalCreateProject = {
     kind: 'create_project';
     payload: ProposalCreateProjectPayload;
     itemNames: Array<{
         partId: string;
         name: string;
     }>;
-} | null;
+};
 
 export type ProposalCreateProjectPayload = {
     name: string;
@@ -1091,6 +1093,23 @@ export type ProposalCreateProjectPayload = {
         partId: string;
         quantity: number;
     }>;
+};
+
+export type ProposalCreateQueue = {
+    kind: 'create_queue';
+    payload: ProposalCreateQueuePayload;
+    projectName: string;
+    printerNames: Array<{
+        printerId: string;
+        name: string;
+    }>;
+};
+
+export type ProposalCreateQueuePayload = {
+    projectId: string;
+    goal: 'deadline' | 'fastest' | 'minimal_idle';
+    mode: 'single' | 'multi';
+    printerIds: Array<string>;
 };
 
 export type ChatRequest = {

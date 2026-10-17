@@ -11,7 +11,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { catchError, EMPTY, of, Subject, switchMap, tap } from 'rxjs';
+import { catchError, EMPTY, map, type Observable, of, Subject, switchMap, tap } from 'rxjs';
 import { ApiError } from '../../core/api/api-error';
 import { RouterLink } from '@angular/router';
 import { ChatApi, type Proposal } from './chat-api';
@@ -26,13 +26,28 @@ const REJECTED = 'La API no aceptó la propuesta; revisá los datos en Proyectos
 const UNCERTAIN =
   'No pudimos confirmar si se creó el proyecto. Revisá Proyectos antes de reintentar.';
 
+const REJECTED_QUEUE = 'La API no aceptó la propuesta; revisá los datos.';
+const QUEUE_EXISTS = 'Ese proyecto ya tiene una cola.';
+const GOAL_LABELS = {
+  deadline: 'Cumplir las fechas límite',
+  fastest: 'Terminar lo antes posible',
+  minimal_idle: 'Minimizar tiempos muertos',
+} as const;
+const MODE_LABELS = { single: 'Una impresora', multi: 'Varias impresoras' } as const;
+
+interface CardLink {
+  readonly commands: readonly string[];
+  readonly text: string;
+}
+
 /** Everything the card shows, built here from the payload and never from model text. */
 interface ProposalView {
   readonly title: string;
-  readonly description: string | null;
-  readonly priority: string | null;
-  readonly deadline: string | null;
-  readonly items: readonly string[];
+  readonly details: readonly string[];
+  readonly listTitle: string | null;
+  readonly list: readonly string[];
+  readonly footnote: string | null;
+  readonly sendingText: string;
 }
 
 interface ChatMessage {
@@ -47,22 +62,74 @@ interface ChatMessage {
 type CardState =
   | { readonly kind: 'pending' }
   | { readonly kind: 'sending' }
-  | { readonly kind: 'failed'; readonly message: string; readonly uncertain: boolean }
-  | { readonly kind: 'created'; readonly id: string; readonly name: string }
+  | {
+      readonly kind: 'failed';
+      readonly message: string;
+      readonly canRetry: boolean;
+      readonly link: CardLink | null;
+    }
+  | { readonly kind: 'created'; readonly text: string; readonly link: CardLink }
   | { readonly kind: 'discarded' };
 
 function proposalView(proposal: Proposal): ProposalView {
+  if (proposal.kind === 'create_queue') {
+    const { payload, printerNames } = proposal;
+    return {
+      title: `Crear la cola de impresión del proyecto «${proposal.projectName}»`,
+      details: [`Objetivo: ${GOAL_LABELS[payload.goal]}`, `Modo: ${MODE_LABELS[payload.mode]}`],
+      listTitle: 'Impresoras:',
+      list: payload.printerIds.map(
+        (id) => printerNames.find((n) => n.printerId === id)?.name ?? 'Impresora',
+      ),
+      footnote: 'Las líneas se toman de las piezas del proyecto.',
+      sendingText: 'Creando la cola…',
+    };
+  }
   const { payload, itemNames } = proposal;
   const [year, month, day] = payload.deadline?.split('-') ?? [];
+  const details: string[] = [];
+  if (payload.description) details.push(`Descripción: ${payload.description}`);
+  if (payload.priority) details.push(`Prioridad: ${PRIORITY_LABELS[payload.priority]}`);
+  if (payload.deadline) details.push(`Fecha límite: ${day}-${month}-${year}`);
+  const items = payload.items ?? [];
   return {
     title: `Crear el proyecto «${payload.name}»`,
-    description: payload.description === '' ? null : (payload.description ?? null),
-    priority: payload.priority ? PRIORITY_LABELS[payload.priority] : null,
-    deadline: payload.deadline ? `${day}-${month}-${year}` : null,
-    items: (payload.items ?? []).map(
+    details,
+    listTitle: items.length > 0 ? 'Piezas:' : null,
+    list: items.map(
       (line) =>
         `${line.quantity} × ${itemNames.find((n) => n.partId === line.partId)?.name ?? 'Pieza'}`,
     ),
+    footnote: null,
+    sendingText: 'Creando el proyecto…',
+  };
+}
+
+/** Maps a confirm failure to a fixed card. Only a 400 proves that nothing was created. */
+function failureCard(proposal: Proposal, error: unknown): CardState {
+  const status = error instanceof ApiError ? error.status : null;
+  const isQueue = proposal.kind === 'create_queue';
+  if (status === 400) {
+    return {
+      kind: 'failed',
+      message: isQueue ? REJECTED_QUEUE : REJECTED,
+      canRetry: true,
+      link: null,
+    };
+  }
+  if (isQueue && status === 409) {
+    return {
+      kind: 'failed',
+      message: QUEUE_EXISTS,
+      canRetry: false,
+      link: { commands: ['/proyectos', proposal.payload.projectId, 'cola'], text: 'Ir a la cola' },
+    };
+  }
+  return {
+    kind: 'failed',
+    message: UNCERTAIN,
+    canRetry: true,
+    link: { commands: ['/proyectos'], text: 'Ir a Proyectos' },
   };
 }
 
@@ -181,33 +248,50 @@ export class ChatPage {
   protected confirm(message: ChatMessage): void {
     const card = this.cards()[message.id];
     // Single confirmation: a second click, or a click after discard, finds no valid state.
-    if (!message.proposal || (card?.kind !== 'pending' && card?.kind !== 'failed')) return;
+    const proposal = message.proposal;
+    if (!proposal || (card?.kind !== 'pending' && card?.kind !== 'failed')) return;
+    if (card.kind === 'failed' && !card.canRetry) return;
     this.setCard(message.id, { kind: 'sending' });
-    this.api
-      .createProject(message.proposal.payload)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (project) => {
-          // After "Limpiar conversación" the card is gone: do not resurrect it.
-          if (!this.cards()[message.id]) return;
-          this.setCard(message.id, { kind: 'created', id: project.id, name: project.name });
-          this.announcement.set(`Proyecto creado: «${project.name}».`);
-          afterNextRender(
-            () =>
-              this.host.nativeElement
-                .querySelector<HTMLElement>(`#proposal-link-${message.id}`)
-                ?.focus(),
-            { injector: this.injector },
+    const created$: Observable<CardState> =
+      proposal.kind === 'create_queue'
+        ? this.api.createQueue(proposal.payload).pipe(
+            map(() => ({
+              kind: 'created' as const,
+              text: 'Cola creada.',
+              link: {
+                commands: ['/proyectos', proposal.payload.projectId, 'cola'],
+                text: 'Abrir la cola',
+              },
+            })),
+          )
+        : this.api.createProject(proposal.payload).pipe(
+            map((project) => ({
+              kind: 'created' as const,
+              text: `Proyecto creado: «${project.name}».`,
+              link: { commands: ['/proyectos', project.id, 'editar'], text: 'Abrir el proyecto' },
+            })),
           );
-        },
-        error: (error: unknown) => {
-          if (!this.cards()[message.id]) return;
-          const certain = error instanceof ApiError && error.status === 400;
-          const text = certain ? REJECTED : UNCERTAIN;
-          this.setCard(message.id, { kind: 'failed', message: text, uncertain: !certain });
-          this.announcement.set(text);
-        },
-      });
+    created$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (done) => {
+        // After "Limpiar conversación" the card is gone: do not resurrect it.
+        if (!this.cards()[message.id]) return;
+        this.setCard(message.id, done);
+        this.announcement.set(done.kind === 'created' ? done.text : '');
+        afterNextRender(
+          () =>
+            this.host.nativeElement
+              .querySelector<HTMLElement>(`#proposal-link-${message.id}`)
+              ?.focus(),
+          { injector: this.injector },
+        );
+      },
+      error: (error: unknown) => {
+        if (!this.cards()[message.id]) return;
+        const failed = failureCard(proposal, error);
+        this.setCard(message.id, failed);
+        this.announcement.set(failed.kind === 'failed' ? failed.message : '');
+      },
+    });
   }
 
   protected discard(message: ChatMessage): void {

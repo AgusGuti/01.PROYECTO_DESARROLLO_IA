@@ -73,6 +73,34 @@ describe('chat against a fake assistant over HTTP', () => {
     expect(bad.body).toEqual({ reply: 'Propuesta', proposal: null });
   });
 
+  it('passes a create_queue proposal through and drops one with a name mismatch', async () => {
+    const printerId = 'b'.repeat(24);
+    const proposal = {
+      kind: 'create_queue',
+      payload: {
+        projectId: 'a'.repeat(24),
+        goal: 'fastest',
+        mode: 'single',
+        printerIds: [printerId],
+      },
+      projectName: 'Soportes',
+      printerNames: [{ printerId, name: 'Prusa' }],
+    };
+    handler = (_req, res) => {
+      json(res, 200, JSON.stringify({ reply: 'Cola', proposal }));
+    };
+    const good = await request(appFor()).post('/api/v1/chat').send({ message: 'hola' });
+
+    handler = (_req, res) => {
+      const wrong = { ...proposal, printerNames: [{ printerId: 'c'.repeat(24), name: 'x' }] };
+      json(res, 200, JSON.stringify({ reply: 'Cola', proposal: wrong }));
+    };
+    const bad = await request(appFor()).post('/api/v1/chat').send({ message: 'hola' });
+
+    expect(good.body).toEqual({ reply: 'Cola', proposal });
+    expect(bad.body).toEqual({ reply: 'Cola', proposal: null });
+  });
+
   it('maps an assistant 413 to a 400 on message', async () => {
     handler = (_req, res) => {
       json(res, 413, '{"detail":"El mensaje es demasiado largo."}');

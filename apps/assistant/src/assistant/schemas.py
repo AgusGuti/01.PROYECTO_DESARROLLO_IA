@@ -5,6 +5,7 @@ from typing import Annotated, Literal
 from pydantic import (
     BaseModel,
     ConfigDict,
+    Field,
     SerializerFunctionWrapHandler,
     StringConstraints,
     model_serializer,
@@ -47,12 +48,36 @@ class ProposalItemName(_Strict):
     name: str
 
 
-class Proposal(_Strict):
+class CreateProjectProposal(_Strict):
     """A suggested action, built by code from validated tool arguments, never from model text."""
 
     kind: Literal["create_project"]
     payload: ProposalPayload
     itemNames: list[ProposalItemName]
+
+
+class QueuePayload(_Strict):
+    """The body of POST /api/v1/queues without `lines` (the API copies the project lines)."""
+
+    projectId: str
+    goal: Literal["deadline", "fastest", "minimal_idle"]
+    mode: Literal["single", "multi"]
+    printerIds: list[str]
+
+
+class PrinterName(_Strict):
+    printerId: str
+    name: str
+
+
+class CreateQueueProposal(_Strict):
+    kind: Literal["create_queue"]
+    payload: QueuePayload
+    projectName: str
+    printerNames: list[PrinterName]
+
+
+Proposal = Annotated[CreateProjectProposal | CreateQueueProposal, Field(discriminator="kind")]
 
 
 class ChatResponse(_Strict):

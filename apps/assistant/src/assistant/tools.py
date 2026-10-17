@@ -26,7 +26,16 @@ from pydantic import (
 )
 
 from assistant.api_client import ApiClient, ToolError
-from assistant.schemas import Proposal, ProposalItem, ProposalItemName, ProposalPayload
+from assistant.schemas import (
+    CreateProjectProposal,
+    CreateQueueProposal,
+    PrinterName,
+    Proposal,
+    ProposalItem,
+    ProposalItemName,
+    ProposalPayload,
+    QueuePayload,
+)
 
 logger = logging.getLogger("assistant.tools")
 
@@ -55,6 +64,23 @@ _WARNING = {
     "nothing_to_print": "no hay nada para imprimir",
     "batching_applied": "se agruparon piezas iguales en una misma placa",
 }
+
+_STRATEGY = {
+    "naive": "orden simple",
+    "queue_order": "orden de la cola agrupando piezas iguales",
+    "longest_first": "placas más largas primero",
+    "shortest_first": "placas más cortas primero",
+    "best_fit": "la placa que menos espera deja antes de retirarla",
+}
+_QUEUE_GOAL = {
+    "cumplir fechas": "deadline",
+    "terminar antes": "fastest",
+    "minimizar tiempo muerto": "minimal_idle",
+    "deadline": "deadline",
+    "fastest": "fastest",
+    "minimal_idle": "minimal_idle",
+}
+_QUEUE_MODE = {"una": "single", "varias": "multi", "single": "single", "multi": "multi"}
 
 _ID = re.compile(r"[0-9a-fA-F]{24}")
 # An id or a project name; a name is resolved to an id in code and never reaches a URL.
@@ -140,6 +166,20 @@ class ProposeCreateProjectArgs(_Args):
     priority: SpanishPriority | None = None
     deadline: Deadline | None = None
     items: Annotated[list[ProposedItemArgs], Field(max_length=100)] | None = None
+
+
+class ProposeCreateQueueArgs(_Args):
+    proyecto: ProjectRef
+    objetivo: Literal[
+        "cumplir fechas",
+        "terminar antes",
+        "minimizar tiempo muerto",
+        "deadline",
+        "fastest",
+        "minimal_idle",
+    ]
+    modo: Literal["una", "varias", "single", "multi"]
+    impresoras: Annotated[list[ProjectRef], Field(min_length=1, max_length=10)]
 
 
 # --- what the API answers (unknown fields are dropped) ---------------------------------------
@@ -233,6 +273,17 @@ class ApiPrintersPage(_Data):
     total: int
 
 
+class ApiPrinterRef(_Data):
+    id: str
+    name: Text
+    archivedAt: str | None
+
+
+class ApiPrinterRefsPage(_Data):
+    items: list[ApiPrinterRef]
+    total: int
+
+
 class ApiDimensions(_Data):
     x: int
     y: int
@@ -309,6 +360,33 @@ class ApiSimulation(_Data):
     totals: ApiSimTotals
     deadline: ApiSimDeadline
     unplaced: list[ApiSimUnplaced]
+    warnings: list[ApiSimWarning]
+
+
+class ApiPlanTotals(_Data):
+    finishAt: str | None
+    totalIdleMinutes: int
+
+
+class ApiPlan(_Data):
+    totals: ApiPlanTotals
+    deadline: ApiSimDeadline
+    unplaced: list[ApiSimUnplaced]
+
+
+class ApiComparison(_Data):
+    finishDeltaMinutes: int | None
+    idleDeltaMinutes: int
+    deadlineChanged: str
+
+
+class ApiOptimization(_Data):
+    goal: str
+    startAt: str
+    strategy: str
+    baseline: ApiPlan
+    optimized: ApiPlan
+    comparison: ApiComparison
     warnings: list[ApiSimWarning]
 
 
@@ -451,7 +529,56 @@ class Simulacion(BaseModel):
     avisos: list[str]
 
 
+class PlanResumen(BaseModel):
+    fin_estimado: str | None
+    tiempo_muerto_total: str
+    fecha_limite_cumplida: bool | None
+
+
+class Optimizacion(BaseModel):
+    """Nothing was changed: it only compares two plans."""
+
+    objetivo: str
+    estrategia_elegida: str
+    inicio: str
+    orden_simple: PlanResumen
+    orden_optimizado: PlanResumen
+    diferencia: str
+    piezas_sin_ubicar: list[PiezaSinUbicar]
+    avisos: list[str]
+
+
 # --- helpers ---------------------------------------------------------------------------------
+
+
+def _difference(c: ApiComparison) -> str:
+    if c.finishDeltaMinutes is None:
+        parts = ["no se puede comparar la hora de fin"]
+    elif c.finishDeltaMinutes < 0:
+        parts = [f"termina {duration_minutes(-c.finishDeltaMinutes)} antes"]
+    elif c.finishDeltaMinutes > 0:
+        parts = [f"termina {duration_minutes(c.finishDeltaMinutes)} después"]
+    else:
+        parts = ["termina a la misma hora"]
+    if c.idleDeltaMinutes < 0:
+        parts.append(f"el tiempo muerto baja {duration_minutes(-c.idleDeltaMinutes)}")
+    elif c.idleDeltaMinutes > 0:
+        parts.append(f"el tiempo muerto sube {duration_minutes(c.idleDeltaMinutes)}")
+    else:
+        parts.append("el tiempo muerto no cambia")
+    if c.deadlineChanged == "gained":
+        parts.append("se cumple la fecha límite (con el orden simple no)")
+    elif c.deadlineChanged == "lost":
+        parts.append("deja de cumplirse la fecha límite")
+    return "; ".join(parts) + " (respecto del orden simple)"
+
+
+def _plan(p: ApiPlan) -> PlanResumen:
+    return PlanResumen(
+        fin_estimado=date_ar(p.totals.finishAt),
+        tiempo_muerto_total=duration_minutes(p.totals.totalIdleMinutes),
+        fecha_limite_cumplida=p.deadline.met,
+    )
 
 
 def default_start(now: datetime) -> str:
@@ -625,6 +752,9 @@ class Toolbox:
             """A 24-hex id is used as is; a name is looked up and never put in a path."""
             if _ID.fullmatch(ref):
                 return ref
+            return (await find_by_name(ref)).id
+
+        async def find_by_name(ref: str) -> ApiProjectSummary:
             page = await api.request(
                 "GET",
                 "/api/v1/projects",
@@ -642,7 +772,53 @@ class Toolbox:
                     f"Hay varios proyectos que coinciden: {names.replace('<', '')}. "
                     "Pedile al usuario que sea más específico."
                 )
-            return found[0].id
+            return found[0]
+
+        async def resolve_named(ref: str) -> tuple[str, str]:
+            """Project (id, name) for the proposal summary; a name never reaches a path."""
+            if _ID.fullmatch(ref):
+                p = await api.request(
+                    "GET",
+                    f"/api/v1/projects/{ref}",
+                    ApiProject,
+                    status_messages={404: "No existe ese proyecto."},
+                )
+                return p.id.lower(), p.name[:100]
+            found = await find_by_name(ref)
+            return found.id.lower(), found.name[:100]
+
+        async def resolve_printers(refs: list[str]) -> list[ApiPrinterRef]:
+            """Live printers for the requested names or ids, found in code."""
+            page = await api.request(
+                "GET",
+                "/api/v1/printers",
+                ApiPrinterRefsPage,
+                params={"page": 1, "pageSize": PAGE_SIZE},
+            )
+            live = [p for p in page.items if p.archivedAt is None]
+            found: list[ApiPrinterRef] = []
+            for ref in refs:
+                needle = ref.casefold()
+                if _ID.fullmatch(ref):
+                    matches = [p for p in live if p.id.casefold() == needle]
+                else:
+                    matches = [p for p in live if p.name.casefold() == needle] or [
+                        p for p in live if needle in p.name.casefold()
+                    ]
+                if not matches:
+                    raise ToolError(
+                        f"No encontré una impresora activa que coincida con «{_clip(ref[:40])}»."
+                    )
+                if len(matches) > 1:
+                    names = json.dumps([p.name for p in matches[:5]], ensure_ascii=False)
+                    raise ToolError(
+                        f"Hay varias impresoras que coinciden: {names.replace('<', '')}. "
+                        "Pedile al usuario que sea más específico."
+                    )
+                found.append(matches[0])
+            if len({p.id for p in found}) != len(found):
+                raise ToolError("Una impresora aparece más de una vez; indicala una sola vez.")
+            return found
 
         async def list_projects(args: ListProjectsArgs) -> BaseModel:
             params: dict[str, str | int] = {"page": 1, "pageSize": PAGE_SIZE, "sort": "deadline"}
@@ -811,6 +987,67 @@ class Toolbox:
                 avisos=[_WARNING.get(w.code, w.code) for w in s.warnings],
             )
 
+        async def optimize_project(args: SimulateArgs) -> BaseModel:
+            project_id = await resolve(args.proyecto)
+            start = args.start_at or default_start(self._now())
+            o = await api.request(
+                "POST",
+                "/api/v1/simulations/optimizations",
+                ApiOptimization,
+                json_body={"projectId": project_id, "startAt": start},
+                read_seconds=SIMULATION_SECONDS,
+                status_messages={
+                    400: "No se pudo optimizar: el proyecto no existe, no tiene cola o no hay "
+                    "impresoras disponibles."
+                },
+            )
+            return Optimizacion(
+                objetivo=_GOAL.get(o.goal, o.goal),
+                estrategia_elegida=_STRATEGY.get(o.strategy, o.strategy),
+                inicio=date_ar(o.startAt) or o.startAt,
+                orden_simple=_plan(o.baseline),
+                orden_optimizado=_plan(o.optimized),
+                diferencia=_difference(o.comparison),
+                piezas_sin_ubicar=[
+                    PiezaSinUbicar(pieza=u.partName, unidades=u.units)
+                    for u in o.optimized.unplaced[:10]
+                ],
+                avisos=[_WARNING.get(w.code, w.code) for w in o.warnings],
+            )
+
+        async def propose_create_queue(args: ProposeCreateQueueArgs) -> BaseModel:
+            goal = _QUEUE_GOAL[args.objetivo]
+            mode = _QUEUE_MODE[args.modo]
+            count = len(args.impresoras)
+            if mode == "single" and count != 1:
+                raise ToolError("Con una sola impresora hay que indicar exactamente 1.")
+            if mode == "multi" and not 2 <= count <= 10:
+                raise ToolError("Con varias impresoras hay que indicar entre 2 y 10.")
+            project_id, project_name = await resolve_named(args.proyecto)
+            printers = await resolve_printers(args.impresoras)
+            proposal = CreateQueueProposal(
+                kind="create_queue",
+                payload=QueuePayload.model_validate(
+                    {
+                        "projectId": project_id,
+                        "goal": goal,
+                        "mode": mode,
+                        "printerIds": [p.id.lower() for p in printers],
+                    }
+                ),
+                projectName=project_name,
+                printerNames=[
+                    PrinterName(printerId=p.id.lower(), name=p.name[:100]) for p in printers
+                ],
+            )
+            if self._proposal is not None and self._proposal != proposal:
+                raise ToolError("Ya hay una propuesta en esta conversación; solo se admite una.")
+            self._proposal = proposal
+            return PropuestaResult(
+                mensaje="Propuesta lista; el usuario debe confirmarla en pantalla. "
+                "No está creado nada todavía."
+            )
+
         async def resolve_parts(refs: list[ProposedItemArgs]) -> list[ApiPart]:
             """Part ids for the requested names, found in code; a name never reaches a URL."""
             page = await api.request(
@@ -843,7 +1080,7 @@ class Toolbox:
         async def propose_create_project(args: ProposeCreateProjectArgs) -> BaseModel:
             parts = await resolve_parts(args.items) if args.items else []
             priority = _API_PRIORITY.get(args.priority or "", args.priority)
-            proposal = Proposal(
+            proposal = CreateProjectProposal(
                 kind="create_project",
                 payload=ProposalPayload.model_validate(
                     {
@@ -869,6 +1106,31 @@ class Toolbox:
             )
 
         return [
+            _tool(
+                "propose_create_queue",
+                "PROPONE crear la cola de impresión de un proyecto; no crea nada: el usuario "
+                "debe confirmar en pantalla. Usala solo cuando el usuario pida crear una cola y "
+                "ya haya dicho los tres datos; si falta alguno, preguntalo. 'proyecto': id o "
+                "nombre. 'objetivo': 'cumplir fechas', 'terminar antes' o 'minimizar tiempo "
+                "muerto'. 'modo': 'una' (exactamente 1 impresora) o 'varias' (de 2 a 10). "
+                "'impresoras': nombres o ids de impresoras activas. Máximo una propuesta por "
+                "conversación.",
+                ProposeCreateQueueArgs,
+                propose_create_queue,
+            ),
+            _tool(
+                "optimize_project",
+                "Usala SIEMPRE que el usuario pregunte por optimizar, mejorar el orden de "
+                "impresión, cuánto gana o ahorra, o comparar con el orden simple. Solo necesita "
+                "el nombre (o id) del proyecto en 'proyecto': no pidas más datos. 'start_at' es "
+                "opcional (AAAA-MM-DDTHH:mm, hora de Argentina); si falta se usa la hora "
+                "actual. Compara el orden simple con uno optimizado para el objetivo de la cola "
+                "(no guarda ni cambia nada) y devuelve la estrategia elegida, cuándo termina "
+                "cada orden, el tiempo muerto, si se cumple la fecha límite y la diferencia. "
+                "El proyecto debe tener cola.",
+                SimulateArgs,
+                optimize_project,
+            ),
             _tool(
                 "propose_create_project",
                 "PROPONE crear un proyecto; no crea nada: el usuario debe confirmar en "

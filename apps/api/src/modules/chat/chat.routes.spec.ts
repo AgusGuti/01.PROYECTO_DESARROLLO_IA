@@ -50,6 +50,40 @@ describe('POST /api/v1/chat', () => {
     expect(bad.body).toEqual({ reply: 'ok', proposal: null });
   });
 
+  it('returns a valid create_queue proposal and drops one with a bad mode', async () => {
+    const printerId = 'b'.repeat(24);
+    const proposal = {
+      kind: 'create_queue',
+      payload: {
+        projectId: 'a'.repeat(24),
+        goal: 'deadline',
+        mode: 'single',
+        printerIds: [printerId],
+      },
+      projectName: 'Soportes',
+      printerNames: [{ printerId, name: 'Prusa' }],
+    };
+    const good = await request(appWith({ ask: () => Promise.resolve({ reply: 'ok', proposal }) }))
+      .post(URL)
+      .send({ message: 'hola' });
+    const bad = await request(
+      appWith({
+        ask: () =>
+          Promise.resolve({
+            reply: 'ok',
+            proposal: { ...proposal, payload: { ...proposal.payload, mode: 'multi' } },
+          }),
+      }),
+    )
+      .post(URL)
+      .send({ message: 'hola' });
+
+    expect(good.body).toEqual({ reply: 'ok', proposal });
+    expect(chatResponseSchema.parse(good.body).proposal?.kind).toBe('create_queue');
+    expect(bad.status).toBe(200);
+    expect(bad.body).toEqual({ reply: 'ok', proposal: null });
+  });
+
   it.each([
     ['empty', { message: '' }],
     ['whitespace', { message: '   ' }],

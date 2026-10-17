@@ -8,6 +8,7 @@ from langchain_core.messages import AIMessage
 from assistant.chat import answer
 from assistant.config import Settings, get_settings
 from assistant.main import create_app, get_chat_model, get_toolbox
+from assistant.schemas import CreateProjectProposal
 from assistant.tools import Toolbox
 from fakes import FakeApi, ScriptedModel, call
 
@@ -40,6 +41,12 @@ def parts_response(*parts: dict[str, object]) -> httpx.Response:
 
 def catalog() -> FakeApi:
     return FakeApi({PARTS: parts_response(part(SOPORTE, "Soporte"), part(TAPA, "Tapa lisa"))})
+
+
+def created(box: Toolbox) -> CreateProjectProposal:
+    proposal = box.proposal
+    assert isinstance(proposal, CreateProjectProposal)
+    return proposal
 
 
 async def propose(box: Toolbox, **args: object) -> str:
@@ -123,8 +130,7 @@ async def test_priority_is_mapped_to_the_api_enum(given: str, expected: str) -> 
 
     await propose(box, name="P", priority=given)
 
-    assert box.proposal is not None
-    assert box.proposal.payload.priority == expected
+    assert created(box).payload.priority == expected
 
 
 @pytest.mark.parametrize(
@@ -141,8 +147,7 @@ async def test_deadline_is_converted_to_iso(given: str, expected: str) -> None:
 
     await propose(box, name="P", deadline=given)
 
-    assert box.proposal is not None
-    assert box.proposal.payload.deadline == expected
+    assert created(box).payload.deadline == expected
 
 
 @pytest.mark.parametrize(
@@ -167,9 +172,9 @@ async def test_exact_name_wins_over_contains() -> None:
 
     await propose(box, name="P", items=[{"pieza": "soporte", "cantidad": 1}])
 
-    assert box.proposal is not None
-    assert box.proposal.payload.items is not None
-    assert box.proposal.payload.items[0].partId == SOPORTE
+    items = created(box).payload.items
+    assert items is not None
+    assert items[0].partId == SOPORTE
 
 
 async def test_a_partial_name_resolves_when_it_is_unique() -> None:
@@ -177,8 +182,7 @@ async def test_a_partial_name_resolves_when_it_is_unique() -> None:
 
     await propose(box, name="P", items=[{"pieza": "tapa", "cantidad": 2}])
 
-    assert box.proposal is not None
-    assert box.proposal.itemNames[0].partId == TAPA
+    assert created(box).itemNames[0].partId == TAPA
 
 
 async def test_an_ambiguous_name_lists_clipped_names_and_proposes_nothing() -> None:
@@ -297,9 +301,9 @@ async def test_one_hundred_distinct_items_are_accepted() -> None:
 
     await propose(box, name="P", items=[{"pieza": i, "cantidad": 1} for i in ids])
 
-    assert box.proposal is not None
-    assert box.proposal.payload.items is not None
-    assert len(box.proposal.payload.items) == 100
+    items = created(box).payload.items
+    assert items is not None
+    assert len(items) == 100
 
 
 # --- one proposal per turn -------------------------------------------------------------------
@@ -322,8 +326,7 @@ async def test_a_second_different_call_is_refused_and_keeps_the_first() -> None:
     result = await propose(box, name="Segundo")
 
     assert result.startswith("ERROR: Ya hay una propuesta")
-    assert box.proposal is not None
-    assert box.proposal.payload.name == "Primero"
+    assert created(box).payload.name == "Primero"
 
 
 # --- the model cannot forge or trigger a write -----------------------------------------------

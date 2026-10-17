@@ -2375,9 +2375,16 @@ components:
         - proposal
       additionalProperties: false
     AssistantProposal:
-      type:
-        - object
-        - "null"
+      oneOf:
+        - $ref: "#/components/schemas/ProposalCreateProject"
+        - $ref: "#/components/schemas/ProposalCreateQueue"
+        - type: "null"
+      description: "A suggested action. It is NOT executed: the browser shows it, and only after the user
+        confirms does it send the payload to POST /api/v1/projects (create_project) or POST
+        /api/v1/queues (create_queue, the queues API copies the project lines), which validate it
+        again."
+    ProposalCreateProject:
+      type: object
       properties:
         kind:
           type: string
@@ -2408,8 +2415,6 @@ components:
         - payload
         - itemNames
       additionalProperties: false
-      description: "A suggested action. It is NOT executed: the browser shows it, and only after the user
-        confirms does it send the payload to POST /api/v1/projects, which validates it again."
     ProposalCreateProjectPayload:
       type: object
       properties:
@@ -2453,6 +2458,74 @@ components:
           maxItems: 100
       required:
         - name
+      additionalProperties: false
+    ProposalCreateQueue:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum:
+            - create_queue
+        payload:
+          $ref: "#/components/schemas/ProposalCreateQueuePayload"
+        projectName:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Soportes para el taller
+        printerNames:
+          type: array
+          items:
+            type: object
+            properties:
+              printerId:
+                type: string
+                example: 66f0c0ffee0123456789abcd
+              name:
+                type: string
+                minLength: 1
+                maxLength: 100
+                example: Prusa MK4
+            required:
+              - printerId
+              - name
+            additionalProperties: false
+          maxItems: 10
+      required:
+        - kind
+        - payload
+        - projectName
+        - printerNames
+      additionalProperties: false
+    ProposalCreateQueuePayload:
+      type: object
+      properties:
+        projectId:
+          type: string
+          example: 66f0c0ffee0123456789abcd
+        goal:
+          type: string
+          enum:
+            - deadline
+            - fastest
+            - minimal_idle
+        mode:
+          type: string
+          enum:
+            - single
+            - multi
+        printerIds:
+          type: array
+          items:
+            type: string
+            example: 66f0c0ffee0123456789abcd
+          minItems: 1
+          maxItems: 10
+      required:
+        - projectId
+        - goal
+        - mode
+        - printerIds
       additionalProperties: false
     ChatRequest:
       type: object
