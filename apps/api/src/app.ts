@@ -32,7 +32,11 @@ import {
   createSimulationProjectReader,
 } from './modules/projects/index.js';
 import { createPlanningModule, createPlanningSettingsReader } from './modules/planning/index.js';
-import { createQueuesModule, createSimulationQueueReader } from './modules/queues/index.js';
+import {
+  createPrinterUsageCheck,
+  createQueuesModule,
+  createSimulationQueueReader,
+} from './modules/queues/index.js';
 import { createSimulationsModule } from './modules/simulations/index.js';
 import { AppError } from './shared/errors/app-error.js';
 import { createErrorHandler, notFoundHandler } from './shared/http/error-handler.js';
@@ -44,7 +48,7 @@ export interface AppDependencies {
   database: DependencyProbe;
   clock?: Clock;
   /** Lets tests replace the printers repository and the usage check with fakes. */
-  printers?: Omit<Parameters<typeof createPrintersModule>[0], 'clock'>;
+  printers?: Partial<Omit<Parameters<typeof createPrintersModule>[0], 'clock'>>;
   /** Lets tests replace the filaments repository with a fake. */
   filaments?: Omit<Parameters<typeof createFilamentsModule>[0], 'clock'>;
   /** Lets tests replace the parts repository and the usage port with fakes. */
@@ -142,7 +146,15 @@ export function createApp({
   // 6. Versioned API. Feature modules mount their routers here.
   const v1 = Router();
   app.use('/api/v1', v1);
-  v1.use('/printers', createPrintersModule({ clock, ...printers }).router);
+  // Printers ask queues whether a printer still has pending work (ADR 0006, 0032), through a port.
+  v1.use(
+    '/printers',
+    createPrintersModule({
+      clock,
+      hasAssignments: createPrinterUsageCheck(queues.repository),
+      ...printers,
+    }).router,
+  );
   v1.use('/filaments', createFilamentsModule({ clock, ...filaments }).router);
   // The only place that knows both modules (ADR 0017): projects read parts through a lookup, and
   // parts ask projects whether a part is used. Neither module imports the other.

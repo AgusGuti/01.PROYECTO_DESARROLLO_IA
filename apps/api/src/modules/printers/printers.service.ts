@@ -15,8 +15,8 @@ import {
 } from './printers.domain.js';
 
 /**
- * Does this printer still have work assigned? CU07 (the print queue) will implement it.
- * Until then the module wires a function that always answers false.
+ * Does this printer still have work assigned? Provided by the queues module (ADR 0032)
+ * and wired in app.ts. A rejection means "unknown": the service then fails closed.
  */
 export type PrinterUsageCheck = (printerId: string) => Promise<boolean>;
 

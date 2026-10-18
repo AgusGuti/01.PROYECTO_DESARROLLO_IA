@@ -28,6 +28,8 @@ export interface QueueRepository {
   update(id: string, version: number, patch: QueuePatch, now: Date): Promise<Queue | null>;
   /** One atomic delete guarded by `{ id, version }`. False when nothing matched. */
   remove(id: string, version: number): Promise<boolean>;
+  /** True when some queue selects this printer and has a line with completed < quantity. */
+  hasPendingWorkFor(printerId: string): Promise<boolean>;
 }
 
 /** Ports owned by this module. A rejection is a dependency failure, never "does not exist". */

@@ -155,6 +155,47 @@ SpanishPriority = Literal["baja", "normal", "alta", "urgente", "low", "high", "u
 _API_PRIORITY = {"baja": "low", "alta": "high", "urgente": "urgent"}
 
 
+_MONTHS = (
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
+)
+_TEXT_DATE = re.compile(r"(\d{1,2}) de ([a-z]+)(?: de (\d{4}))?")
+
+
+def parse_fecha(value: str, today: date) -> date:
+    """DD-MM-AAAA, AAAA-MM-DD or 'D de <mes>[ de AAAA]' to a real date; ValueError otherwise.
+
+    Without a year, `today`'s year is used (even if that day already passed).
+    """
+    text = value.strip().casefold()
+    match = _TEXT_DATE.fullmatch(text)
+    if match is None:
+        return date.fromisoformat(_iso_date(text))
+    day, month_name, year = match.groups()
+    names = {**{m: i + 1 for i, m in enumerate(_MONTHS)}, "setiembre": 9}
+    if month_name not in names:
+        raise ValueError("month name")
+    month_number = names[month_name]
+    parsed_year = int(year) if year else today.year
+    if not 2000 <= parsed_year <= 2099:
+        raise ValueError("year out of range")
+    return date(parsed_year, month_number, int(day))
+
+
+class AgendaArgs(_Args):
+    fecha: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+
+
 class ProposedItemArgs(_Args):
     pieza: ProjectRef  # a part id or name; resolved to an id in code
     cantidad: Annotated[int, Field(ge=1, le=1000)]
@@ -507,6 +548,28 @@ class HorarioDeIntervencion(BaseModel):
     horario_guardado_por_el_usuario: bool
 
 
+AGENDA_NOTE = (
+    "El sistema no guarda planes de impresión por día: solo se conocen fechas límite y tu "
+    "horario de intervención. Para ver cuándo terminaría un proyecto usá la simulación."
+)
+NO_INTERVENTION = "sin intervención ese día"
+
+
+class ProyectoConFechaLimite(BaseModel):
+    nombre: str
+    prioridad: str
+    fecha_limite: str
+
+
+class Agenda(BaseModel):
+    fecha: str
+    dia_de_la_semana: str
+    proyectos_con_fecha_limite: list[ProyectoConFechaLimite]
+    proyectos_revisados_parcialmente: bool  # more projects exist than the page examined
+    horario_de_intervencion: list[str]
+    nota: str
+
+
 class PropuestaResult(BaseModel):
     mensaje: str
 
@@ -628,6 +691,10 @@ def _hhmm(minute: int) -> str:
 
 def _ranges(ranges: list[ApiRange]) -> list[str]:
     return [f"{_hhmm(r.startMinute)}-{_hhmm(r.endMinute)}" for r in ranges]
+
+
+def _agenda_ranges(ranges: list[ApiRange]) -> list[str]:
+    return _ranges(ranges) or [NO_INTERVENTION]
 
 
 def _matches(search: str | None, *texts: str | None) -> bool:
@@ -958,6 +1025,45 @@ class Toolbox:
                 horario_guardado_por_el_usuario=raw.version > 0,
             )
 
+        async def agenda_del_dia(args: AgendaArgs) -> BaseModel:
+            today = self._now().astimezone(ARGENTINA).date()
+            try:
+                day = parse_fecha(args.fecha, today)
+            except ValueError:
+                raise ToolError(
+                    "La fecha no es válida o no se entiende. Usá DD-MM-AAAA o 'D de mes'."
+                ) from None
+            iso = day.isoformat()
+            page = await api.request(
+                "GET",
+                "/api/v1/projects",
+                ApiProjectsPage,
+                params={"page": 1, "pageSize": PAGE_SIZE, "sort": "deadline"},
+            )
+            schedule = await api.request("GET", "/api/v1/availability/schedule", ApiSchedule)
+            exception = next((e for e in schedule.exceptions if e.date == iso), None)
+            if exception is not None:
+                ranges = exception.ranges
+            else:
+                weekly = schedule.weekly
+                ranges = weekly[day.weekday()].ranges if day.weekday() < len(weekly) else []
+            return Agenda(
+                fecha=date_ar(iso) or iso,
+                dia_de_la_semana=_DAYS[day.weekday()],
+                proyectos_con_fecha_limite=[
+                    ProyectoConFechaLimite(
+                        nombre=p.name,
+                        prioridad=_PRIORITY.get(p.priority, p.priority),
+                        fecha_limite=date_ar(iso) or iso,
+                    )
+                    for p in page.items
+                    if (p.deadline or "")[:10] == iso
+                ][:MAX_ITEMS],
+                proyectos_revisados_parcialmente=page.total > len(page.items),
+                horario_de_intervencion=_agenda_ranges(ranges),
+                nota=AGENDA_NOTE,
+            )
+
         async def simulate_project(args: SimulateArgs) -> BaseModel:
             project_id = await resolve(args.proyecto)
             start = args.start_at or default_start(self._now())
@@ -1106,6 +1212,18 @@ class Toolbox:
             )
 
         return [
+            _tool(
+                "agenda_del_dia",
+                "Usala SIEMPRE que el usuario pregunte qué tiene planeado, qué hay para, su "
+                "agenda o sus pendientes de un día concreto (por ejemplo 'tengo algo planeado "
+                "para el 21 de octubre?'). Solo necesita la fecha en 'fecha' (DD-MM-AAAA, "
+                "AAAA-MM-DD o 'D de mes', por ejemplo '21 de octubre'; sin año se usa el año "
+                "actual): no hagas más preguntas. Devuelve los proyectos cuya fecha límite es "
+                "ese día y el horario en que el usuario puede intervenir ese día. Respondé con "
+                "eso e incluí la 'nota'. No guarda ni cambia nada.",
+                AgendaArgs,
+                agenda_del_dia,
+            ),
             _tool(
                 "propose_create_queue",
                 "PROPONE crear la cola de impresión de un proyecto; no crea nada: el usuario "

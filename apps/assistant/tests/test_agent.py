@@ -195,6 +195,7 @@ def test_the_prompt_declares_the_rules_the_tools_rely_on() -> None:
 
 def test_the_model_is_given_only_read_tools_and_one_proposal_tool() -> None:
     assert FakeApi({}).toolbox().names == {
+        "agenda_del_dia",
         "propose_create_project",
         "propose_create_queue",
         "optimize_project",

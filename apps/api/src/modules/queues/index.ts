@@ -44,7 +44,21 @@ export function createSimulationQueueReader(
   };
 }
 
-// There is no `ensureIndexes`: the queues collection has no index beyond `_id` (ADR 0025).
+/**
+ * Builds the printers module's usage check (ADR 0006, 0032): a printer is in use when a queue
+ * selects it and still has pending work. A failure rejects, so the printer is never deleted
+ * when the answer is unknown.
+ */
+export function createPrinterUsageCheck(
+  repository: Pick<QueueRepository, 'hasPendingWorkFor'> = createMongoQueueRepository(),
+): (printerId: string) => Promise<boolean> {
+  return async (printerId) => await repository.hasPendingWorkFor(printerId);
+}
+
+/** Creates the queues indexes (the printer id lookup, ADR 0032). Run by `npm run db:indexes`. */
+export function ensureQueuesIndexes(): Promise<void> {
+  return createMongoQueueRepository().ensureIndexes();
+}
 
 export function createQueuesModule(deps: {
   clock: Clock;

@@ -5,6 +5,7 @@
 import { loadConfigFromEnvironment } from '../src/config/env.js';
 import { createMongoDatabase } from '../src/infrastructure/database/mongo.js';
 import { ensurePrintersIndexes } from '../src/modules/printers/index.js';
+import { ensureQueuesIndexes } from '../src/modules/queues/index.js';
 import { createLogger } from '../src/shared/logging/logger.js';
 
 const config = loadConfigFromEnvironment();
@@ -14,6 +15,7 @@ const database = createMongoDatabase(config, logger);
 try {
   await database.connect();
   await ensurePrintersIndexes();
+  await ensureQueuesIndexes();
   logger.info('database indexes are in place');
 } catch (error) {
   logger.fatal({ err: error }, 'could not create the database indexes');
