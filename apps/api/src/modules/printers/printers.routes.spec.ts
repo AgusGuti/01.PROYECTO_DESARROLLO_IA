@@ -20,13 +20,14 @@ const body = {
   powerWatts: 150,
 };
 
-function setup(hasAssignments?: PrinterUsageCheck) {
+// By default the printer has no assignments (a fake: the real check needs MongoDB).
+function setup(hasAssignments: PrinterUsageCheck = () => Promise.resolve(false)) {
   const repository = createFakePrinterRepository();
   const clock = createTestClock();
   const app = createTestApp({
     clock,
     env: { RATE_LIMIT_MAX: '100000' },
-    printers: { repository, ...(hasAssignments === undefined ? {} : { hasAssignments }) },
+    printers: { repository, hasAssignments },
   });
   return { app, repository, clock };
 }

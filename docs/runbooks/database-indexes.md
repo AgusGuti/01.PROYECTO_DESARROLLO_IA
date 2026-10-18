@@ -9,6 +9,10 @@ automatically. In production Mongoose does not create
 indexes by itself (`autoIndex` is off), and schema changes are never applied automatically when
 the API starts. So an index is created deliberately, with one command.
 
+The queues collection also has a plain index, `queues_printer_ids` on `printerIds` (ADR 0032),
+so removing a printer can find the queues that use it without scanning them all. It is not
+checked at startup: if it is missing the API still works, only slower.
+
 ## When to run it
 
 - On every deploy, **before** starting the new API version.

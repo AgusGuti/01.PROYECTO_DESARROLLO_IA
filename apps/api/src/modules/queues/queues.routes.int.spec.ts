@@ -117,6 +117,38 @@ describe('queues API on a real MongoDB with the real wiring', () => {
     expect(response.body).toMatchObject({ issues: [{ path: 'printerIds.0' }] });
   });
 
+  it('archives a printer used by a queue with pending work and deletes it once the queue is done (ADR 0032)', async () => {
+    const part = await makePart('Soporte', 600);
+    const used = await makePrinter('En uso');
+    const idle = await makePrinter('Libre');
+    const project = await makeProject([{ partId: part, quantity: 2 }]);
+    await request(app)
+      .post('/api/v1/queues')
+      .send({ projectId: project, goal: 'fastest', mode: 'single', printerIds: [used] });
+
+    const busy = await request(app).delete(`/api/v1/printers/${used}`);
+    const free = await request(app).delete(`/api/v1/printers/${idle}`);
+
+    expect([busy.status, free.status]).toEqual([204, 204]);
+    expect((await request(app).get(`/api/v1/printers/${used}`)).body).toMatchObject({
+      archivedAt: expect.any(String),
+    });
+    expect((await request(app).get(`/api/v1/printers/${idle}`)).status).toBe(404);
+
+    // The queue is finished: a printer it selects is no longer in use, so it is deleted.
+    const other = await makePrinter('Tras terminar');
+    const finished = await request(app)
+      .patch(`/api/v1/queues/${project}`)
+      .send({
+        version: 1,
+        printerIds: [other],
+        lines: [{ partId: part, quantity: 2, completed: 2 }],
+      });
+    expect(finished.status).toBe(200);
+    expect((await request(app).delete(`/api/v1/printers/${other}`)).status).toBe(204);
+    expect((await request(app).get(`/api/v1/printers/${other}`)).status).toBe(404);
+  });
+
   it('flags a part deleted after the queue was created', async () => {
     const part = await makePart('Soporte', 600);
     const printer = await makePrinter('Ender 3');

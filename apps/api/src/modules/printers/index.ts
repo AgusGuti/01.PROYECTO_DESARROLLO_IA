@@ -94,11 +94,6 @@ export function createSimulationPrinterLookup(
   };
 }
 
-// The assignments check (and so the archived -> deleted step, ADR 0006) is a follow-up of CU07:
-// the queues module stores printerIds but nothing answers this yet, so only the idle-delete
-// path is reachable.
-const noAssignmentsYet: PrinterUsageCheck = () => Promise.resolve(false);
-
 function chooseRepository(injected: PrinterRepository | undefined): {
   repository: PrinterRepository;
   ensureIndexes: () => Promise<void>;
@@ -114,7 +109,8 @@ export function createPrintersModule(deps: {
   clock: Clock;
   /** Tests inject a fake; production uses MongoDB. */
   repository?: PrinterRepository;
-  hasAssignments?: PrinterUsageCheck;
+  /** Built in app.ts from the queues module (ADR 0017, 0032). */
+  hasAssignments: PrinterUsageCheck;
 }): {
   router: Router;
   /** Creates the MongoDB indexes. A no-op when a fake repository was injected. */
@@ -124,7 +120,7 @@ export function createPrintersModule(deps: {
   const service = createPrintersService({
     repository,
     clock: deps.clock,
-    hasAssignments: deps.hasAssignments ?? noAssignmentsYet,
+    hasAssignments: deps.hasAssignments,
   });
   return { router: createPrintersRouter(createPrintersController(service)), ensureIndexes };
 }

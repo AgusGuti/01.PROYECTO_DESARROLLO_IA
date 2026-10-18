@@ -4,7 +4,7 @@ Source of requirements: [the project proposal](propuesta-proyecto-impresion-3d.m
 One item at a time, each through the `new-feature` workflow, each merged by pull request with
 green CI before the next starts.
 
-**Current:** All roadmap items M0–M4 are merged. Next: a manual review pass of every screen in a browser, then authentication (closes EXC-0001) and deployment.
+**Current:** All roadmap items M0–M4 are merged, plus the agenda tool and the printer-in-use check. Next: a manual review pass of every screen in a browser, then authentication (closes EXC-0001) and deployment. Open follow-ups: printer out-of-use periods, turning an archived printer into deleted when its queue finishes (ADR 0032), idempotency for assistant confirmations.
 
 The session-start hook reads the line above. Update it when an item is merged.
 

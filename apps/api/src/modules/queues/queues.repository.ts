@@ -60,6 +60,11 @@ const queueSchema = new Schema<StoredQueue>(
   { collection: 'queues', versionKey: false, timestamps: false, bufferCommands: false },
 );
 
+// Index (ADR 0032). Purpose: "is this printer in a queue with pending work?", asked on every
+// printer removal. A multikey index on the array makes the lookup by printer id an IXSCAN
+// instead of reading every queue. Non-unique: many queues may share a printer.
+queueSchema.index({ printerIds: 1 }, { name: 'queues_printer_ids' });
+
 const QueueModel = mongoose.model<StoredQueue>('Queue', queueSchema);
 
 const toLines = (lines: readonly QueueLine[]): QueueLine[] =>
@@ -94,8 +99,40 @@ async function guarded<T>(operation: () => Promise<T>): Promise<T> {
   }
 }
 
-export function createMongoQueueRepository(): QueueRepository {
+export interface MongoQueueRepository extends QueueRepository {
+  /** Creates the indexes declared above. Idempotent; run by `npm run db:indexes` in production. */
+  ensureIndexes(): Promise<void>;
+}
+
+export function createMongoQueueRepository(): MongoQueueRepository {
   return {
+    ensureIndexes() {
+      return guarded(async () => {
+        await QueueModel.createIndexes();
+      });
+    },
+
+    hasPendingWorkFor(printerId) {
+      return guarded(async () => {
+        // The equality on `printerIds` uses the index; `$expr` then checks the (at most 100)
+        // embedded lines of the few queues that match: any line with completed < quantity.
+        const filter: Record<string, unknown> = {
+          printerIds: printerId,
+          $expr: {
+            $anyElementTrue: {
+              $map: {
+                input: '$lines',
+                as: 'line',
+                in: { $lt: ['$$line.completed', '$$line.quantity'] },
+              },
+            },
+          },
+        };
+        const found = await QueueModel.exists(filter);
+        return found !== null;
+      });
+    },
+
     create(id, fields, now) {
       return guarded(async () => {
         try {

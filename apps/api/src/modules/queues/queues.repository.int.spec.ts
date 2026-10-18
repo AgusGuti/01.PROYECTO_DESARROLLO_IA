@@ -8,7 +8,16 @@ import { createMongoDatabase, type Database } from '../../infrastructure/databas
 import { AppError } from '../../shared/errors/app-error.js';
 import { testConfig } from '../../testing/test-app.js';
 import { createMongoQueueRepository } from './queues.repository.js';
-import { line, PART_B, PRINTER_1, PRINTER_2, PROJECT_ID, validFields } from './testing/fakes.js';
+import {
+  line,
+  PART_A,
+  PART_B,
+  PRINTER_1,
+  PRINTER_2,
+  PRINTER_3,
+  PROJECT_ID,
+  validFields,
+} from './testing/fakes.js';
 
 const T0 = new Date('2026-03-01T10:00:00.000Z');
 const T1 = new Date('2026-03-01T11:00:00.000Z');
@@ -35,6 +44,7 @@ describe('queue repository on a real MongoDB', () => {
       pino({ level: 'silent' }),
     );
     await database.connect();
+    await repository.ensureIndexes();
   });
 
   afterAll(async () => {
@@ -176,9 +186,64 @@ describe('queue repository on a real MongoDB', () => {
     expect(await collection().countDocuments({})).toBe(removed ? 0 : 1);
   });
 
-  it('has no index beyond _id', async () => {
+  it('has only _id and the printer id index', async () => {
     await repository.create(PROJECT_ID, validFields, T0);
 
-    expect((await collection().indexes()).map((index) => index.name)).toEqual(['_id_']);
+    expect((await collection().indexes()).map((index) => index.name).sort()).toEqual([
+      '_id_',
+      'queues_printer_ids',
+    ]);
+  });
+
+  describe('hasPendingWorkFor', () => {
+    const OTHER_PROJECT = '2'.repeat(24);
+
+    it('is true for a printer of a queue with a line still to print', async () => {
+      await repository.create(
+        PROJECT_ID,
+        { ...validFields, lines: [line(PART_A, 2, 2), line(PART_B, 3, 1)] },
+        T0,
+      );
+
+      expect(await repository.hasPendingWorkFor(PRINTER_1)).toBe(true);
+    });
+
+    it('is false when every line of the queue is completed', async () => {
+      await repository.create(PROJECT_ID, { ...validFields, lines: [line(PART_A, 4, 4)] }, T0);
+
+      expect(await repository.hasPendingWorkFor(PRINTER_1)).toBe(false);
+    });
+
+    it('is false for a queue without lines', async () => {
+      await repository.create(PROJECT_ID, { ...validFields, lines: [] }, T0);
+
+      expect(await repository.hasPendingWorkFor(PRINTER_1)).toBe(false);
+    });
+
+    it('is false for a printer that no queue selects, and true for any printer of a multi queue', async () => {
+      await repository.create(
+        PROJECT_ID,
+        { ...validFields, mode: 'multi', printerIds: [PRINTER_1, PRINTER_2] },
+        T0,
+      );
+
+      expect(await repository.hasPendingWorkFor(PRINTER_3)).toBe(false);
+      expect(await repository.hasPendingWorkFor(PRINTER_2)).toBe(true);
+    });
+
+    it('looks at all the queues of the printer, not only the first', async () => {
+      await repository.create(PROJECT_ID, { ...validFields, lines: [line(PART_A, 4, 4)] }, T0);
+      await repository.create(OTHER_PROJECT, validFields, T0);
+
+      expect(await repository.hasPendingWorkFor(PRINTER_1)).toBe(true);
+    });
+
+    it('uses the printer id index', async () => {
+      await repository.create(PROJECT_ID, validFields, T0);
+
+      const plan = await collection().find({ printerIds: PRINTER_1 }).explain('queryPlanner');
+
+      expect(JSON.stringify(plan)).toContain('IXSCAN');
+    });
   });
 });

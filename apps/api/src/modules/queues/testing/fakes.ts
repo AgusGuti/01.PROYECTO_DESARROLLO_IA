@@ -99,6 +99,16 @@ export function createFakeQueueRepository(): FakeQueueRepository {
       return Promise.resolve(updated);
     },
 
+    hasPendingWorkFor(printerId) {
+      guard('hasPendingWorkFor');
+      const pending = [...repository.stored.values()].some(
+        (queue) =>
+          queue.printerIds.includes(printerId) &&
+          queue.lines.some((entry) => entry.completed < entry.quantity),
+      );
+      return Promise.resolve(pending);
+    },
+
     remove(id, version) {
       guard('remove');
       if (repository.stored.get(id)?.version !== version) return Promise.resolve(false);
