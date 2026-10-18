@@ -607,6 +607,13 @@ class _Out(BaseModel):
         "/api/v1/simulations/%2e%2e/queues",
         "//evil.example/api/v1/simulations",
         "/API/v1/simulations",
+        "/api/v1/costs/settings",
+        "/api/v1/costs/estimates/",
+        "/api/v1/costs/estimates?x=1",
+        "/api/v1/costs/project-estimates/x",
+        "/api/v1/costs",
+        "/api/v1/filaments",
+        "/api/v1/queues/66f0c0ffee0123456789abcd",
     ],
 )
 async def test_a_post_outside_the_allowlist_is_blocked_before_any_http(path: str) -> None:
@@ -620,6 +627,25 @@ async def test_a_post_outside_the_allowlist_is_blocked_before_any_http(path: str
     assert api.requests == []
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v1/simulations",
+        "/api/v1/simulations/optimizations",
+        "/api/v1/costs/estimates",
+        "/api/v1/costs/project-estimates",
+    ],
+)
+async def test_the_four_stateless_posts_are_allowed(path: str) -> None:
+    api = FakeApi({("POST", path): httpx.Response(200, json={})})
+    transport = httpx.MockTransport(api.handle)
+
+    async with ApiClient("http://api.test", transport=transport) as client:
+        await client.request("POST", path, _Out, json_body={"a": 1})
+
+    assert [(r.method, r.url.path) for r in api.requests] == [("POST", path)]
+
+
 async def test_the_project_name_comes_from_the_same_lookup() -> None:
     api = two_printers()
     box = api.toolbox()
@@ -630,7 +656,7 @@ async def test_the_project_name_comes_from_the_same_lookup() -> None:
     assert [r.url.path for r in api.requests].count("/api/v1/projects") == 1
 
 
-async def test_only_get_and_the_two_stateless_posts_are_ever_issued() -> None:
+async def test_only_get_and_the_stateless_posts_are_ever_issued() -> None:
     api = FakeApi(
         {
             PROJECTS: page(project(PROJECT_ID, "Soportes")),

@@ -20,8 +20,15 @@ _STATUS_MESSAGES = {
     400: "La API rechazó la consulta.",
     404: "No se encontró lo pedido.",
 }
-# The only POSTs the assistant may send: both are stateless and save nothing (ADR 0030).
-_POST_ALLOWED = frozenset({"/api/v1/simulations", "/api/v1/simulations/optimizations"})
+# The only POSTs the assistant may send: all are stateless and save nothing (ADR 0030).
+_POST_ALLOWED = frozenset(
+    {
+        "/api/v1/simulations",
+        "/api/v1/simulations/optimizations",
+        "/api/v1/costs/estimates",
+        "/api/v1/costs/project-estimates",
+    }
+)
 _UNAVAILABLE = "La API no está disponible en este momento."
 
 
@@ -53,11 +60,11 @@ class ApiClient:
         model: type[M],
         *,
         params: Mapping[str, str | int] | None = None,
-        json_body: Mapping[str, str] | None = None,
+        json_body: Mapping[str, object] | None = None,
         read_seconds: float = DEFAULT_TIMEOUT_SECONDS,
         status_messages: Mapping[int, str] | None = None,
     ) -> M:
-        """Only GET and the stateless simulation POST are expressible here. `path` is built
+        """Only GET and the stateless POSTs above are expressible here. `path` is built
         by the tools from validated values only."""
         if method == "POST" and path not in _POST_ALLOWED:  # exact match: no query, no traversal
             logger.error("blocked POST to a path that is not allowed")
