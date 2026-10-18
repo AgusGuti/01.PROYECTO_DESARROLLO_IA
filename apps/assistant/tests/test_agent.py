@@ -208,4 +208,11 @@ def test_the_model_is_given_only_read_tools_and_one_proposal_tool() -> None:
         "get_cost_settings",
         "get_intervention_schedule",
         "simulate_project",
+        "costo_de_proyecto",
+        "costo_de_pieza",
+        "verificar_material",
+        "proyectos_en_riesgo",
+        "que_imprimir_esta_noche",
+        "cabe_la_pieza",
+        "ayuda_del_sistema",
     }
