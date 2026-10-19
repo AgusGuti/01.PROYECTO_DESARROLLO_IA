@@ -27,6 +27,10 @@ const rules: ScheduleRules = {
     { date: '2026-10-19', ranges: [range(600, 660)] }, // a Monday replaced
     { date: SUNDAY, ranges: [] }, // a Sunday with no intervention at all
   ],
+  absences: [
+    { from: '2026-11-02', to: '2026-11-07' }, // Monday to Saturday, between two open Sundays
+    { from: '2026-12-25', to: '2026-12-25' }, // one day
+  ],
 };
 
 describe('weekdayOf', () => {
@@ -55,6 +59,34 @@ describe('interventionRangesFor', () => {
 
   it('applies the exception to its date only', () => {
     expect(interventionRangesFor(rules, '2026-10-25')).toEqual([range(0, 1440)]);
+  });
+
+  it.each([
+    ['the first day, inclusive', '2026-11-02', []],
+    ['a middle day', '2026-11-03', []],
+    ['the last day, inclusive', '2026-11-07', []],
+    ['the day before', '2026-11-01', [range(0, 1440)]], // a Sunday
+    ['the day after', '2026-11-08', [range(0, 1440)]], // a Sunday
+    ['a one-day absence', '2026-12-25', []],
+  ])('in an absence: %s', (_label, date, expected) => {
+    expect(interventionRangesFor(rules, date)).toEqual(expected);
+  });
+
+  it('lets an absence override an exception that has ranges', () => {
+    const overridden: ScheduleRules = {
+      ...rules,
+      absences: [{ from: '2026-10-19', to: '2026-10-19' }],
+    };
+
+    expect(interventionRangesFor(overridden, '2026-10-19')).toEqual([]);
+    expect(isInterventionPossible(overridden, '2026-10-19', 600)).toBe(false);
+  });
+
+  it('lets an absence override a weekly day', () => {
+    const away: ScheduleRules = { ...rules, absences: [{ from: MONDAY, to: MONDAY }] };
+
+    expect(isInterventionPossible(away, MONDAY, 600)).toBe(false);
+    expect(isInterventionPossible(rules, MONDAY, 600)).toBe(true);
   });
 });
 

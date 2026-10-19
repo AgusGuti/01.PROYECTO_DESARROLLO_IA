@@ -72,6 +72,46 @@ describe('availability API on a real MongoDB with the real wiring', () => {
     }
   });
 
+  it('answers absences: [] for a document saved before absences existed', async () => {
+    await mongoose.connection
+      .collection<{ _id: string; [key: string]: unknown }>('availability')
+      .insertOne({
+        _id: 'schedule',
+        weekly: validRules.weekly,
+        exceptions: [],
+        version: 1,
+        createdAt: clock.now(),
+        updatedAt: clock.now(),
+      });
+
+    const response = await request(app).get(SCHEDULE);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ version: 1, absences: [] });
+  });
+
+  it('saves absences and reads them back as YYYY-MM-DD', async () => {
+    const saved = await put(0);
+
+    expect(saved.body).toMatchObject({ absences: [{ from: '2026-12-28', to: '2027-01-03' }] });
+    expect((await request(app).get(SCHEDULE)).body).toEqual(saved.body);
+  });
+
+  it('answers 400 with the exact path for an overlapping absence', async () => {
+    const response = await put(0, {
+      absences: [
+        { from: '2026-03-10', to: '2026-03-12' },
+        { from: '2026-03-11', to: '2026-03-15' },
+      ],
+    });
+
+    expect(response.status).toBe(400);
+    expect(problemSchema.parse(response.body).issues?.map((i) => i.path)).toEqual([
+      'absences.1.from',
+    ]);
+    expect(await collection().countDocuments({})).toBe(0);
+  });
+
   it('answers 400 with the exact path for an overlap', async () => {
     const weekly = validRules.weekly.map((day, i) =>
       i === 1

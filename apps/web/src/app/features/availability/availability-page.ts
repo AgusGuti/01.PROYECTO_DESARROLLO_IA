@@ -23,6 +23,7 @@ import {
   DAY_NAMES,
   formatDay,
   formatMinutes,
+  MAX_ABSENCES,
   MAX_EXCEPTIONS,
   MAX_RANGES_PER_DAY,
   parseDay,
@@ -44,6 +45,8 @@ type SaveState =
 type DayGroup = FormGroup<{ ranges: FormArray<RangeGroup> }>;
 type ExceptionGroup = FormGroup<{ date: FormControl<string>; ranges: FormArray<RangeGroup> }>;
 
+type AbsenceGroup = FormGroup<{ from: FormControl<string>; to: FormControl<string> }>;
+
 const GENERIC_ERROR = 'Ocurrió un error inesperado. Intentá de nuevo.';
 const INITIAL_LOAD: LoadState = { kind: 'loading' };
 
@@ -55,6 +58,9 @@ const OVERLAP_MESSAGE = 'Este rango se superpone con otro del mismo día.';
 const DATE_MESSAGE = 'Escribí una fecha real con formato DD-MM-AAAA, entre 2000 y 2099.';
 const DUPLICATE_MESSAGE = 'Esta fecha está repetida.';
 const TOO_MANY_RANGES = 'Un día admite hasta 6 rangos.';
+const ABSENCE_ORDER_MESSAGE = 'El «Hasta» no puede ser anterior al «Desde».';
+const ABSENCE_OVERLAP_MESSAGE = 'Esta ausencia se superpone con otra.';
+const TOO_MANY_ABSENCES = 'Hay demasiadas ausencias: el máximo es 30.';
 
 /** Which control an API issue path belongs to; the id is that of the control to mark. */
 const ISSUE_PATH =
@@ -62,6 +68,9 @@ const ISSUE_PATH =
 
 function issueTarget(path: string): string | null {
   if (path === 'exceptions') return 'x-add';
+  if (path === 'absences') return 'a-add';
+  const absence = /^absences\.(\d+)\.(from|to)$/.exec(path);
+  if (absence !== null) return `a-${absence[1] ?? ''}-${absence[2] ?? ''}`;
   const match = ISSUE_PATH.exec(path);
   if (match === null) return null;
   const [, section, index, date, range, edge] = match;
@@ -72,6 +81,8 @@ function issueTarget(path: string): string | null {
 }
 
 function serverMessage(id: string): string {
+  if (id === 'a-add') return TOO_MANY_ABSENCES;
+  if (id.startsWith('a-')) return 'Estas fechas no son válidas o se superponen con otra ausencia.';
   if (id === 'x-add') return 'Hay demasiadas excepciones.';
   if (id.endsWith('-date')) return 'La fecha no es válida o está repetida.';
   if (id.endsWith('-add')) return 'Revisá los rangos de este día.';
@@ -143,12 +154,18 @@ export class AvailabilityPage {
 
   protected readonly dayNames = DAY_NAMES;
   protected readonly maxExceptions = MAX_EXCEPTIONS;
+  protected readonly maxAbsences = MAX_ABSENCES;
 
   protected readonly weekly = new FormArray<DayGroup>(
     DAY_NAMES.map(() => new FormGroup({ ranges: rangesOf([]) })),
   );
   protected readonly exceptions = new FormArray<ExceptionGroup>([]);
-  private readonly form = new FormGroup({ weekly: this.weekly, exceptions: this.exceptions });
+  protected readonly absences = new FormArray<AbsenceGroup>([]);
+  private readonly form = new FormGroup({
+    weekly: this.weekly,
+    exceptions: this.exceptions,
+    absences: this.absences,
+  });
 
   protected readonly save = signal<SaveState>({ kind: 'idle' });
   /** The text announced to screen readers: saved, copied, added, removed. */
@@ -252,6 +269,26 @@ export class AvailabilityPage {
     this.focusLater('x-add');
   }
 
+  protected addAbsence(): void {
+    if (this.absences.length >= MAX_ABSENCES) return;
+    this.absences.push(this.newAbsence('', ''));
+    this.announcement.set('Ausencia agregada.');
+    this.focusLater(`a-${this.absences.length - 1}-from`);
+  }
+
+  protected removeAbsence(index: number): void {
+    this.absences.removeAt(index);
+    this.announcement.set('Ausencia quitada.');
+    this.focusLater('a-add');
+  }
+
+  private newAbsence(from: string, to: string): AbsenceGroup {
+    return new FormGroup({
+      from: new FormControl(from, { nonNullable: true }),
+      to: new FormControl(to, { nonNullable: true }),
+    });
+  }
+
   protected submit(): void {
     if (this.save().kind === 'saving') return;
     this.submitted.set(true);
@@ -305,6 +342,25 @@ export class AvailabilityPage {
       return { date, ranges: readRanges(row.controls.ranges, `x-${index}`, errors) };
     });
 
+    const dates: { from: string; to: string; index: number }[] = [];
+    this.absences.controls.forEach((row, index) => {
+      const from = parseDay(row.controls.from.value);
+      const to = parseDay(row.controls.to.value);
+      if (from === null) errors[`a-${index}-from`] = DATE_MESSAGE;
+      if (to === null) errors[`a-${index}-to`] = DATE_MESSAGE;
+      if (from === null || to === null) return;
+      // ISO dates compare correctly as plain strings.
+      if (to < from) errors[`a-${index}-to`] = ABSENCE_ORDER_MESSAGE;
+      else dates.push({ from, to, index });
+    });
+    if (this.absences.length > MAX_ABSENCES) errors['a-add'] = TOO_MANY_ABSENCES;
+    dates.sort((a, b) => a.from.localeCompare(b.from));
+    let lastEnd = '';
+    for (const item of dates) {
+      if (item.from <= lastEnd) errors[`a-${item.index}-from`] = ABSENCE_OVERLAP_MESSAGE;
+      if (item.to > lastEnd) lastEnd = item.to;
+    }
+
     const days = weekly.filter((ranges) => ranges !== null).map((ranges) => ({ ranges }));
     const rows = exceptions.flatMap((row) =>
       row.date !== null && row.ranges !== null ? [{ date: row.date, ranges: row.ranges }] : [],
@@ -313,7 +369,14 @@ export class AvailabilityPage {
       Object.keys(errors).length === 0 && days.length === 7 && rows.length === exceptions.length;
     return {
       errors,
-      body: valid ? { weekly: days, exceptions: rows, version: this.currentVersion() } : null,
+      body: valid
+        ? {
+            weekly: days,
+            exceptions: rows,
+            absences: dates.map(({ from, to }) => ({ from, to })),
+            version: this.currentVersion(),
+          }
+        : null,
     };
   }
 
@@ -363,6 +426,10 @@ export class AvailabilityPage {
           ranges: rangesOf(item.ranges),
         }),
       );
+    }
+    this.absences.clear();
+    for (const item of schedule.absences) {
+      this.absences.push(this.newAbsence(formatDay(item.from), formatDay(item.to)));
     }
     this.submitted.set(false);
     this.errors.set({});

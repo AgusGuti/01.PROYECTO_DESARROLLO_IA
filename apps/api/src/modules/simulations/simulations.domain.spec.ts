@@ -177,6 +177,7 @@ describe('simulateNaive, one printer', () => {
     const closed: ScheduleRules = {
       weekly: DAY_SHIFT.weekly.map(() => ({ ranges: [] })),
       exceptions: [],
+      absences: [],
     };
 
     const result = run('2026-03-02T08:00', 4, 60, { schedule: closed });
@@ -191,12 +192,114 @@ describe('simulateNaive, one printer', () => {
     const once: ScheduleRules = {
       weekly: DAY_SHIFT.weekly.map(() => ({ ranges: [] })),
       exceptions: [{ date: '2026-03-02', ranges: [{ startMinute: 480, endMinute: 540 }] }],
+      absences: [],
     };
 
     const result = run('2026-03-02T08:00', 1, 60 * 24 * 90, { schedule: once });
 
     expect(result.jobs).toEqual([]);
     expect(result.unplaced).toEqual([{ partId: 'p', units: 1 }]);
+  });
+});
+
+describe('simulateNaive, absences', () => {
+  const away = (from: string, to: string): ScheduleRules => ({
+    ...DAY_SHIFT,
+    absences: [{ from, to }],
+  });
+
+  it('collects a piece after a 3-day absence in the middle of a queue run', () => {
+    // 10 h prints: Mon and Tue run normally; the Tue piece would be collected Wed 08:00, but
+    // Wed-Fri are absent, so it waits for Sat 08:00 and the third print starts then.
+    const result = run('2026-03-02T08:00', 3, 600, { schedule: away('2026-03-04', '2026-03-06') });
+
+    expect(result.jobs.map((job) => [text(job.start), text(job.end), text(job.handoff)])).toEqual([
+      ['2026-03-02T08:00', '2026-03-02T18:00', '2026-03-03T08:00'],
+      ['2026-03-03T08:00', '2026-03-03T18:00', '2026-03-07T08:00'],
+      ['2026-03-07T08:00', '2026-03-07T18:00', '2026-03-08T08:00'],
+    ]);
+    expect(result.unplaced).toEqual([]);
+  });
+
+  it('collects a print that ends inside the absence at the first intervention minute after it', () => {
+    // 25 h from Tue 08:00 ends Wed 09:00, inside the absence; collected Sat 08:00.
+    const [job] = run('2026-03-03T08:00', 1, 1500, {
+      schedule: away('2026-03-04', '2026-03-06'),
+    }).jobs;
+
+    expect([text(job?.start ?? 0), text(job?.end ?? 0), text(job?.handoff ?? 0)]).toEqual([
+      '2026-03-03T08:00',
+      '2026-03-04T09:00',
+      '2026-03-07T08:00',
+    ]);
+    expect(job?.unattended).toBe(true);
+  });
+
+  it('reports units as unplaced when the absence pushes the next start past the 14-day horizon', () => {
+    // Horizon ends Mon 03-16 08:00. The first piece is collected only on 03-17, so units 2 and 3
+    // cannot start inside the horizon.
+    const result = run('2026-03-02T08:00', 3, 600, { schedule: away('2026-03-03', '2026-03-16') });
+
+    expect(result.jobs.map((job) => [text(job.start), text(job.handoff)])).toEqual([
+      ['2026-03-02T08:00', '2026-03-17T08:00'],
+    ]);
+    expect(result.unplaced).toEqual([{ partId: 'p', units: 2 }]);
+  });
+
+  it('lets an absence override an exception day that has ranges', () => {
+    const schedule: ScheduleRules = {
+      ...DAY_SHIFT,
+      exceptions: [{ date: '2026-03-03', ranges: [{ startMinute: 480, endMinute: 540 }] }],
+      absences: [{ from: '2026-03-03', to: '2026-03-03' }],
+    };
+
+    const without = run('2026-03-02T18:00', 1, 60, { schedule: { ...schedule, absences: [] } });
+    const result = run('2026-03-02T18:00', 1, 60, { schedule });
+
+    expect(text(without.jobs[0]?.start ?? 0)).toBe('2026-03-03T08:00');
+    expect(text(result.jobs[0]?.start ?? 0)).toBe('2026-03-04T08:00');
+  });
+
+  it.each([
+    [
+      'a one-day absence is skipped',
+      '2026-03-04',
+      '2026-03-04',
+      '2026-03-03T18:00',
+      '2026-03-05T08:00',
+    ],
+    [
+      'the last absent day is inclusive',
+      '2026-03-04',
+      '2026-03-05',
+      '2026-03-03T18:00',
+      '2026-03-06T08:00',
+    ],
+    [
+      'the first absent day is inclusive',
+      '2026-03-04',
+      '2026-03-04',
+      '2026-03-04T08:00',
+      '2026-03-05T08:00',
+    ],
+    [
+      'the day before the absence is untouched',
+      '2026-03-04',
+      '2026-03-06',
+      '2026-03-03T17:59',
+      '2026-03-03T17:59',
+    ],
+    [
+      'a start inside the absence moves after it',
+      '2026-03-02',
+      '2026-03-03',
+      '2026-03-02T08:00',
+      '2026-03-04T08:00',
+    ],
+  ])('%s', (_label, from, to, startAt, expected) => {
+    const [job] = run(startAt, 1, 1, { schedule: away(from, to) }).jobs;
+
+    expect(text(job?.start ?? 0)).toBe(expected);
   });
 });
 

@@ -38,7 +38,12 @@ describe('update schedule request', () => {
     ['eight weekly days', { ...valid, weekly: [...days([]), { ranges: [] }] }, ['weekly']],
     ['a negative version', { ...valid, version: -1 }, ['version']],
     ['a fractional version', { ...valid, version: 1.5 }, ['version']],
-    ['a missing exceptions list', { weekly: valid.weekly, version: 0 }, ['exceptions']],
+    [
+      'a missing exceptions list',
+      { weekly: valid.weekly, absences: [], version: 0 },
+      ['exceptions'],
+    ],
+    ['a missing absences list', { weekly: valid.weekly, exceptions: [], version: 0 }, ['absences']],
   ])('rejects %s', (_label, body, expected) => {
     expect(paths(body)).toEqual(expected);
   });
@@ -78,6 +83,51 @@ describe('update schedule request', () => {
       ];
 
       expect(paths({ ...valid, weekly })).toEqual(['weekly.2.ranges.1.endMinute']);
+    });
+  });
+
+  describe('absences', () => {
+    const withAbsences = (absences: unknown) => ({ ...valid, absences });
+    const day = (from: string, to = from) => ({ from, to });
+
+    it('accepts none, one day, a range, adjacent ranges and the date limits', () => {
+      expect(paths(withAbsences([]))).toBeNull();
+      expect(paths(withAbsences([day('2026-12-25')]))).toBeNull();
+      expect(paths(withAbsences([day('2000-01-01', '2099-12-31')]))).toBeNull();
+      expect(
+        paths(withAbsences([day('2026-03-10', '2026-03-12'), day('2026-03-13', '2026-03-15')])),
+      ).toBeNull();
+      expect(paths(withAbsences([day('2024-02-28', '2024-02-29')]))).toBeNull();
+    });
+
+    it.each([
+      ['a day that does not exist', day('2026-02-30', '2026-03-01'), ['absences.0.from']],
+      ['a non-leap 29 February', day('2026-01-01', '2026-02-29'), ['absences.0.to']],
+      ['a year before 2000', day('1999-12-31', '2000-01-02'), ['absences.0.from']],
+      ['a year after 2099', day('2099-12-31', '2100-01-01'), ['absences.0.to']],
+      ['a date with a time', day('2026-12-25T00:00:00Z', '2026-12-26'), ['absences.0.from']],
+      ['to before from', day('2026-03-10', '2026-03-09'), ['absences.0.to']],
+      ['an unknown key', { ...day('2026-03-10'), x: 1 }, ['absences.0']],
+    ])('rejects %s with its field path', (_label, entry, expected) => {
+      expect(paths(withAbsences([entry]))).toEqual(expected);
+    });
+
+    it.each([
+      ['an overlap', [day('2026-03-10', '2026-03-12'), day('2026-03-12', '2026-03-15')]],
+      ['a contained range', [day('2026-03-10', '2026-03-20'), day('2026-03-12', '2026-03-13')]],
+      ['unsorted ranges', [day('2026-03-15', '2026-03-16'), day('2026-03-10', '2026-03-11')]],
+    ])('rejects %s on absences.1.from', (_label, absences) => {
+      expect(paths(withAbsences(absences))).toEqual(['absences.1.from']);
+    });
+
+    it('accepts 30 absences and rejects 31', () => {
+      const make = (count: number) =>
+        Array.from({ length: count }, (_, i) =>
+          day(new Date(Date.UTC(2026, 0, 1 + i * 2)).toISOString().slice(0, 10)),
+        );
+
+      expect(paths(withAbsences(make(30)))).toBeNull();
+      expect(paths(withAbsences(make(31)))).toEqual(['absences']);
     });
   });
 

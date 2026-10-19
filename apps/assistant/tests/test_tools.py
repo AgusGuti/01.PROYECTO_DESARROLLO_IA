@@ -264,6 +264,10 @@ async def test_intervention_schedule_is_readable_by_weekday() -> None:
     body = {
         "weekly": [day] + [{"ranges": []}] * 6,
         "exceptions": [{"date": "2026-12-25", "ranges": []}],
+        "absences": [
+            {"from": "2026-11-02", "to": "2026-11-09"},
+            {"from": "2026-12-01", "to": "2026-12-01"},
+        ],
         "version": 1,
         "updatedAt": None,
     }
@@ -274,6 +278,16 @@ async def test_intervention_schedule_is_readable_by_weekday() -> None:
     assert out["horario_semanal"]["lunes"] == ["08:00-18:00"]
     assert out["horario_semanal"]["domingo"] == []
     assert out["excepciones"] == {"25-12-2026": []}
+    assert out["ausencias"] == ["02-11-2026 a 09-11-2026", "01-12-2026"]
+
+
+async def test_intervention_schedule_without_absences_field_has_none() -> None:
+    body = {"weekly": [{"ranges": []}] * 7, "exceptions": [], "version": 0}
+    api = FakeApi({("GET", "/api/v1/availability/schedule"): ok(body)})
+
+    out = json.loads((await api.toolbox().run("get_intervention_schedule", {})).split("\n")[1])
+
+    assert out["ausencias"] == []
 
 
 SIMULATION = {

@@ -639,6 +639,10 @@ export type InterventionSchedule = {
             endMinute: number;
         }>;
     }>;
+    absences: Array<{
+        from: string;
+        to: string;
+    }>;
     /**
      * 0 until the schedule is first saved.
      */
@@ -662,6 +666,19 @@ export type UpdateScheduleRequest = {
          * Replaces that day. Empty: no intervention at all.
          */
         ranges: Array<InterventionRange>;
+    }>;
+    /**
+     * Up to 30 day ranges with no intervention at all; they override exceptions.
+     */
+    absences: Array<{
+        /**
+         * First day of the absence, inclusive.
+         */
+        from: string;
+        /**
+         * Last day of the absence, inclusive.
+         */
+        to: string;
     }>;
     /**
      * 0 for the first save, otherwise the version last seen (ADR 0024).

@@ -313,6 +313,7 @@ describe('edge cases', () => {
     const closed: ScheduleRules = {
       weekly: Array.from({ length: 7 }, () => ({ ranges: [] })),
       exceptions: [],
+      absences: [],
     };
 
     const result = run([line('p', 3, 1)], { schedule: closed });
@@ -372,8 +373,19 @@ function randomInput(seed: number): OptimizerInput {
     seconds: int(60, 40_000),
     size: { x: int(10, 150), y: int(10, 150), z: int(5, 300) },
   }));
+  // Up to 3 random absences of 1..5 days, sorted and separated by at least one free day.
+  const absences: { from: string; to: string }[] = [];
+  let day = at('2026-03-02T00:00') / MINUTES_PER_DAY + int(0, 10);
+  for (let count = int(0, 3); count > 0; count--) {
+    const length = int(1, 5);
+    absences.push({
+      from: text(day * MINUTES_PER_DAY).slice(0, 10),
+      to: text((day + length - 1) * MINUTES_PER_DAY).slice(0, 10),
+    });
+    day += length + int(1, 4);
+  }
   return {
-    schedule: { weekly, exceptions: [] },
+    schedule: { weekly, exceptions: [], absences },
     startAt: at('2026-03-02T00:00') + int(0, 7 * MINUTES_PER_DAY),
     lines,
     printers: Array.from({ length: int(1, 3) }, (_unused, index) => ({

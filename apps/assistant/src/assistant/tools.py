@@ -467,9 +467,15 @@ class ApiExceptionDay(_Data):
     ranges: list[ApiRange]
 
 
+class ApiAbsence(_Data):
+    from_: str = Field(alias="from")  # YYYY-MM-DD, inclusive
+    to: str
+
+
 class ApiSchedule(_Data):
     weekly: list[ApiDay]
     exceptions: list[ApiExceptionDay]
+    absences: list[ApiAbsence] = []
     version: int
 
 
@@ -715,6 +721,7 @@ class HorarioDeIntervencion(BaseModel):
 
     horario_semanal: dict[str, list[str]]
     excepciones: dict[str, list[str]]
+    ausencias: list[str]  # days off: no intervention at all, they beat weekly ranges and exceptions
     horario_guardado_por_el_usuario: bool
 
 
@@ -723,6 +730,7 @@ AGENDA_NOTE = (
     "horario de intervención. Para ver cuándo terminaría un proyecto usá la simulación."
 )
 NO_INTERVENTION = "sin intervención ese día"
+ABSENT = "ausente: no intervenís ese día"
 
 
 class ProyectoConFechaLimite(BaseModel):
@@ -737,6 +745,7 @@ class Agenda(BaseModel):
     proyectos_con_fecha_limite: list[ProyectoConFechaLimite]
     proyectos_revisados_parcialmente: bool  # more projects exist than the page examined
     horario_de_intervencion: list[str]
+    ausencia: str | None = None  # range text when the date falls inside an absence
     nota: str
 
 
@@ -998,6 +1007,11 @@ def _hhmm(minute: int) -> str:
 
 def _ranges(ranges: list[ApiRange]) -> list[str]:
     return [f"{_hhmm(r.startMinute)}-{_hhmm(r.endMinute)}" for r in ranges]
+
+
+def _absence_text(a: ApiAbsence) -> str:
+    first, last = date_ar(a.from_) or a.from_, date_ar(a.to) or a.to
+    return first if a.from_ == a.to else f"{first} a {last}"
 
 
 def _agenda_ranges(ranges: list[ApiRange]) -> list[str]:
@@ -1411,6 +1425,7 @@ class Toolbox:
                 excepciones={
                     date_ar(e.date) or e.date: _ranges(e.ranges) for e in raw.exceptions[:MAX_ITEMS]
                 },
+                ausencias=[_absence_text(a) for a in raw.absences[:MAX_ITEMS]],
                 horario_guardado_por_el_usuario=raw.version > 0,
             )
 
@@ -1430,8 +1445,11 @@ class Toolbox:
                 params={"page": 1, "pageSize": PAGE_SIZE, "sort": "deadline"},
             )
             schedule = await api.request("GET", "/api/v1/availability/schedule", ApiSchedule)
+            absence = next((a for a in schedule.absences if a.from_ <= iso <= a.to), None)
             exception = next((e for e in schedule.exceptions if e.date == iso), None)
-            if exception is not None:
+            if absence is not None:
+                ranges = []
+            elif exception is not None:
                 ranges = exception.ranges
             else:
                 weekly = schedule.weekly
@@ -1449,7 +1467,8 @@ class Toolbox:
                     if (p.deadline or "")[:10] == iso
                 ][:MAX_ITEMS],
                 proyectos_revisados_parcialmente=page.total > len(page.items),
-                horario_de_intervencion=_agenda_ranges(ranges),
+                horario_de_intervencion=[ABSENT] if absence else _agenda_ranges(ranges),
+                ausencia=_absence_text(absence) if absence else None,
                 nota=AGENDA_NOTE,
             )
 
@@ -2369,7 +2388,9 @@ class Toolbox:
             _tool(
                 "get_intervention_schedule",
                 "Devuelve en qué horarios el usuario puede intervenir (cambiar una pieza), por "
-                "día de la semana, y los días con excepciones. Hora de Argentina.",
+                "día de la semana, los días con excepciones y las ausencias (rangos de fechas sin "
+                "intervención). Usala para '¿cuándo estoy ausente?' o '¿tengo ausencias?'. "
+                "Hora de Argentina.",
                 NoArgs,
                 get_intervention_schedule,
             ),

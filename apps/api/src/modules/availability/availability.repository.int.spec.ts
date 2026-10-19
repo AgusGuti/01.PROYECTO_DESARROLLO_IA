@@ -99,12 +99,43 @@ describe('schedule repository on a real MongoDB', () => {
     const next = {
       weekly: validRules.weekly.map(() => ({ ranges: [range(0, 1440)] })),
       exceptions: [],
+      absences: [{ from: '2026-05-01', to: '2026-05-03' }],
     };
 
     const updated = await repository.update(next, 1, T1);
 
     expect(updated).toEqual({ ...next, version: 2, updatedAt: T1 });
     expect(await collection().findOne({})).toMatchObject({ createdAt: T0, version: 2 });
+  });
+
+  it('stores absences as UTC midnight dates and reads them back as YYYY-MM-DD', async () => {
+    await repository.create(validRules, T0);
+
+    const raw = await collection().findOne({});
+
+    expect(raw?.['absences']).toEqual([
+      { from: new Date('2026-12-28T00:00:00.000Z'), to: new Date('2027-01-03T00:00:00.000Z') },
+    ]);
+    expect((await repository.find())?.absences).toEqual([{ from: '2026-12-28', to: '2027-01-03' }]);
+  });
+
+  it('reads a document saved before absences existed as an empty list', async () => {
+    await mongoose.connection
+      .collection<{ _id: string; [key: string]: unknown }>('availability')
+      .insertOne({
+        _id: 'schedule',
+        weekly: validRules.weekly,
+        exceptions: [],
+        version: 1,
+        createdAt: T0,
+        updatedAt: T0,
+      });
+
+    expect((await repository.find())?.absences).toEqual([]);
+    // The first save after the change writes the field.
+    const updated = await repository.update({ ...validRules, absences: [] }, 1, T1);
+    expect(updated?.absences).toEqual([]);
+    expect((await collection().findOne({}))?.['absences']).toEqual([]);
   });
 
   it('lets exactly one of two simultaneous updates of version 1 win', async () => {

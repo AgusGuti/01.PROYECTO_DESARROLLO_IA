@@ -48,6 +48,16 @@ describe('availability service', () => {
     expect(repository.stored?.version).toBe(2);
   });
 
+  it('stores the absences it is given and replaces them on update', async () => {
+    const { service } = setup();
+    const first = await service.saveSchedule({ ...validRules, version: 0 });
+
+    const second = await service.saveSchedule({ ...validRules, absences: [], version: 1 });
+
+    expect(first.absences).toEqual(validRules.absences);
+    expect(second.absences).toEqual([]);
+  });
+
   it('answers a conflict on version for a stale version and keeps the stored schedule', async () => {
     const { service, repository } = setup();
     await service.saveSchedule({ ...validRules, version: 0 });

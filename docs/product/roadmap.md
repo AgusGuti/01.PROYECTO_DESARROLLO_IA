@@ -4,7 +4,7 @@ Source of requirements: [the project proposal](propuesta-proyecto-impresion-3d.m
 One item at a time, each through the `new-feature` workflow, each merged by pull request with
 green CI before the next starts.
 
-**Current:** Resume-a-paused-project phase 1 is merged (typed progress, 'Retomar desde', assistant progress proposal and replanning from a date). Next: phase 2 (absence ranges in availability), a manual review pass in a browser, then authentication (closes EXC-0001) and deployment. Open follow-ups: printer out-of-use periods, archived-to-deleted printer on queue finish (ADR 0032), idempotency for assistant confirmations, shared printers across projects.
+**Current:** Absences (resume-a-paused-project phase 2) are merged. Next: a manual review pass of every screen in a browser, then authentication (closes EXC-0001) and deployment. Open follow-ups: printer out-of-use periods, archived-to-deleted printer on queue finish (ADR 0032), idempotency for assistant confirmations, shared printers across projects, filament deduction when marking pieces printed.
 
 The session-start hook reads the line above. Update it when an item is merged.
 

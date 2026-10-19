@@ -50,12 +50,11 @@ export function createAvailabilityService(deps: {
     },
 
     async saveSchedule(edit) {
-      const { version, weekly, exceptions } = edit;
+      const { version, weekly, exceptions, absences } = edit;
+      const rules = { weekly, exceptions, absences };
       const now = clock.now();
-      if (version === 0) return dependable(() => repository.create({ weekly, exceptions }, now));
-      const updated = await dependable(() =>
-        repository.update({ weekly, exceptions }, version, now),
-      );
+      if (version === 0) return dependable(() => repository.create(rules, now));
+      const updated = await dependable(() => repository.update(rules, version, now));
       if (updated === null) throw staleVersion();
       return updated;
     },

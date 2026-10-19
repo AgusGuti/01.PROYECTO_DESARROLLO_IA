@@ -28,6 +28,7 @@ export const validRules: ScheduleRules = {
     ...Array.from({ length: 6 }, () => ({ ranges: [] })),
   ],
   exceptions: [{ date: '2026-12-25', ranges: [] }],
+  absences: [{ from: '2026-12-28', to: '2027-01-03' }],
 };
 
 export interface FakeScheduleRepository extends ScheduleRepository {

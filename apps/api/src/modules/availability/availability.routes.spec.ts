@@ -7,7 +7,7 @@ import { scheduleSchema } from './availability.schemas.js';
 import { createFakeScheduleRepository, createTestClock, validRules } from './testing/fakes.js';
 
 const SCHEDULE = '/api/v1/availability/schedule';
-const KEYS = ['exceptions', 'updatedAt', 'version', 'weekly'];
+const KEYS = ['absences', 'exceptions', 'updatedAt', 'version', 'weekly'];
 
 function setup() {
   const repository = createFakeScheduleRepository();
@@ -37,7 +37,7 @@ describe('GET /api/v1/availability/schedule', () => {
     expect(body.weekly).toHaveLength(7);
     expect(body.weekly.every((day) => day.ranges.length === 1)).toBe(true);
     expect(body.weekly[6]?.ranges).toEqual([{ startMinute: 480, endMinute: 1080 }]);
-    expect(body).toMatchObject({ exceptions: [], version: 0, updatedAt: null });
+    expect(body).toMatchObject({ exceptions: [], absences: [], version: 0, updatedAt: null });
     expect(repository.calls).toEqual(['find']);
     expect(repository.stored).toBeNull();
   });
@@ -53,6 +53,7 @@ describe('GET /api/v1/availability/schedule', () => {
       version: 3,
       updatedAt: '2026-02-01T00:00:00.000Z',
       exceptions: [{ date: '2026-12-25', ranges: [] }],
+      absences: [{ from: '2026-12-28', to: '2027-01-03' }],
     });
   });
 
@@ -140,7 +141,9 @@ describe('PUT /api/v1/availability/schedule', () => {
       },
     ],
     ['a duplicate exception date', { ...put, exceptions: [put.exceptions[0], put.exceptions[0]] }],
-    ['a missing version', { weekly: put.weekly, exceptions: put.exceptions }],
+    ['a missing version', { weekly: put.weekly, exceptions: put.exceptions, absences: [] }],
+    ['a missing absences list', { weekly: put.weekly, exceptions: put.exceptions, version: 0 }],
+    ['a reversed absence', { ...put, absences: [{ from: '2026-03-10', to: '2026-03-09' }] }],
   ])('answers 400 and writes nothing for %s', async (_label, payload) => {
     const { app, repository } = setup();
 
@@ -170,6 +173,42 @@ describe('PUT /api/v1/availability/schedule', () => {
     );
 
     expect(problem.issues?.map((issue) => issue.path)).toEqual(['weekly.2.ranges.1.endMinute']);
+  });
+
+  it('reports an overlapping absence on absences.1.from', async () => {
+    const { app } = setup();
+    const absences = [
+      { from: '2026-03-10', to: '2026-03-12' },
+      { from: '2026-03-12', to: '2026-03-15' },
+    ];
+
+    const problem = expectProblem(
+      await request(app)
+        .put(SCHEDULE)
+        .send({ ...put, absences }),
+      400,
+      'validation_failed',
+    );
+
+    expect(problem.issues?.map((issue) => issue.path)).toEqual(['absences.1.from']);
+  });
+
+  it('reports 31 absences on the list itself', async () => {
+    const { app } = setup();
+    const absences = Array.from({ length: 31 }, (_, i) => {
+      const date = new Date(Date.UTC(2026, 0, 1 + i * 2)).toISOString().slice(0, 10);
+      return { from: date, to: date };
+    });
+
+    const problem = expectProblem(
+      await request(app)
+        .put(SCHEDULE)
+        .send({ ...put, absences }),
+      400,
+      'validation_failed',
+    );
+
+    expect(problem.issues?.map((issue) => issue.path)).toEqual(['absences']);
   });
 
   it('answers a generic 503 without driver text when the repository fails', async () => {

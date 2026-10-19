@@ -25,7 +25,12 @@ export function createScheduleReader(
 ): () => Promise<ScheduleRules & { version: number }> {
   return async () => {
     const schedule = (await repository.find()) ?? DEFAULT_SCHEDULE;
-    return { weekly: schedule.weekly, exceptions: schedule.exceptions, version: schedule.version };
+    return {
+      weekly: schedule.weekly,
+      exceptions: schedule.exceptions,
+      absences: schedule.absences,
+      version: schedule.version,
+    };
   };
 }
 

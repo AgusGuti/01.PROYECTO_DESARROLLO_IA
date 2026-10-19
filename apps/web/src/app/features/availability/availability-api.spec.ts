@@ -13,6 +13,7 @@ const day = { ranges: [{ startMinute: 480, endMinute: 1080 }] };
 const schedule: InterventionSchedule = {
   weekly: [day, day, day, day, day, day, day],
   exceptions: [{ date: '2026-12-25', ranges: [] }],
+  absences: [{ from: '2026-12-20', to: '2026-12-27' }],
   version: 2,
   updatedAt: '2026-10-15T12:00:00.000Z',
 };
@@ -46,7 +47,12 @@ describe('AvailabilityApi', () => {
   });
 
   it('puts the full replacement with the version last seen', async () => {
-    const body = { weekly: schedule.weekly, exceptions: schedule.exceptions, version: 2 };
+    const body = {
+      weekly: schedule.weekly,
+      exceptions: schedule.exceptions,
+      absences: schedule.absences,
+      version: 2,
+    };
     const result = firstValueFrom(api.putSchedule(body));
 
     const request = http.expectOne({ method: 'PUT', url: URL });
@@ -64,8 +70,19 @@ describe('AvailabilityApi', () => {
     await expect(result).rejects.toMatchObject({ code: 'unexpected_response' });
   });
 
+  it('rejects a response from an older backend that has no absences', async () => {
+    const result = firstValueFrom(api.getSchedule());
+    const { absences: _absences, ...legacy } = schedule;
+
+    http.expectOne(URL).flush(legacy);
+
+    await expect(result).rejects.toMatchObject({ code: 'unexpected_response' });
+  });
+
   it('keeps the issues of a stale-version conflict and never retries', async () => {
-    const result = firstValueFrom(api.putSchedule({ weekly: [], exceptions: [], version: 1 }));
+    const result = firstValueFrom(
+      api.putSchedule({ weekly: [], exceptions: [], absences: [], version: 1 }),
+    );
 
     http
       .expectOne(URL)
@@ -85,6 +102,8 @@ describe('AvailabilityApi', () => {
     [{ ...schedule, version: -1 }, false],
     [{ ...schedule, exceptions: [{ date: 5, ranges: [] }] }, false],
     [{ ...schedule, weekly: [{ ranges: [{ startMinute: '1', endMinute: 2 }] }] }, false],
+    [{ ...schedule, absences: [{ from: '2026-12-20' }] }, false],
+    [{ ...schedule, absences: 'x' }, false],
     [schedule, true],
   ])('guards %#', (value, expected) => {
     expect(isInterventionSchedule(value)).toBe(expected);
