@@ -22,6 +22,7 @@ export const PRINTER_2 = 'e'.repeat(24);
 export const DAY_SHIFT: ScheduleRules = {
   weekly: Array.from({ length: 7 }, () => ({ ranges: [{ startMinute: 480, endMinute: 1080 }] })),
   exceptions: [],
+  absences: [],
 };
 
 /** Ender-3 V2 Neo bed. */

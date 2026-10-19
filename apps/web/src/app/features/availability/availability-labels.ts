@@ -11,6 +11,7 @@ export const DAY_NAMES: readonly string[] = [
 /** Limits of the contract (ADR 0024); the form mirrors them as a convenience. */
 export const MAX_RANGES_PER_DAY = 6;
 export const MAX_EXCEPTIONS = 60;
+export const MAX_ABSENCES = 30;
 export const END_OF_DAY = 1440;
 
 const TIME = /^(\d{1,2}):(\d{2})$/;

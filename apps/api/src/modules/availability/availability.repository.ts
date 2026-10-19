@@ -3,6 +3,7 @@ import mongoose, { Schema } from 'mongoose';
 import { AppError } from '../../shared/errors/app-error.js';
 import {
   DAYS_PER_WEEK,
+  MAX_ABSENCES,
   MAX_EXCEPTIONS,
   MAX_RANGES_PER_DAY,
   MINUTES_PER_DAY,
@@ -24,6 +25,8 @@ interface StoredSchedule {
   weekly: { ranges: StoredRange[] }[];
   // A calendar day is stored as UTC midnight (ADR 0011).
   exceptions: { date: Date; ranges: StoredRange[] }[];
+  // Documents saved before absences existed have no field: read as [] (ADR 0033, no migration).
+  absences?: { from: Date; to: Date }[];
   version: number;
   createdAt: Date;
   updatedAt: Date;
@@ -57,6 +60,15 @@ const scheduleSchema = new Schema<StoredSchedule>(
       ],
       validate: (value: unknown[]) => value.length <= MAX_EXCEPTIONS,
     },
+    absences: {
+      type: [
+        new Schema(
+          { from: { type: Date, required: true }, to: { type: Date, required: true } },
+          { _id: false },
+        ),
+      ],
+      validate: (value: unknown[]) => value.length <= MAX_ABSENCES,
+    },
     version: { type: Number, required: true, min: 1 },
     createdAt: { type: Date, required: true },
     updatedAt: { type: Date, required: true },
@@ -76,6 +88,10 @@ function toSchedule(stored: StoredSchedule): Schedule {
       date: date.toISOString().slice(0, 10),
       ranges: toRanges(ranges),
     })),
+    absences: (stored.absences ?? []).map(({ from, to }) => ({
+      from: from.toISOString().slice(0, 10),
+      to: to.toISOString().slice(0, 10),
+    })),
     version: stored.version,
     updatedAt: stored.updatedAt,
   };
@@ -88,6 +104,10 @@ function rulesSet(rules: ScheduleRules) {
     exceptions: rules.exceptions.map(({ date, ranges }) => ({
       date: new Date(`${date}T00:00:00.000Z`),
       ranges: toRanges(ranges),
+    })),
+    absences: rules.absences.map(({ from, to }) => ({
+      from: new Date(`${from}T00:00:00.000Z`),
+      to: new Date(`${to}T00:00:00.000Z`),
     })),
   };
 }

@@ -14,6 +14,7 @@ function makeSchedule(overrides: Partial<InterventionSchedule> = {}): Interventi
   return {
     weekly: [workday, workday, workday, workday, workday, workday, workday],
     exceptions: [],
+    absences: [],
     version: 3,
     updatedAt: '2026-10-15T12:00:00.000Z',
     ...overrides,
@@ -387,6 +388,175 @@ describe('AvailabilityPage', () => {
       await page.load(makeSchedule({ exceptions }));
 
       expect(page.button('Agregar excepción')?.disabled).toBe(true);
+    });
+  });
+
+  describe('absences', () => {
+    async function withRows(rows: [string, string][]) {
+      const page = await render();
+      await page.load(makeSchedule());
+      for (const [i, [from, to]] of rows.entries()) {
+        await page.click('Agregar ausencia');
+        await page.type(`a-${i}-from`, from);
+        await page.type(`a-${i}-to`, to);
+      }
+      return page;
+    }
+
+    it('explains the section and shows the empty state', async () => {
+      const page = await render();
+
+      await page.load(makeSchedule());
+
+      expect(page.text()).toContain('Días en los que no estás');
+      expect(page.text()).toContain('Tiene prioridad sobre el horario semanal y las excepciones.');
+      expect(page.text()).toContain('No hay ausencias cargadas.');
+      await page.submit();
+      expect(page.sent()?.absences).toEqual([]);
+    });
+
+    it('shows loaded absences as DD-MM-YYYY', async () => {
+      const page = await render();
+
+      await page.load(makeSchedule({ absences: [{ from: '2026-12-20', to: '2026-12-27' }] }));
+
+      expect(page.element.querySelector('label[for="a-0-from"]')?.textContent).toContain('Desde');
+      expect(page.element.querySelector('label[for="a-0-to"]')?.textContent).toContain('Hasta');
+      expect(page.input('a-0-from')?.value).toBe('20-12-2026');
+      expect(page.input('a-0-to')?.value).toBe('27-12-2026');
+      expect(page.text()).not.toContain('No hay ausencias cargadas.');
+    });
+
+    it('adds a row focusing its Desde, and removing returns focus to Agregar', async () => {
+      const page = await render();
+      await page.load(makeSchedule());
+
+      await page.click('Agregar ausencia');
+
+      expect(document.activeElement).toBe(page.input('a-0-from'));
+      expect(page.live()).toBe('Ausencia agregada.');
+
+      await page.click('Quitar ausencia 1');
+
+      expect(page.input('a-0-from')).toBeNull();
+      expect(document.activeElement).toBe(page.element.querySelector('#a-add'));
+      expect(page.live()).toBe('Ausencia quitada.');
+    });
+
+    it('blocks adding past 30 rows', async () => {
+      const page = await render();
+      const absences = Array.from({ length: 30 }, (_, i) => ({
+        from: `${2000 + i}-03-10`,
+        to: `${2000 + i}-03-12`,
+      }));
+
+      await page.load(makeSchedule({ absences }));
+
+      expect(page.button('Agregar ausencia')?.disabled).toBe(true);
+    });
+
+    it('sends the rows sorted by Desde with the loaded version', async () => {
+      const page = await withRows([
+        ['01-03-2027', '05-03-2027'],
+        ['10-01-2027', '10-01-2027'],
+      ]);
+
+      await page.submit();
+
+      expect(page.sent()).toEqual({
+        weekly: makeSchedule().weekly,
+        exceptions: [],
+        absences: [
+          { from: '2027-01-10', to: '2027-01-10' },
+          { from: '2027-03-01', to: '2027-03-05' },
+        ],
+        version: 3,
+      });
+    });
+
+    it('allows adjacent ranges', async () => {
+      const page = await withRows([
+        ['01-03-2027', '05-03-2027'],
+        ['06-03-2027', '07-03-2027'],
+      ]);
+
+      await page.submit();
+
+      expect(page.sent()?.absences).toHaveLength(2);
+    });
+
+    it.each([
+      ['a-0-to', [['05-03-2027', '04-03-2027']], 'no puede ser anterior'],
+      [
+        'a-1-from',
+        [
+          ['01-03-2027', '05-03-2027'],
+          ['05-03-2027', '08-03-2027'],
+        ],
+        'se superpone',
+      ],
+      ['a-0-from', [['31-02-2027', '05-03-2027']], 'DD-MM-AAAA'],
+      ['a-0-to', [['01-03-2027', '01-01-2100']], 'DD-MM-AAAA'],
+      ['a-0-from', [['', '05-03-2027']], 'DD-MM-AAAA'],
+    ] as [string, [string, string][], string][])(
+      'rejects an invalid row on %s (%#), focuses it and does not call the API',
+      async (id, rows, message) => {
+        const page = await withRows(rows);
+
+        await page.submit();
+
+        expect(page.api.putSchedule).not.toHaveBeenCalled();
+        const field = page.input(id);
+        expect(field?.getAttribute('aria-invalid')).toBe('true');
+        expect(field?.getAttribute('aria-describedby')).toBe(`${id}-error`);
+        expect(page.element.querySelector(`#${id}-error`)?.textContent).toContain(message);
+        expect(document.activeElement).toBe(field);
+      },
+    );
+
+    it('detects an overlap with an earlier row regardless of typing order', async () => {
+      const page = await withRows([
+        ['05-03-2027', '08-03-2027'],
+        ['01-03-2027', '05-03-2027'],
+      ]);
+
+      await page.submit();
+
+      expect(page.element.querySelector('#a-0-from-error')?.textContent).toContain('se superpone');
+      expect(page.element.querySelector('#a-1-from-error')).toBeNull();
+    });
+
+    it('maps API issues to the right field with fixed texts', async () => {
+      const page = await withRows([
+        ['01-03-2027', '05-03-2027'],
+        ['10-03-2027', '12-03-2027'],
+      ]);
+      await page.submit();
+
+      await page.rejectSave(
+        problem(400, [
+          { path: 'absences.1.from', message: SENTINEL },
+          { path: 'absences.0.to', message: SENTINEL },
+        ]),
+      );
+
+      expect(page.element.querySelector('#a-1-from-error')?.textContent).toContain(
+        'no son válidas',
+      );
+      expect(page.element.querySelector('#a-0-to-error')?.textContent).toContain('no son válidas');
+      expect(document.activeElement).toBe(page.input('a-0-to'));
+      expect(page.text()).not.toContain(SENTINEL);
+    });
+
+    it('maps the too-many issue to the add button', async () => {
+      const page = await withRows([['01-03-2027', '05-03-2027']]);
+      await page.submit();
+
+      await page.rejectSave(problem(400, [{ path: 'absences', message: SENTINEL }]));
+
+      expect(page.element.querySelector('#a-add-error')?.textContent).toContain('máximo es 30');
+      expect(document.activeElement).toBe(page.element.querySelector('#a-add'));
+      expect(page.text()).not.toContain(SENTINEL);
     });
   });
 

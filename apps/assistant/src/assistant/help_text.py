@@ -31,6 +31,8 @@ HELP: Mapping[str, tuple[str, ...]] = {
         "Indicás en qué horarios podés intervenir la impresora, por semana y en hora de "
         "Argentina; un día sin rangos significa que no intervenís ese día.",
         "Una excepción reemplaza los rangos de la semana para una fecha puntual.",
+        "La sección Ausencias de /disponibilidad guarda períodos (desde y hasta, inclusive) en "
+        "los que no intervenís; ganan sobre la semana y las excepciones.",
         "Fuera de esos horarios las impresiones corren sin supervisión. Si no guardaste nada, "
         "se usa de 08:00 a 18:00 todos los días.",
     ),

@@ -40,11 +40,16 @@ def project(name: str, deadline: str | None) -> dict[str, object]:
 
 
 def schedule(
-    weekday: int = 2, hours: tuple[int, int] = (480, 1080), exceptions: list[object] | None = None
+    weekday: int = 2,
+    hours: tuple[int, int] = (480, 1080),
+    exceptions: list[object] | None = None,
+    absences: list[object] | None = None,
 ) -> httpx.Response:
     weekly: list[object] = [{"ranges": []} for _ in range(7)]
     weekly[weekday] = {"ranges": [{"startMinute": hours[0], "endMinute": hours[1]}]}
-    return ok({"weekly": weekly, "exceptions": exceptions or [], "version": 1})
+    return ok(
+        {"weekly": weekly, "exceptions": exceptions or [], "absences": absences or [], "version": 1}
+    )
 
 
 async def agenda(api: FakeApi, fecha: str) -> dict[str, object]:
@@ -129,6 +134,62 @@ async def test_an_empty_exception_means_no_intervention_despite_weekly_hours() -
     data = await agenda(api, WEDNESDAY)
 
     assert data["horario_de_intervencion"] == [NO_INTERVENTION]
+
+
+ABSENT = ["ausente: no intervenís ese día"]
+
+
+@pytest.mark.parametrize(
+    ("fecha", "absent"),
+    [
+        ("2026-10-19", False),  # day before
+        ("2026-10-20", True),  # first day, inclusive
+        ("2026-10-21", True),  # Wednesday inside, with weekly hours and an exception
+        ("2026-10-22", True),  # last day, inclusive
+        ("2026-10-23", False),  # day after
+    ],
+)
+async def test_an_absence_beats_exceptions_and_weekly_ranges_with_inclusive_bounds(
+    fecha: str, absent: bool
+) -> None:
+    exception = {"date": WEDNESDAY, "ranges": [{"startMinute": 600, "endMinute": 660}]}
+    sched = schedule(exceptions=[exception], absences=[{"from": "2026-10-20", "to": "2026-10-22"}])
+    api = FakeApi({PROJECTS_PATH: projects(), SCHEDULE_PATH: sched})
+
+    data = await agenda(api, fecha)
+
+    assert (data["horario_de_intervencion"] == ABSENT) is absent
+    assert data["ausencia"] == ("20-10-2026 a 22-10-2026" if absent else None)
+
+
+async def test_a_single_day_absence_beats_the_weekly_ranges() -> None:
+    sched = schedule(absences=[{"from": WEDNESDAY, "to": WEDNESDAY}])
+    api = FakeApi({PROJECTS_PATH: projects(), SCHEDULE_PATH: sched})
+
+    data = await agenda(api, WEDNESDAY)
+
+    assert data["horario_de_intervencion"] == ABSENT
+    assert data["ausencia"] == "21-10-2026"
+
+
+async def test_an_absence_beats_an_empty_exception_too() -> None:
+    sched = schedule(
+        exceptions=[{"date": WEDNESDAY, "ranges": []}],
+        absences=[{"from": "2026-10-01", "to": "2026-10-31"}],
+    )
+    api = FakeApi({PROJECTS_PATH: projects(), SCHEDULE_PATH: sched})
+
+    data = await agenda(api, WEDNESDAY)
+
+    assert data["horario_de_intervencion"] == ABSENT
+
+
+async def test_without_absences_the_day_has_no_absence_field_value() -> None:
+    api = FakeApi({PROJECTS_PATH: projects(), SCHEDULE_PATH: schedule()})
+
+    data = await agenda(api, WEDNESDAY)
+
+    assert data["ausencia"] is None
 
 
 async def test_only_projects_with_that_deadline_are_listed() -> None:

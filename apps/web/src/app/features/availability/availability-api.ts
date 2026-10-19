@@ -26,7 +26,7 @@ function isRangeList(value: unknown): boolean {
  */
 export function isInterventionSchedule(value: unknown): value is InterventionSchedule {
   if (!isRecord(value)) return false;
-  const { weekly, exceptions, version, updatedAt } = value;
+  const { weekly, exceptions, absences, version, updatedAt } = value;
   return (
     Array.isArray(weekly) &&
     weekly.length === 7 &&
@@ -35,6 +35,11 @@ export function isInterventionSchedule(value: unknown): value is InterventionSch
     exceptions.every(
       (item: unknown) =>
         isRecord(item) && typeof item['date'] === 'string' && isRangeList(item['ranges']),
+    ) &&
+    Array.isArray(absences) &&
+    absences.every(
+      (item: unknown) =>
+        isRecord(item) && typeof item['from'] === 'string' && typeof item['to'] === 'string',
     ) &&
     typeof version === 'number' &&
     Number.isInteger(version) &&

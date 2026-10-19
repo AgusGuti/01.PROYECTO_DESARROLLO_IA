@@ -134,6 +134,77 @@
           <p id="x-add-error" class="field-error">{{ addExceptionError }}</p>
         }
 
+        <h2>Ausencias</h2>
+        <p class="hint">
+          Días en los que no estás: no se empieza ni se retira ninguna impresión. Tiene prioridad
+          sobre el horario semanal y las excepciones.
+        </p>
+        @for (row of absences.controls; track $index; let i = $index) {
+          @let fromId = 'a-' + i + '-from';
+          @let toId = 'a-' + i + '-to';
+          @let fromError = problems[fromId];
+          @let toError = problems[toId];
+          <fieldset>
+            <legend>Ausencia {{ i + 1 }}</legend>
+            <div class="field">
+              <label [for]="fromId">Desde (DD-MM-AAAA)</label>
+              <input
+                [id]="fromId"
+                type="text"
+                inputmode="numeric"
+                autocomplete="off"
+                placeholder="25-12-2026"
+                [formControl]="row.controls.from"
+                [attr.aria-invalid]="fromError ? 'true' : null"
+                [attr.aria-describedby]="fromError ? fromId + '-error' : null"
+              />
+              @if (fromError) {
+                <p [id]="fromId + '-error'" class="field-error">{{ fromError }}</p>
+              }
+            </div>
+            <div class="field">
+              <label [for]="toId">Hasta (DD-MM-AAAA)</label>
+              <input
+                [id]="toId"
+                type="text"
+                inputmode="numeric"
+                autocomplete="off"
+                placeholder="31-12-2026"
+                [formControl]="row.controls.to"
+                [attr.aria-invalid]="toError ? 'true' : null"
+                [attr.aria-describedby]="toError ? toId + '-error' : null"
+              />
+              @if (toError) {
+                <p [id]="toId + '-error'" class="field-error">{{ toError }}</p>
+              }
+            </div>
+            <button
+              type="button"
+              class="secondary"
+              [attr.aria-label]="'Quitar ausencia ' + (i + 1)"
+              (click)="removeAbsence(i)"
+            >
+              Quitar
+            </button>
+          </fieldset>
+        } @empty {
+          <p>No hay ausencias cargadas.</p>
+        }
+        @let addAbsenceError = problems['a-add'];
+        <button
+          type="button"
+          id="a-add"
+          [disabled]="absences.length >= maxAbsences"
+          [attr.data-invalid]="addAbsenceError ? 'true' : null"
+          [attr.aria-describedby]="addAbsenceError ? 'a-add-error' : null"
+          (click)="addAbsence()"
+        >
+          Agregar ausencia
+        </button>
+        @if (addAbsenceError) {
+          <p id="a-add-error" class="field-error">{{ addAbsenceError }}</p>
+        }
+
         <div class="actions">
           <button type="submit" [disabled]="saving">
             {{ saving ? 'Guardando…' : 'Guardar' }}

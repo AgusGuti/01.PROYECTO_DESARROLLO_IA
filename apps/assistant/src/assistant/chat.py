@@ -62,6 +62,8 @@ SYSTEM_PROMPT = (
     "Si te preguntan qué tiene planeado, qué hay para, la agenda o los pendientes de un día "
     "(por ejemplo 'el 21 de octubre'), llamá a agenda_del_dia pasando solo la fecha; no hagas "
     "preguntas antes. Respondé con lo que devuelve e incluí la 'nota'. "
+    "Si preguntan cuándo está ausente o si tiene ausencias, llamá a get_intervention_schedule "
+    "y leé 'ausencias'. "
     "Elegí la herramienta según la pregunta: cuánto cuesta o a qué precio vender un proyecto o "
     "una pieza, costo_de_proyecto o costo_de_pieza (no pidas bobina, impresora ni margen si el "
     "usuario no los dijo); si alcanza el filamento, verificar_material; qué proyectos están "

@@ -119,6 +119,7 @@ describe('simulations API on a real MongoDB with the real wiring', () => {
           ranges: [{ startMinute: 600, endMinute: 720 }],
         })),
         exceptions: [],
+        absences: [],
         version: 0,
       })
       .expect(200);
@@ -191,6 +192,41 @@ describe('simulations API on a real MongoDB with the real wiring', () => {
     // Two pieces on one plate take as long as two separate prints, so naive wins the tie.
     expect(dto.strategy).toBe('naive');
     expect(await mongoose.connection.collection('planningSettings').countDocuments()).toBe(0);
+  });
+
+  it('optimises from a start date inside a saved absence: nothing starts before it ends', async () => {
+    const part = await makePart('Soporte', 3600);
+    const printer = await makePrinter('Ender 3');
+    const project = await makeProject([{ partId: part, quantity: 2 }]);
+    await request(app)
+      .post('/api/v1/queues')
+      .send({ projectId: project, goal: 'fastest', mode: 'single', printerIds: [printer] })
+      .expect(201);
+    // Open 08:00-18:00 every day, but absent on Mon 2026-03-02 and Tue 2026-03-03.
+    await request(app)
+      .put('/api/v1/availability/schedule')
+      .send({
+        weekly: Array.from({ length: 7 }, () => ({
+          ranges: [{ startMinute: 480, endMinute: 1080 }],
+        })),
+        exceptions: [],
+        absences: [{ from: '2026-03-02', to: '2026-03-03' }],
+        version: 0,
+      })
+      .expect(200);
+
+    const response = await request(app)
+      .post('/api/v1/simulations/optimizations')
+      .send({ projectId: project, startAt: '2026-03-02T08:00' });
+
+    expect(response.status).toBe(200);
+    const dto = optimizationSchema.parse(response.body);
+    expect(dto.optimized.jobs.map((job) => job.startAt)).toEqual([
+      '2026-03-04T08:00',
+      '2026-03-04T09:00',
+    ]);
+    expect(dto.baseline.totals.finishAt).toBe('2026-03-04T10:00');
+    expect(dto.warnings).toEqual([]);
   });
 
   it('answers 400 when the project has no queue', async () => {

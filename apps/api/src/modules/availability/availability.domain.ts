@@ -6,6 +6,7 @@ export const MINUTES_PER_DAY = 1440;
 export const DAYS_PER_WEEK = 7;
 export const MAX_RANGES_PER_DAY = 6;
 export const MAX_EXCEPTIONS = 60;
+export const MAX_ABSENCES = 30;
 
 /** The user CAN intervene (change a piece) from `startMinute` up to, not including, `endMinute`. */
 export interface MinuteRange {
@@ -23,10 +24,18 @@ export interface ScheduleException {
   readonly ranges: readonly MinuteRange[];
 }
 
+/** Calendar days (`YYYY-MM-DD`, both inclusive) with no intervention at all (ADR 0033). */
+export interface Absence {
+  readonly from: string;
+  readonly to: string;
+}
+
 /** What a user edits. `weekly` has exactly 7 entries: index 0 is Monday, 6 is Sunday. */
 export interface ScheduleRules {
   readonly weekly: readonly WeekDay[];
   readonly exceptions: readonly ScheduleException[];
+  /** Sorted by `from`, non-overlapping. Overrides the weekly days AND the exceptions. */
+  readonly absences: readonly Absence[];
 }
 
 export interface Schedule extends ScheduleRules {
@@ -41,6 +50,7 @@ const DEFAULT_RANGE: MinuteRange = { startMinute: 480, endMinute: 1080 };
 export const DEFAULT_SCHEDULE: Schedule = {
   weekly: Array.from({ length: DAYS_PER_WEEK }, () => ({ ranges: [DEFAULT_RANGE] })),
   exceptions: [],
+  absences: [],
   version: 0,
   updatedAt: null,
 };
@@ -51,11 +61,13 @@ export function weekdayOf(date: string): number {
   return (sundayFirst + 6) % DAYS_PER_WEEK;
 }
 
-/** The ranges that apply on `date`: its exception if there is one, else the weekly day. */
+/** The ranges that apply on `date`: none in an absence, else its exception, else the weekly day. */
 export function interventionRangesFor(
   schedule: ScheduleRules,
   date: string,
 ): readonly MinuteRange[] {
+  // ISO dates compare correctly as strings.
+  if (schedule.absences.some((absence) => absence.from <= date && date <= absence.to)) return [];
   const exception = schedule.exceptions.find((candidate) => candidate.date === date);
   if (exception !== undefined) return exception.ranges;
   return schedule.weekly[weekdayOf(date)]?.ranges ?? [];
