@@ -52,6 +52,18 @@ export function defaultStart(nowMs: number): { date: string; time: string } {
   };
 }
 
+/** Argentina date (UTC-3) `days` from today at 00:00, in the form's DD-MM-AAAA / HH:MM text. */
+export function dayStart(nowMs: number, days: number): { date: string; time: string } {
+  const shifted = new Date(nowMs - ARGENTINA_OFFSET_MS);
+  const day = new Date(
+    Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate() + days),
+  );
+  return {
+    date: `${pad(day.getUTCDate())}-${pad(day.getUTCMonth() + 1)}-${String(day.getUTCFullYear())}`,
+    time: '00:00',
+  };
+}
+
 /** DD-MM-AAAA to YYYY-MM-DD, or null when it is not a real date in 2000 to 2099 (the API range). */
 export function parseDate(text: string): string | null {
   const match = /^(\d{2})-(\d{2})-(\d{4})$/.exec(text.trim());

@@ -531,6 +531,155 @@ describe('QueuePage', () => {
       expect(document.activeElement).toBe(page.q('#line-0-minus'));
     });
 
+    describe('typed progress', () => {
+      const savedWith = (completed: number) => {
+        const saved = makeQueue({ version: 8 });
+        saved.lines[0] = withLine(saved, 0, { completed, pendingUnits: 3 - completed });
+        return saved;
+      };
+
+      it('labels the input for screen readers', async () => {
+        const page = await render();
+        await page.open(makeQueue());
+
+        expect(page.q('label[for="line-0-completed"]')?.textContent).toBe(
+          'Impresas de Soporte de cable',
+        );
+        expect(page.input('#line-0-completed')?.value).toBe('1');
+      });
+
+      it('sends one PATCH with the typed value and every other line intact', async () => {
+        const page = await render();
+        await page.open(makeQueue());
+
+        const field = page.input('#line-0-completed');
+        if (field !== null) field.value = '3';
+        field?.dispatchEvent(new Event('change'));
+        await page.settle();
+
+        expect(page.updates).toHaveLength(1);
+        expect(page.updates[0]?.body).toEqual({
+          version: 7,
+          lines: [
+            { partId: 'a', quantity: 3, completed: 3 },
+            { partId: 'b', quantity: 2, completed: 0 },
+          ],
+        });
+        expect(page.input('#line-0-completed')?.disabled).toBe(true);
+
+        page.updates[0]?.reply.next(savedWith(3));
+        page.updates[0]?.reply.complete();
+        await page.settle();
+
+        expect(page.text()).toContain('Se actualizó el avance.');
+        expect(document.activeElement).toBe(page.q('#line-0-completed'));
+      });
+
+      it('commits on Enter without submitting the form', async () => {
+        const page = await render();
+        await page.open(makeQueue());
+
+        const field = page.input('#line-0-completed');
+        if (field !== null) field.value = '2';
+        field?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }));
+        await page.settle();
+
+        expect(page.updates).toHaveLength(1);
+        expect(page.updates[0]?.body.lines?.[0]?.completed).toBe(2);
+        expect(page.text()).not.toContain('No hay cambios para guardar.');
+      });
+
+      it.each(['4', '-1', '1.5', 'abc', ''])(
+        'sends nothing and shows the range message for "%s"',
+        async (value) => {
+          const page = await render();
+          await page.open(makeQueue());
+
+          const field = page.input('#line-0-completed');
+          if (field !== null) field.value = value;
+          field?.dispatchEvent(new Event('change'));
+          await page.settle();
+
+          expect(page.api.update).not.toHaveBeenCalled();
+          expect(page.q('#line-0-progress-error')?.textContent.trim()).toBe(
+            'Ingresá un número entre 0 y 3',
+          );
+          expect(field?.getAttribute('aria-invalid')).toBe('true');
+        },
+      );
+
+      it('sends nothing when the value did not change', async () => {
+        const page = await render();
+        await page.open(makeQueue());
+
+        page.input('#line-0-completed')?.dispatchEvent(new Event('change'));
+        await page.settle();
+
+        expect(page.api.update).not.toHaveBeenCalled();
+      });
+
+      it('completes a line with one PATCH and disables Completar when it is full', async () => {
+        const page = await render();
+        await page.open(makeQueue());
+
+        await page.click(page.btn('#line-0-complete'));
+
+        expect(page.updates[0]?.body).toEqual({
+          version: 7,
+          lines: [
+            { partId: 'a', quantity: 3, completed: 3 },
+            { partId: 'b', quantity: 2, completed: 0 },
+          ],
+        });
+        page.updates[0]?.reply.next(savedWith(3));
+        page.updates[0]?.reply.complete();
+        await page.settle();
+
+        expect(page.btn('#line-0-complete')?.disabled).toBe(true);
+        expect(page.btn('#line-1-complete')?.disabled).toBe(false);
+        expect(document.activeElement).toBe(page.q('#line-0-completed'));
+      });
+
+      it('offers Recargar on a stale version (409) without backend text', async () => {
+        const page = await render();
+        await page.open(makeQueue());
+
+        await page.click(page.btn('#line-1-complete'));
+        page.updates[0]?.reply.error(problem(409));
+        await page.settle();
+
+        expect(page.q('#action-error')?.textContent).toContain('La cola cambió');
+        expect(page.element.textContent).not.toContain(SENTINEL);
+        expect(page.input('#line-1-completed')?.disabled).toBe(false);
+      });
+
+      it('keeps unsaved goal and quantity edits after a typed commit', async () => {
+        const page = await render();
+        await page.open(makeQueue());
+        await page.choose(page.select('#queue-goal'), 'fastest');
+        await page.type(page.input('#line-0-quantity'), '4');
+
+        const field = page.input('#line-0-completed');
+        if (field !== null) field.value = '2';
+        field?.dispatchEvent(new Event('change'));
+        await page.settle();
+        page.updates[0]?.reply.next(savedWith(2));
+        page.updates[0]?.reply.complete();
+        await page.settle();
+
+        expect(page.select('#queue-goal')?.value).toBe('fastest');
+        expect(page.input('#line-0-quantity')?.value).toBe('4');
+      });
+
+      it('hints at the away flow with a link to the simulation', async () => {
+        const page = await render();
+        await page.open(makeQueue());
+
+        expect(page.q('#away-hint')?.textContent).toContain('Si estuviste ausente');
+        expect(page.q('#away-hint a')?.getAttribute('href')).toBe('/proyectos/p1/simulacion');
+      });
+    });
+
     it('saves only what changed, with the version', async () => {
       const page = await render();
       await page.open(makeQueue());

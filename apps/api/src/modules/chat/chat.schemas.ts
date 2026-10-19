@@ -148,13 +148,77 @@ const createQueueProposalSchema = z
   })
   .openapi('ProposalCreateQueue');
 
+// Update-progress rules DUPLICATE the PATCH body of queues/queues.schemas.ts (version + lines, completed
+// at most quantity, each part once, at most 100 lines). The queues API stays the authority and
+// answers 400, 404 or 409 (stale version) on confirm.
+const updateQueueProgressPayloadSchema = z
+  .strictObject({
+    projectId: proposalPartId,
+    version: z.number().int().min(1),
+    lines: z
+      .array(
+        z.strictObject({
+          partId: proposalPartId,
+          quantity: z.number().int().min(1).max(1000),
+          completed: z.number().int().min(0).max(1000),
+        }),
+      )
+      .min(1)
+      .max(PROPOSAL_MAX_ITEMS),
+  })
+  .openapi('ProposalUpdateQueueProgressPayload');
+
+const updateQueueProgressProposalSchema = z
+  .strictObject({
+    kind: z.literal('update_queue_progress'),
+    payload: updateQueueProgressPayloadSchema,
+    projectName: proposalText(100, 'Soportes para el taller'),
+    lineNames: z
+      .array(
+        z.strictObject({ partId: proposalPartId, name: proposalText(100, 'Soporte de estante') }),
+      )
+      .max(PROPOSAL_MAX_ITEMS),
+  })
+  .superRefine((proposal, ctx) => {
+    const { lines } = proposal.payload;
+    const ids = lines.map((line) => line.partId);
+    if (new Set(ids).size !== ids.length) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'A part appears twice.',
+        path: ['payload', 'lines'],
+      });
+    }
+    if (lines.some((line) => line.completed > line.quantity)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'completed must not exceed quantity.',
+        path: ['payload', 'lines'],
+      });
+    }
+    const named = proposal.lineNames.map((entry) => entry.partId);
+    if (new Set(named).size !== named.length || named.some((id) => !ids.includes(id))) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'lineNames must be unique and only for parts in payload.lines.',
+        path: ['lineNames'],
+      });
+    }
+  })
+  .openapi('ProposalUpdateQueueProgress');
+
 export const proposalSchema = z
-  .discriminatedUnion('kind', [createProjectProposalSchema, createQueueProposalSchema])
+  .discriminatedUnion('kind', [
+    createProjectProposalSchema,
+    createQueueProposalSchema,
+    updateQueueProgressProposalSchema,
+  ])
   .openapi('AssistantProposal', {
     description:
       'A suggested action. It is NOT executed: the browser shows it, and only after the user ' +
       'confirms does it send the payload to POST /api/v1/projects (create_project) or ' +
-      'POST /api/v1/queues (create_queue, the queues API copies the project lines), which validate it again.',
+      'POST /api/v1/queues (create_queue, the queues API copies the project lines) or ' +
+      'PATCH /api/v1/queues/{projectId} with { version, lines } (update_queue_progress), which validate it again.',
   });
 
 export const chatResponseSchema = z

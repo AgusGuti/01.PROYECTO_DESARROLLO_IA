@@ -84,6 +84,37 @@ describe('POST /api/v1/chat', () => {
     expect(bad.body).toEqual({ reply: 'ok', proposal: null });
   });
 
+  it('returns a valid update_queue_progress proposal and drops one with completed over quantity', async () => {
+    const partId = 'b'.repeat(24);
+    const proposal = {
+      kind: 'update_queue_progress',
+      payload: {
+        projectId: 'a'.repeat(24),
+        version: 2,
+        lines: [{ partId, quantity: 4, completed: 4 }],
+      },
+      projectName: 'Soportes',
+      lineNames: [{ partId, name: 'Soporte' }],
+    };
+    const bad = {
+      ...proposal,
+      payload: { ...proposal.payload, lines: [{ partId, quantity: 4, completed: 5 }] },
+    };
+    const good = await request(appWith({ ask: () => Promise.resolve({ reply: 'ok', proposal }) }))
+      .post(URL)
+      .send({ message: 'hola' });
+    const dropped = await request(
+      appWith({ ask: () => Promise.resolve({ reply: 'ok', proposal: bad }) }),
+    )
+      .post(URL)
+      .send({ message: 'hola' });
+
+    expect(good.body).toEqual({ reply: 'ok', proposal });
+    expect(chatResponseSchema.parse(good.body).proposal?.kind).toBe('update_queue_progress');
+    expect(dropped.status).toBe(200);
+    expect(dropped.body).toEqual({ reply: 'ok', proposal: null });
+  });
+
   it.each([
     ['empty', { message: '' }],
     ['whitespace', { message: '   ' }],

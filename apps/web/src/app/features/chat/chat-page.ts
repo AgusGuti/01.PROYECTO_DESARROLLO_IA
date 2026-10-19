@@ -27,6 +27,11 @@ const UNCERTAIN =
   'No pudimos confirmar si se creó el proyecto. Revisá Proyectos antes de reintentar.';
 
 const REJECTED_QUEUE = 'La API no aceptó la propuesta; revisá los datos.';
+const NOTHING_CREATED = 'Todavía no se creó nada.';
+const STALE_QUEUE = 'La cola cambió desde que se hizo la propuesta. Pedila de nuevo.';
+const NO_QUEUE = 'Ese proyecto ya no tiene cola.';
+const UNCERTAIN_PROGRESS =
+  'No pudimos confirmar si se actualizó el avance. Revisá la cola antes de reintentar.';
 const QUEUE_EXISTS = 'Ese proyecto ya tiene una cola.';
 const GOAL_LABELS = {
   deadline: 'Cumplir las fechas límite',
@@ -47,6 +52,7 @@ interface ProposalView {
   readonly listTitle: string | null;
   readonly list: readonly string[];
   readonly footnote: string | null;
+  readonly pendingNote: string;
   readonly sendingText: string;
 }
 
@@ -82,7 +88,23 @@ function proposalView(proposal: Proposal): ProposalView {
         (id) => printerNames.find((n) => n.printerId === id)?.name ?? 'Impresora',
       ),
       footnote: 'Las líneas se toman de las piezas del proyecto.',
+      pendingNote: NOTHING_CREATED,
       sendingText: 'Creando la cola…',
+    };
+  }
+  if (proposal.kind === 'update_queue_progress') {
+    const { payload, lineNames } = proposal;
+    return {
+      title: `Actualizar el avance de la cola del proyecto «${proposal.projectName}»`,
+      details: [],
+      listTitle: 'Piezas:',
+      list: payload.lines.map(
+        (l) =>
+          `${lineNames.find((n) => n.partId === l.partId)?.name ?? 'Pieza'}: ${l.completed} de ${l.quantity} impresas`,
+      ),
+      footnote: null,
+      pendingNote: 'Todavía no se cambió nada.',
+      sendingText: 'Actualizando el avance…',
     };
   }
   const { payload, itemNames } = proposal;
@@ -101,6 +123,7 @@ function proposalView(proposal: Proposal): ProposalView {
         `${line.quantity} × ${itemNames.find((n) => n.partId === line.partId)?.name ?? 'Pieza'}`,
     ),
     footnote: null,
+    pendingNote: NOTHING_CREATED,
     sendingText: 'Creando el proyecto…',
   };
 }
@@ -108,6 +131,33 @@ function proposalView(proposal: Proposal): ProposalView {
 /** Maps a confirm failure to a fixed card. Only a 400 proves that nothing was created. */
 function failureCard(proposal: Proposal, error: unknown): CardState {
   const status = error instanceof ApiError ? error.status : null;
+  if (proposal.kind === 'update_queue_progress') {
+    const queueLink = {
+      commands: ['/proyectos', proposal.payload.projectId, 'cola'],
+      text: 'Ir a la cola',
+    };
+    if (status === 400) {
+      return { kind: 'failed', message: REJECTED_QUEUE, canRetry: true, link: null };
+    }
+    // The version is stale: retrying the same body would fail again.
+    if (status === 409) {
+      return { kind: 'failed', message: STALE_QUEUE, canRetry: false, link: queueLink };
+    }
+    if (status === 404) {
+      return {
+        kind: 'failed',
+        message: NO_QUEUE,
+        canRetry: false,
+        link: { commands: ['/proyectos'], text: 'Ir a Proyectos' },
+      };
+    }
+    return {
+      kind: 'failed',
+      message: UNCERTAIN_PROGRESS,
+      canRetry: true,
+      link: { commands: ['/proyectos'], text: 'Ir a Proyectos' },
+    };
+  }
   const isQueue = proposal.kind === 'create_queue';
   if (status === 400) {
     return {
@@ -117,7 +167,7 @@ function failureCard(proposal: Proposal, error: unknown): CardState {
       link: null,
     };
   }
-  if (isQueue && status === 409) {
+  if (proposal.kind === 'create_queue' && status === 409) {
     return {
       kind: 'failed',
       message: QUEUE_EXISTS,
@@ -252,25 +302,7 @@ export class ChatPage {
     if (!proposal || (card?.kind !== 'pending' && card?.kind !== 'failed')) return;
     if (card.kind === 'failed' && !card.canRetry) return;
     this.setCard(message.id, { kind: 'sending' });
-    const created$: Observable<CardState> =
-      proposal.kind === 'create_queue'
-        ? this.api.createQueue(proposal.payload).pipe(
-            map(() => ({
-              kind: 'created' as const,
-              text: 'Cola creada.',
-              link: {
-                commands: ['/proyectos', proposal.payload.projectId, 'cola'],
-                text: 'Abrir la cola',
-              },
-            })),
-          )
-        : this.api.createProject(proposal.payload).pipe(
-            map((project) => ({
-              kind: 'created' as const,
-              text: `Proyecto creado: «${project.name}».`,
-              link: { commands: ['/proyectos', project.id, 'editar'], text: 'Abrir el proyecto' },
-            })),
-          );
+    const created$ = this.send$(proposal);
     created$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (done) => {
         // After "Limpiar conversación" the card is gone: do not resurrect it.
@@ -300,6 +332,40 @@ export class ChatPage {
     this.setCard(message.id, { kind: 'discarded' });
     this.announcement.set('Propuesta descartada.');
     this.input()?.nativeElement.focus();
+  }
+
+  private send$(proposal: Proposal): Observable<CardState> {
+    switch (proposal.kind) {
+      case 'create_queue':
+        return this.api.createQueue(proposal.payload).pipe(
+          map(() => ({
+            kind: 'created' as const,
+            text: 'Cola creada.',
+            link: {
+              commands: ['/proyectos', proposal.payload.projectId, 'cola'],
+              text: 'Abrir la cola',
+            },
+          })),
+        );
+      case 'update_queue_progress': {
+        const { projectId, version, lines } = proposal.payload;
+        return this.api.updateQueueProgress(projectId, { version, lines }).pipe(
+          map(() => ({
+            kind: 'created' as const,
+            text: 'Avance actualizado.',
+            link: { commands: ['/proyectos', projectId, 'cola'], text: 'Abrir la cola' },
+          })),
+        );
+      }
+      case 'create_project':
+        return this.api.createProject(proposal.payload).pipe(
+          map((project) => ({
+            kind: 'created' as const,
+            text: `Proyecto creado: «${project.name}».`,
+            link: { commands: ['/proyectos', project.id, 'editar'], text: 'Abrir el proyecto' },
+          })),
+        );
+    }
   }
 
   private setCard(id: number, card: CardState): void {

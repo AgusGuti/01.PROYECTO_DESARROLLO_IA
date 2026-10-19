@@ -160,6 +160,86 @@ describe('proposalSchema create_queue', () => {
   });
 });
 
+const progress = (payload: object = {}, extra: object = {}) => ({
+  kind: 'update_queue_progress',
+  payload: {
+    projectId: ID,
+    version: 1,
+    lines: [{ partId: P1, quantity: 5, completed: 2 }],
+    ...payload,
+  },
+  projectName: 'Soportes',
+  lineNames: [{ partId: P1, name: 'Soporte' }],
+  ...extra,
+});
+const pline = (partId: string, quantity: number, completed: number) => ({
+  partId,
+  quantity,
+  completed,
+});
+
+describe('proposalSchema update_queue_progress', () => {
+  it.each([
+    ['one line', progress()],
+    ['completed equal to quantity', progress({ lines: [pline(P1, 5, 5)] })],
+    ['completed 0', progress({ lines: [pline(P1, 5, 0)] })],
+    ['quantity 1000', progress({ lines: [pline(P1, 1000, 1000)] })],
+    ['no line names', progress({}, { lineNames: [] })],
+    ['100 lines', progress({ lines: ids(100).map((id) => pline(id, 1, 0)) }, { lineNames: [] })],
+  ])('accepts %s', (_name, input) => {
+    expect(proposalSchema.safeParse(input).success).toBe(true);
+  });
+
+  it('lower-cases ids', () => {
+    const parsed = proposalSchema.parse(progress({ projectId: ID.toUpperCase() }));
+
+    expect(parsed.kind === 'update_queue_progress' && parsed.payload.projectId).toBe(ID);
+  });
+
+  it.each([
+    ['an unknown top-level key', progress({}, { extra: 1 })],
+    ['an unknown payload key', progress({ status: 'done' })],
+    ['a bad project id', progress({ projectId: 'xyz' })],
+    ['version 0', progress({ version: 0 })],
+    ['a fractional version', progress({ version: 1.5 })],
+    ['no version', progress({ version: undefined })],
+    ['no lines', progress({ lines: [] }, { lineNames: [] })],
+    ['completed over quantity', progress({ lines: [pline(P1, 5, 6)] })],
+    ['negative completed', progress({ lines: [pline(P1, 5, -1)] })],
+    ['quantity 0', progress({ lines: [pline(P1, 0, 0)] })],
+    ['quantity 1001', progress({ lines: [pline(P1, 1001, 0)] })],
+    ['a repeated part', progress({ lines: [pline(P1, 5, 1), pline(P1, 5, 2)] })],
+    ['101 lines', progress({ lines: ids(101).map((id) => pline(id, 1, 0)) }, { lineNames: [] })],
+    ['a line with an unknown key', progress({ lines: [{ ...pline(P1, 5, 1), price: 1 }] })],
+    [
+      'a name for a part not in the lines',
+      progress({}, { lineNames: [{ partId: P2, name: 'x' }] }),
+    ],
+    [
+      'a repeated line name',
+      progress(
+        {},
+        {
+          lineNames: [
+            { partId: P1, name: 'x' },
+            { partId: P1, name: 'y' },
+          ],
+        },
+      ),
+    ],
+    [
+      'a 101-character line name',
+      progress({}, { lineNames: [{ partId: P1, name: 'a'.repeat(101) }] }),
+    ],
+    ['an empty project name', progress({}, { projectName: ' ' })],
+    ['a control character in the project name', progress({}, { projectName: 'a\nb' })],
+    ['a 101-character project name', progress({}, { projectName: 'a'.repeat(101) })],
+    ['no lineNames', progress({}, { lineNames: undefined })],
+  ])('rejects %s', (_name, input) => {
+    expect(proposalSchema.safeParse(input).success).toBe(false);
+  });
+});
+
 describe('chatRequestSchema', () => {
   it.each([
     ['one character', 'a', 'a'],

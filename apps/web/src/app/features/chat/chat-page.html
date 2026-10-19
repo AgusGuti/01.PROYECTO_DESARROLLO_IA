@@ -43,7 +43,7 @@
               <p class="text">Descartada.</p>
             }
             @default {
-              <p class="note">Todavía no se creó nada.</p>
+              <p class="note">{{ view.pendingNote }}</p>
               @if (card?.kind === 'failed') {
                 <p class="text">{{ card.message }}</p>
               }
@@ -126,7 +126,7 @@
       Limpiar conversación
     </button>
     @if (confirming()) {
-      <span id="clear-hint" class="note">Esperá a que termine de crearse el proyecto.</span>
+      <span id="clear-hint" class="note">Esperá a que termine la operación en curso.</span>
     }
   </div>
 </form>

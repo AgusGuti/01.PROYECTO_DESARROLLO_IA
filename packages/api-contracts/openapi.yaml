@@ -2378,11 +2378,13 @@ components:
       oneOf:
         - $ref: "#/components/schemas/ProposalCreateProject"
         - $ref: "#/components/schemas/ProposalCreateQueue"
+        - $ref: "#/components/schemas/ProposalUpdateQueueProgress"
         - type: "null"
       description: "A suggested action. It is NOT executed: the browser shows it, and only after the user
         confirms does it send the payload to POST /api/v1/projects (create_project) or POST
-        /api/v1/queues (create_queue, the queues API copies the project lines), which validate it
-        again."
+        /api/v1/queues (create_queue, the queues API copies the project lines) or PATCH
+        /api/v1/queues/{projectId} with { version, lines } (update_queue_progress), which validate
+        it again."
     ProposalCreateProject:
       type: object
       properties:
@@ -2526,6 +2528,81 @@ components:
         - goal
         - mode
         - printerIds
+      additionalProperties: false
+    ProposalUpdateQueueProgress:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum:
+            - update_queue_progress
+        payload:
+          $ref: "#/components/schemas/ProposalUpdateQueueProgressPayload"
+        projectName:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Soportes para el taller
+        lineNames:
+          type: array
+          items:
+            type: object
+            properties:
+              partId:
+                type: string
+                example: 66f0c0ffee0123456789abcd
+              name:
+                type: string
+                minLength: 1
+                maxLength: 100
+                example: Soporte de estante
+            required:
+              - partId
+              - name
+            additionalProperties: false
+          maxItems: 100
+      required:
+        - kind
+        - payload
+        - projectName
+        - lineNames
+      additionalProperties: false
+    ProposalUpdateQueueProgressPayload:
+      type: object
+      properties:
+        projectId:
+          type: string
+          example: 66f0c0ffee0123456789abcd
+        version:
+          type: integer
+          minimum: 1
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              partId:
+                type: string
+                example: 66f0c0ffee0123456789abcd
+              quantity:
+                type: integer
+                minimum: 1
+                maximum: 1000
+              completed:
+                type: integer
+                minimum: 0
+                maximum: 1000
+            required:
+              - partId
+              - quantity
+              - completed
+            additionalProperties: false
+          minItems: 1
+          maxItems: 100
+      required:
+        - projectId
+        - version
+        - lines
       additionalProperties: false
     ChatRequest:
       type: object

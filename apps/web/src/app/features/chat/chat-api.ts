@@ -7,6 +7,7 @@ import type {
   CreateQueueRequest,
   Project,
   Queue,
+  UpdateQueueRequest,
 } from '@print3d/api-contracts';
 import { map, type Observable } from 'rxjs';
 import { API_BASE_URL } from '../../core/api/api-config';
@@ -46,6 +47,26 @@ function isQueueProposal(value: Record<string, unknown>): boolean {
   );
 }
 
+function isProgressProposal(value: Record<string, unknown>): boolean {
+  const payload = value['payload'];
+  if (!isRecord(payload) || !hasField(payload, 'projectId', 'string')) return false;
+  if (!hasField(payload, 'version', 'number')) return false;
+  const lines = payload['lines'];
+  const names = value['lineNames'];
+  return (
+    typeof value['projectName'] === 'string' &&
+    Array.isArray(lines) &&
+    lines.every(
+      (l) =>
+        hasField(l, 'partId', 'string') &&
+        hasField(l, 'quantity', 'number') &&
+        hasField(l, 'completed', 'number'),
+    ) &&
+    Array.isArray(names) &&
+    names.every((n) => hasField(n, 'partId', 'string') && hasField(n, 'name', 'string'))
+  );
+}
+
 /**
  * Runtime check of a proposal's SHAPE only (standard §9.3). Bounds were validated by the API
  * when it built the proposal, and POST /projects validates again on confirm.
@@ -53,6 +74,7 @@ function isQueueProposal(value: Record<string, unknown>): boolean {
 export function isProposal(value: unknown): value is Proposal {
   if (!isRecord(value)) return false;
   if (value['kind'] === 'create_queue') return isQueueProposal(value);
+  if (value['kind'] === 'update_queue_progress') return isProgressProposal(value);
   if (value['kind'] !== 'create_project') return false;
   const payload = value['payload'];
   if (!isRecord(payload) || typeof payload['name'] !== 'string') return false;
@@ -127,6 +149,22 @@ export class ChatApi {
   /** Sends a confirmed queue proposal. Not idempotent: never retried automatically. */
   createQueue(payload: CreateQueueRequest): Observable<Queue> {
     return this.http.post<unknown>(`${this.baseUrl}/api/v1/queues`, payload).pipe(
+      map((response) => {
+        if (!isCreatedQueue(response)) {
+          throw new ApiError(200, 'unexpected_response', 'El servidor respondió algo inesperado.');
+        }
+        return response;
+      }),
+    );
+  }
+
+  /** Confirmed progress update. Never retried automatically; a duplicate gets a 409 (stale version). */
+  updateQueueProgress(
+    projectId: string,
+    body: Pick<UpdateQueueRequest, 'version' | 'lines'>,
+  ): Observable<Queue> {
+    const url = `${this.baseUrl}/api/v1/queues/${encodeURIComponent(projectId)}`;
+    return this.http.patch<unknown>(url, body).pipe(
       map((response) => {
         if (!isCreatedQueue(response)) {
           throw new ApiError(200, 'unexpected_response', 'El servidor respondió algo inesperado.');

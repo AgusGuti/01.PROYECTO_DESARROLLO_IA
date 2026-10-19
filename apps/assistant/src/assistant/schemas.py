@@ -77,7 +77,31 @@ class CreateQueueProposal(_Strict):
     printerNames: list[PrinterName]
 
 
-Proposal = Annotated[CreateProjectProposal | CreateQueueProposal, Field(discriminator="kind")]
+class ProgressLine(_Strict):
+    partId: str
+    quantity: int
+    completed: int
+
+
+class ProgressPayload(_Strict):
+    """The body of PATCH /api/v1/queues/{projectId}: the version seen and ALL the lines."""
+
+    projectId: str
+    version: int
+    lines: list[ProgressLine]
+
+
+class UpdateQueueProgressProposal(_Strict):
+    kind: Literal["update_queue_progress"]
+    payload: ProgressPayload
+    projectName: str
+    lineNames: list[ProposalItemName]
+
+
+Proposal = Annotated[
+    CreateProjectProposal | CreateQueueProposal | UpdateQueueProgressProposal,
+    Field(discriminator="kind"),
+]
 
 
 class ChatResponse(_Strict):

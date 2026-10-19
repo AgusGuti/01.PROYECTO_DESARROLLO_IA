@@ -20,6 +20,17 @@
   @let state = run();
 
   <form [formGroup]="form" (ngSubmit)="launch('simulate')" novalidate>
+    <div role="group" aria-labelledby="resume-label" class="field">
+      <span id="resume-label">Retomar desde:</span>
+      @for (preset of presets; track preset.days) {
+        <button type="button" (click)="resumeFrom(preset.days)">{{ preset.label }}</button>
+      }
+      <p id="resume-help">
+        Completa la fecha con el día elegido (hora de Argentina) y la hora con 00:00; igual solo se
+        empieza a imprimir dentro de tus ventanas de intervención.
+      </p>
+    </div>
+
     <div class="field">
       <label for="sim-date">Fecha de inicio (DD-MM-AAAA)</label>
       <input

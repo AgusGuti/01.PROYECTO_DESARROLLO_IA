@@ -122,6 +122,65 @@ describe('ChatApi', () => {
     await expect(bad).rejects.toMatchObject({ code: 'unexpected_response' });
   });
 
+  const progressProposal = {
+    kind: 'update_queue_progress',
+    payload: { projectId: 'p', version: 3, lines: [{ partId: 'a', quantity: 5, completed: 2 }] },
+    projectName: 'Proy',
+    lineNames: [{ partId: 'a', name: 'Pieza' }],
+  };
+
+  it('passes a well-formed progress proposal through', async () => {
+    const result = firstValueFrom(api.ask('Hola'));
+
+    http
+      .expectOne('http://api.test/api/v1/chat')
+      .flush({ reply: 'ok', proposal: progressProposal });
+
+    await expect(result).resolves.toEqual({ reply: 'ok', proposal: progressProposal });
+  });
+
+  it.each([
+    ['no version', { ...progressProposal, payload: { projectId: 'p', lines: [] } }],
+    [
+      'bad line',
+      { ...progressProposal, payload: { projectId: 'p', version: 1, lines: [{ partId: 'a' }] } },
+    ],
+    ['no projectName', { ...progressProposal, projectName: undefined }],
+    ['bad lineNames', { ...progressProposal, lineNames: [{ name: 'x' }] }],
+  ])('drops a malformed progress proposal keeping the reply (%s)', async (_label, bad) => {
+    const result = firstValueFrom(api.ask('Hola'));
+
+    http.expectOne('http://api.test/api/v1/chat').flush({ reply: 'ok', proposal: bad });
+
+    await expect(result).resolves.toEqual({ reply: 'ok', proposal: null });
+  });
+
+  it('patches the progress to the encoded queue URL and rejects an unexpected response', async () => {
+    const body = { version: 3, lines: [{ partId: 'a', quantity: 5, completed: 2 }] };
+    const ok = firstValueFrom(api.updateQueueProgress('a/b?', body));
+    const request = http.expectOne({
+      method: 'PATCH',
+      url: 'http://api.test/api/v1/queues/a%2Fb%3F',
+    });
+    expect(request.request.body).toEqual(body);
+    request.flush({ projectId: 'a/b?', goal: 'fastest' });
+    await expect(ok).resolves.toMatchObject({ projectId: 'a/b?' });
+
+    const bad = firstValueFrom(api.updateQueueProgress('p', body));
+    http.expectOne('http://api.test/api/v1/queues/p').flush({ nope: 1 });
+    await expect(bad).rejects.toMatchObject({ code: 'unexpected_response' });
+  });
+
+  it('does not retry a failed progress update', async () => {
+    const result = firstValueFrom(api.updateQueueProgress('p', { version: 1, lines: [] }));
+
+    http
+      .expectOne('http://api.test/api/v1/queues/p')
+      .flush({ code: 'conflict' }, { status: 409, statusText: 'Conflict' });
+
+    await expect(result).rejects.toMatchObject({ status: 409 });
+  });
+
   it('posts the payload to /projects and emits the created project', async () => {
     const result = firstValueFrom(api.createProject({ name: 'A' }));
 
