@@ -291,6 +291,79 @@ describe('SimulationPage', () => {
       expect(page.api.simulate).not.toHaveBeenCalled();
     });
 
+    describe('Retomar desde presets', () => {
+      const press = async (page: Awaited<ReturnType<typeof render>>, label: string) => {
+        const button = Array.from(page.element.querySelectorAll('button')).find(
+          (b) => b.textContent.trim() === label,
+        );
+        button?.focus();
+        button?.click();
+        await page.settle();
+        return button;
+      };
+
+      it('offers three type=button presets in a labelled group', async () => {
+        const page = await render();
+
+        const group = page.q('[role="group"][aria-labelledby="resume-label"]');
+        expect(page.q('#resume-label')?.textContent).toBe('Retomar desde:');
+        const buttons = Array.from(group?.querySelectorAll('button') ?? []);
+        expect(buttons.map((b) => b.textContent.trim())).toEqual([
+          'Hoy',
+          'Mañana',
+          'En una semana',
+        ]);
+        expect(buttons.every((b) => b.type === 'button')).toBe(true);
+        expect(page.q('#resume-help')?.textContent).toContain('00:00');
+      });
+
+      it.each([
+        ['Hoy', '16-10-2026'],
+        ['Mañana', '17-10-2026'],
+        ['En una semana', '23-10-2026'],
+      ])('%s sets %s at 00:00 and keeps focus on the button', async (label, date) => {
+        const page = await render();
+
+        const button = await press(page, label);
+
+        expect(page.input('sim-date')?.value).toBe(date);
+        expect(page.input('sim-time')?.value).toBe('00:00');
+        expect(document.activeElement).toBe(button);
+        expect(page.api.simulate).not.toHaveBeenCalled();
+      });
+
+      it('crosses a month boundary', async () => {
+        vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-30T15:00:00Z'));
+        const page = await render();
+
+        await press(page, 'En una semana');
+
+        expect(page.input('sim-date')?.value).toBe('06-11-2026');
+      });
+
+      it('uses the Argentina day, not the UTC day (22:30 on the 31st is 01:30Z on the 1st)', async () => {
+        vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-01T01:30:00Z'));
+        const page = await render();
+
+        await press(page, 'Hoy');
+        expect(page.input('sim-date')?.value).toBe('31-10-2026');
+
+        await press(page, 'Mañana');
+        expect(page.input('sim-date')?.value).toBe('01-11-2026');
+      });
+
+      it('clears a shown result like any other edit', async () => {
+        const page = await render();
+        await page.submit();
+        await page.answer();
+        expect(page.q('#summary')).not.toBeNull();
+
+        await press(page, 'Mañana');
+
+        expect(page.q('#summary')).toBeNull();
+      });
+    });
+
     it('sends projectId and startAt as YYYY-MM-DDTHH:mm', async () => {
       const page = await render();
       await page.type('sim-date', '05-11-2026');

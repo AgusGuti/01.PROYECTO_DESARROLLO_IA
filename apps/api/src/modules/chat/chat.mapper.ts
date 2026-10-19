@@ -11,6 +11,19 @@ function toProposalDto(proposal: ProposalDto): ProposalDto {
       printerNames: proposal.printerNames.map(({ printerId, name }) => ({ printerId, name })),
     };
   }
+  if (proposal.kind === 'update_queue_progress') {
+    const { projectId, version, lines } = proposal.payload;
+    return {
+      kind: proposal.kind,
+      payload: {
+        projectId,
+        version,
+        lines: lines.map(({ partId, quantity, completed }) => ({ partId, quantity, completed })),
+      },
+      projectName: proposal.projectName,
+      lineNames: proposal.lineNames.map(({ partId, name }) => ({ partId, name })),
+    };
+  }
   return {
     kind: proposal.kind,
     payload: proposal.payload,

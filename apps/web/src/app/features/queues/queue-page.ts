@@ -120,6 +120,8 @@ export class QueuePage {
   protected readonly action = signal<ActionError | null>(null);
   protected readonly serverErrors = signal<ServerErrors>(NO_ERRORS);
   protected readonly notice = signal<string | null>(null);
+  /** Index of the line whose "Impresas" input holds an invalid number. */
+  protected readonly progressError = signal<number | null>(null);
   protected readonly confirmingDelete = signal(false);
   private deleteTrigger: HTMLElement | null = null;
 
@@ -367,21 +369,69 @@ export class QueuePage {
 
   protected step(index: number, delta: 1 | -1): void {
     const state = this.state();
-    if (state.kind !== 'ready' || this.projectId === null || !this.canStep(index, delta)) return;
+    const line = state.kind === 'ready' ? state.queue.lines[index] : undefined;
+    if (line === undefined || !this.canStep(index, delta)) return;
+    const id = `#line-${String(index)}-`;
+    // A disabled button drops focus: put it back on the button, or its twin at a limit.
+    const same = delta === 1 ? 'plus' : 'minus';
+    const twin = delta === 1 ? 'minus' : 'plus';
+    this.setCompleted(
+      index,
+      line.completed + delta,
+      `${id}${same}:not(:disabled), ${id}${twin}:not(:disabled)`,
+    );
+  }
+
+  /** "Completar": every unit of the line printed. */
+  protected complete(index: number): void {
+    const state = this.state();
+    const line = state.kind === 'ready' ? state.queue.lines[index] : undefined;
+    if (line === undefined || line.completed >= line.quantity) return;
+    this.setCompleted(index, line.quantity, `#line-${String(index)}-completed`);
+  }
+
+  /** Commits the "Impresas" field (change, Enter or blur). Invalid input is never sent. */
+  protected commitCompleted(index: number, event: Event): void {
+    const target = event.target;
+    const state = this.state();
+    const line = state.kind === 'ready' ? state.queue.lines[index] : undefined;
+    if (!(target instanceof HTMLInputElement) || line === undefined || this.mutating()) return;
+    const text = target.value.trim();
+    const value = /^\d+$/.test(text) ? Number(text) : -1;
+    if (value < 0 || value > line.quantity) {
+      this.progressError.set(index);
+      return;
+    }
+    this.progressError.set(null);
+    if (value !== line.completed) {
+      this.setCompleted(index, value, `#line-${String(index)}-completed`);
+    }
+  }
+
+  protected progressMessage(index: number): string | null {
+    const state = this.state();
+    const line = state.kind === 'ready' ? state.queue.lines[index] : undefined;
+    return this.progressError() === index && line !== undefined
+      ? `Ingresá un número entre 0 y ${String(line.quantity)}`
+      : null;
+  }
+
+  /** One PATCH with every line intact except the changed `completed`. */
+  private setCompleted(index: number, completed: number, focusSelector: string): void {
+    const state = this.state();
+    if (state.kind !== 'ready' || this.projectId === null) return;
     const { queue } = state;
     const lines = queue.lines.map((line, position) => ({
       partId: line.partId,
       quantity: line.quantity,
-      completed: position === index ? line.completed + delta : line.completed,
+      completed: position === index ? completed : line.completed,
     }));
+    this.progressError.set(null);
     this.run(this.api.update(this.projectId, { version: queue.version, lines }), (saved) => {
       // Only the queue is replaced: unsaved edits in the form (goal, quantities) are kept.
       this.state.set({ kind: 'ready', queue: saved, printers: state.printers });
       this.notice.set('Se actualizó el avance.');
-      // A disabled button drops focus: put it back on the button, or its twin at a limit.
-      this.focusAfterRender(
-        `#line-${String(index)}-${delta === 1 ? 'plus' : 'minus'}:not(:disabled), #line-${String(index)}-${delta === 1 ? 'minus' : 'plus'}:not(:disabled)`,
-      );
+      this.focusAfterRender(focusSelector);
     });
   }
 

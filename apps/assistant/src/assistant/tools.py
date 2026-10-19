@@ -34,11 +34,14 @@ from assistant.schemas import (
     CreateProjectProposal,
     CreateQueueProposal,
     PrinterName,
+    ProgressLine,
+    ProgressPayload,
     Proposal,
     ProposalItem,
     ProposalItemName,
     ProposalPayload,
     QueuePayload,
+    UpdateQueueProgressProposal,
 )
 
 logger = logging.getLogger("assistant.tools")
@@ -160,9 +163,14 @@ class ProjectIdArgs(_Args):
     proyecto: ProjectRef
 
 
+DateText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+
+
 class SimulateArgs(_Args):
     proyecto: ProjectRef
     start_at: StartAt | None = None
+    # A Spanish date (or hoy/mañana), parsed in code; start_at wins when both are given.
+    desde: DateText | None = None
 
 
 def _iso_date(value: str) -> str:
@@ -227,7 +235,7 @@ def parse_fecha(value: str, today: date) -> date:
 
 
 class AgendaArgs(_Args):
-    fecha: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+    fecha: DateText
 
 
 class ProposedItemArgs(_Args):
@@ -255,6 +263,17 @@ class ProposeCreateQueueArgs(_Args):
     ]
     modo: Literal["una", "varias", "single", "multi"]
     impresoras: Annotated[list[ProjectRef], Field(min_length=1, max_length=10)]
+
+
+class ProgressEntry(_Args):
+    pieza: ProjectRef  # a part name or id of the queue's own lines
+    impresas: Annotated[int, Field(ge=0, le=1000)]
+
+
+class ProposeQueueProgressArgs(_Args):
+    proyecto: ProjectRef
+    avance: Annotated[list[ProgressEntry], Field(min_length=1, max_length=100)]
+    modo: Literal["total", "sumar"] | None = None
 
 
 def _two_decimals(value: float) -> float:
@@ -357,6 +376,7 @@ class ApiQueue(_Data):
     mode: str
     lines: list[ApiQueueLine]
     totals: ApiQueueTotals
+    version: int | None = None  # only the progress proposal needs it
 
 
 class ApiFilament(_Data):
@@ -740,6 +760,7 @@ class Simulacion(BaseModel):
     fecha_limite_cumplida: bool | None
     piezas_sin_ubicar: list[PiezaSinUbicar]
     avisos: list[str]
+    nota: str
 
 
 class PlanResumen(BaseModel):
@@ -759,6 +780,7 @@ class Optimizacion(BaseModel):
     diferencia: str
     piezas_sin_ubicar: list[PiezaSinUbicar]
     avisos: list[str]
+    nota: str
 
 
 class LineaCosto(BaseModel):
@@ -960,6 +982,14 @@ def date_ar(iso: str | None) -> str | None:
         return iso
     text = f"{parts[2]}-{parts[1]}-{parts[0]}"
     return f"{text} {clock}" if clock else text
+
+
+def simulation_note(start_at: str) -> str:
+    day = (date_ar(start_at) or start_at).split(" ")[0]
+    return (
+        f"Es una simulación a partir del {day}: no se guardó ni se cambió nada. "
+        "El plan se calcula de nuevo cada vez que lo pedís."
+    )
 
 
 def _hhmm(minute: int) -> str:
@@ -1423,9 +1453,33 @@ class Toolbox:
                 nota=AGENDA_NOTE,
             )
 
+        def start_for(args: SimulateArgs) -> str:
+            """start_at, else `desde` at 00:00 (if still in the future), else now; no HTTP."""
+            now = self._now()
+            fallback = default_start(now)
+            if args.start_at:
+                return args.start_at
+            if args.desde is None:
+                return fallback
+            text = args.desde.casefold()
+            today = now.astimezone(ARGENTINA).date()
+            try:
+                if text == "hoy":
+                    day = today
+                elif text in ("mañana", "manana"):
+                    day = today + timedelta(days=1)
+                else:
+                    day = parse_fecha(text, today)
+            except ValueError:
+                raise ToolError(
+                    "La fecha 'desde' no es válida o no se entiende. Usá DD-MM-AAAA, "
+                    "'D de mes', 'hoy' o 'mañana'."
+                ) from None
+            return max(fallback, f"{day.isoformat()}T00:00")  # a past day keeps "now"
+
         async def simulate_project(args: SimulateArgs) -> BaseModel:
+            start = start_for(args)
             project_id = await resolve(args.proyecto)
-            start = args.start_at or default_start(self._now())
             s = await api.request(
                 "POST",
                 "/api/v1/simulations",
@@ -1450,11 +1504,12 @@ class Toolbox:
                     PiezaSinUbicar(pieza=u.partName, unidades=u.units) for u in s.unplaced[:10]
                 ],
                 avisos=[_WARNING.get(w.code, w.code) for w in s.warnings],
+                nota=simulation_note(s.startAt),
             )
 
         async def optimize_project(args: SimulateArgs) -> BaseModel:
+            start = start_for(args)
             project_id = await resolve(args.proyecto)
-            start = args.start_at or default_start(self._now())
             o = await api.request(
                 "POST",
                 "/api/v1/simulations/optimizations",
@@ -1478,6 +1533,7 @@ class Toolbox:
                     for u in o.optimized.unplaced[:10]
                 ],
                 avisos=[_WARNING.get(w.code, w.code) for w in o.warnings],
+                nota=simulation_note(o.startAt),
             )
 
         async def propose_create_queue(args: ProposeCreateQueueArgs) -> BaseModel:
@@ -1511,6 +1567,69 @@ class Toolbox:
             return PropuestaResult(
                 mensaje="Propuesta lista; el usuario debe confirmarla en pantalla. "
                 "No está creado nada todavía."
+            )
+
+        def line_name(line: ApiQueueLine) -> str:
+            return line.partName or ""
+
+        async def propose_queue_progress(args: ProposeQueueProgressArgs) -> BaseModel:
+            project_id, project_name = await resolve_named(args.proyecto)
+            queue = await api.request(
+                "GET",
+                f"/api/v1/queues/{project_id}",
+                ApiQueue,
+                status_messages={404: NO_QUEUE},
+            )
+            if queue.version is None:
+                raise ToolError("La API respondió algo inesperado.")
+            done = {ln.partId.casefold(): ln.completed for ln in queue.lines}
+            chosen: dict[str, int] = {}
+            for entry in args.avance:
+                line = _one(
+                    _find(queue.lines, entry.pieza, line_name, lambda ln: ln.partId),
+                    entry.pieza,
+                    "pieza de la cola",
+                    "piezas de la cola",
+                    line_name,
+                )
+                key = line.partId.casefold()
+                if key in chosen:
+                    raise ToolError("Una pieza aparece más de una vez; indicala una sola vez.")
+                total = entry.impresas + (done[key] if args.modo == "sumar" else 0)
+                if total > line.quantity:
+                    raise ToolError(
+                        f"«{_clip(line_name(line))}» tiene {line.quantity} unidades en la "
+                        f"cola: no se pueden marcar {total} como impresas."
+                    )
+                chosen[key] = total
+            proposal = UpdateQueueProgressProposal(
+                kind="update_queue_progress",
+                payload=ProgressPayload(
+                    projectId=project_id,
+                    version=queue.version,
+                    lines=[
+                        ProgressLine(
+                            partId=ln.partId.lower(),
+                            quantity=ln.quantity,
+                            completed=chosen.get(ln.partId.casefold(), ln.completed),
+                        )
+                        for ln in queue.lines
+                    ],
+                ),
+                projectName=project_name,
+                lineNames=[
+                    ProposalItemName(
+                        partId=ln.partId.lower(), name=line_name(ln)[:100] or "Pieza eliminada"
+                    )
+                    for ln in queue.lines
+                ],
+            )
+            if self._proposal is not None and self._proposal != proposal:
+                raise ToolError("Ya hay una propuesta en esta conversación; solo se admite una.")
+            self._proposal = proposal
+            return PropuestaResult(
+                mensaje="Propuesta lista; el usuario debe confirmarla en pantalla. "
+                "No está cambiado nada todavía."
             )
 
         async def resolve_parts(refs: list[ProposedItemArgs]) -> list[ApiPart]:
@@ -2148,10 +2267,28 @@ class Toolbox:
                 propose_create_queue,
             ),
             _tool(
+                "propose_queue_progress",
+                "PROPONE registrar cuántas unidades ya se imprimieron de cada pieza de la cola "
+                "de un proyecto; no cambia nada: el usuario debe confirmar en pantalla. Usala "
+                "solo cuando el usuario diga qué imprimió (por ejemplo 'ya imprimí 10 cubos y 4 "
+                "engranajes del proyecto X'); nunca inventes cantidades y, si no queda claro "
+                "qué pieza o cuántas, preguntalo. 'proyecto': id o nombre. 'avance': lista de "
+                "{pieza, impresas} con piezas de la cola. Por defecto 'impresas' es el TOTAL "
+                "impreso de esa pieza; si el usuario dice 'otras 3' o 'tres más' pasá "
+                "modo='sumar' y se suma a lo ya impreso. No puede superar la cantidad de la "
+                "línea. Máximo una propuesta por conversación.",
+                ProposeQueueProgressArgs,
+                propose_queue_progress,
+            ),
+            _tool(
                 "optimize_project",
                 "Usala SIEMPRE que el usuario pregunte por optimizar, mejorar el orden de "
-                "impresión, cuánto gana o ahorra, o comparar con el orden simple. Solo necesita "
-                "el nombre (o id) del proyecto en 'proyecto': no pidas más datos. 'start_at' es "
+                "impresión, cuánto gana o ahorra, o comparar con el orden simple; también para "
+                "replanificar, reprogramar o retomar desde una fecha ('vuelvo el 28 de "
+                "octubre, reprogramá'). Solo necesita el nombre (o id) del proyecto en "
+                "'proyecto': no pidas más datos. 'desde' es opcional: la fecha de regreso o "
+                "inicio (DD-MM-AAAA, AAAA-MM-DD, 'D de mes', 'hoy' o 'mañana'); arranca ese día "
+                "a las 00:00 (si ya pasó, se usa la hora actual). 'start_at' es "
                 "opcional (AAAA-MM-DDTHH:mm, hora de Argentina); si falta se usa la hora "
                 "actual. Compara el orden simple con uno optimizado para el objetivo de la cola "
                 "(no guarda ni cambia nada) y devuelve la estrategia elegida, cuándo termina "
@@ -2240,8 +2377,11 @@ class Toolbox:
                 "simulate_project",
                 "Simula la planificación de la cola de un proyecto (no guarda nada). Devuelve "
                 "cuándo termina, tiempo de espera, si se cumple la fecha límite y las "
-                "unidades que no entran. 'start_at' es opcional (AAAA-MM-DDTHH:mm, hora de "
-                "Argentina); si falta se usa la hora actual. En 'proyecto' pasá el id o, si solo "
+                "unidades que no entran. 'desde' es opcional: para replanificar, reprogramar o "
+                "retomar desde una fecha ('vuelvo el <fecha>'), pasá esa fecha (DD-MM-AAAA, "
+                "'D de mes', 'hoy' o 'mañana'): arranca ese día a las 00:00. 'start_at' es "
+                "opcional (AAAA-MM-DDTHH:mm, hora de Argentina); si falta se usa la hora "
+                "actual. En 'proyecto' pasá el id o, si solo "
                 "sabés el nombre, el nombre; debe tener cola.",
                 SimulateArgs,
                 simulate_project,

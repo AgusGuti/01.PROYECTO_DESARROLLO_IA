@@ -39,12 +39,19 @@ async function render(
   createProject: (payload: unknown) => Observable<Pick<Project, 'id' | 'name'>> = () => of(CREATED),
   createQueue: (payload: unknown) => Observable<{ projectId: string }> = () =>
     of({ projectId: 'proj1' }),
+  updateQueueProgress: (
+    projectId: string,
+    body: unknown,
+  ) => Observable<{ projectId: string }> = () => of({ projectId: 'proj1' }),
 ) {
   TestBed.configureTestingModule({
     imports: [ChatPage],
     providers: [
       provideRouter([]),
-      { provide: ChatApi, useValue: { ask, createProject, createQueue } },
+      {
+        provide: ChatApi,
+        useValue: { ask, createProject, createQueue, updateQueueProgress },
+      },
     ],
   });
   const fixture = TestBed.createComponent(ChatPage);
@@ -493,6 +500,138 @@ describe('ChatPage', () => {
 
     it('disables Limpiar conversación while the queue is being created', async () => {
       const page = await withQueueCard(() => new Subject<{ projectId: string }>());
+
+      await page.click('Confirmar');
+
+      expect(page.button('Limpiar conversación')?.disabled).toBe(true);
+    });
+  });
+
+  describe('assistant progress proposal card', () => {
+    const LINES = [
+      { partId: 'a', quantity: 5, completed: 2 },
+      { partId: 'b', quantity: 3, completed: 3 },
+    ];
+    const PROGRESS: Proposal = {
+      kind: 'update_queue_progress',
+      payload: { projectId: 'proj1', version: 4, lines: LINES },
+      projectName: HOSTILE,
+      lineNames: [{ partId: 'a', name: 'Base <b>x</b>' }],
+    };
+    type Patch = (projectId: string, body: unknown) => Observable<{ projectId: string }>;
+    async function withProgressCard(update?: Patch) {
+      const page = await render(
+        () => of(reply('Armé el avance.', PROGRESS)),
+        undefined,
+        undefined,
+        update,
+      );
+      await page.type('marcá el avance');
+      await page.click('Enviar');
+      return page;
+    }
+    const card = (page: { element: HTMLElement }) =>
+      page.element.querySelector('[role="group"][aria-label="Propuesta del asistente"]');
+    const fail = (status: number) => () =>
+      throwError(() => new ApiError(status, 'x', 'SENTINEL backend text'));
+
+    it('renders the Spanish description from the payload, hostile text as text', async () => {
+      const page = await withProgressCard();
+      const text = card(page)?.textContent ?? '';
+
+      expect(text).toContain(`Actualizar el avance de la cola del proyecto «${HOSTILE}»`);
+      expect(text).toContain('Base <b>x</b>: 2 de 5 impresas');
+      expect(text).toContain('Pieza: 3 de 3 impresas');
+      expect(text).toContain('Todavía no se cambió nada.');
+      expect(card(page)?.querySelector('img, b')).toBeNull();
+    });
+
+    it('sends the exact PATCH once and shows the link, focused', async () => {
+      const update = vi.fn((_id: string, _body: unknown) => of({ projectId: 'proj1' }));
+      const page = await withProgressCard(update);
+
+      page.button('Confirmar')?.click();
+      page.button('Confirmar')?.click();
+      await page.fixture.whenStable();
+
+      expect(update).toHaveBeenCalledExactlyOnceWith('proj1', {
+        version: 4,
+        lines: LINES,
+      });
+      expect(card(page)?.textContent).toContain('Avance actualizado.');
+      const link = required(card(page)?.querySelector('a') ?? null);
+      expect(link.textContent).toBe('Abrir la cola');
+      expect(link.getAttribute('href')).toBe('/proyectos/proj1/cola');
+      expect(document.activeElement).toBe(link);
+      expect(page.button('Confirmar')).toBeUndefined();
+    });
+
+    it('on 409 says the queue changed, links to it and offers no retry', async () => {
+      const page = await withProgressCard(fail(409));
+
+      await page.click('Confirmar');
+
+      expect(card(page)?.textContent).toContain(
+        'La cola cambió desde que se hizo la propuesta. Pedila de nuevo.',
+      );
+      expect(card(page)?.querySelector('a')?.getAttribute('href')).toBe('/proyectos/proj1/cola');
+      expect(page.button('Reintentar')).toBeUndefined();
+      expect(page.element.textContent).not.toContain('SENTINEL');
+    });
+
+    it('on 404 says there is no queue, links to Proyectos and offers no retry', async () => {
+      const page = await withProgressCard(fail(404));
+
+      await page.click('Confirmar');
+
+      expect(card(page)?.textContent).toContain('Ese proyecto ya no tiene cola.');
+      expect(card(page)?.querySelector('a')?.getAttribute('href')).toBe('/proyectos');
+      expect(page.button('Reintentar')).toBeUndefined();
+      expect(page.element.textContent).not.toContain('SENTINEL');
+    });
+
+    it('on 400 shows a fixed message and retries with the same body', async () => {
+      let calls = 0;
+      const update = vi.fn((_id: string, _body: unknown) => {
+        calls += 1;
+        return calls === 1 ? fail(400)() : of({ projectId: 'proj1' });
+      });
+      const page = await withProgressCard(update);
+
+      await page.click('Confirmar');
+      expect(card(page)?.textContent).toContain('La API no aceptó la propuesta; revisá los datos.');
+      expect(page.element.textContent).not.toContain('SENTINEL');
+
+      await page.click('Reintentar');
+      expect(update).toHaveBeenCalledTimes(2);
+      expect(update.mock.calls[1]).toEqual(update.mock.calls[0]);
+      expect(card(page)?.textContent).toContain('Avance actualizado.');
+    });
+
+    it('on an uncertain failure warns, links to Proyectos and allows retry', async () => {
+      const page = await withProgressCard(fail(503));
+
+      await page.click('Confirmar');
+
+      expect(card(page)?.textContent).toContain('No pudimos confirmar si se actualizó el avance.');
+      expect(card(page)?.querySelector('a')?.getAttribute('href')).toBe('/proyectos');
+      expect(page.button('Reintentar')).toBeDefined();
+      expect(page.element.textContent).not.toContain('SENTINEL');
+    });
+
+    it('discards without sending anything', async () => {
+      const update = vi.fn((_id: string, _body: unknown) => of({ projectId: 'proj1' }));
+      const page = await withProgressCard(update);
+
+      await page.click('Descartar');
+
+      expect(card(page)?.textContent).toContain('Descartada');
+      expect(page.button('Confirmar')).toBeUndefined();
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('disables Limpiar conversación while the update is in flight', async () => {
+      const page = await withProgressCard(() => new Subject<{ projectId: string }>());
 
       await page.click('Confirmar');
 

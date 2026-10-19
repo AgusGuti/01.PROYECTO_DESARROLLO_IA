@@ -210,6 +210,38 @@
                         >
                           -1
                         </button>
+                        @let progressProblem = progressMessage(i);
+                        <label class="visually-hidden" [for]="'line-' + i + '-completed'"
+                          >Impresas de {{ name }}</label
+                        >
+                        <input
+                          [id]="'line-' + i + '-completed'"
+                          type="text"
+                          inputmode="numeric"
+                          autocomplete="off"
+                          [value]="line.completed"
+                          [disabled]="mutating()"
+                          [attr.aria-invalid]="progressProblem ? 'true' : null"
+                          [attr.aria-describedby]="
+                            progressProblem ? 'line-' + i + '-progress-error' : null
+                          "
+                          (change)="commitCompleted(i, $event)"
+                          (keydown.enter)="$event.preventDefault(); commitCompleted(i, $event)"
+                        />
+                        <button
+                          type="button"
+                          [id]="'line-' + i + '-complete'"
+                          [attr.aria-label]="'Completar ' + name"
+                          [disabled]="mutating() || line.completed >= line.quantity"
+                          (click)="complete(i)"
+                        >
+                          Completar
+                        </button>
+                        @if (progressProblem) {
+                          <p class="field-error" [id]="'line-' + i + '-progress-error'">
+                            {{ progressProblem }}
+                          </p>
+                        }
                         @if (line.partDeleted) {
                           <button
                             type="button"
@@ -238,6 +270,12 @@
               }
             </tbody>
           </table>
+          @if (ready) {
+            <p id="away-hint">
+              Si estuviste ausente, marcá lo ya impreso y después simulá desde el día que volvés.
+              <a [routerLink]="['/proyectos', projectId, 'simulacion']">Ir a la simulación</a>
+            </p>
+          }
         }
       </div>
 

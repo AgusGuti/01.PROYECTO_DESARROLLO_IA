@@ -14,6 +14,7 @@ import { ApiError } from '../../core/api/api-error';
 import {
   DEADLINE_CHANGE_TEXT,
   deadlineText,
+  dayStart,
   defaultStart,
   finishDeltaText,
   formatDateTime,
@@ -204,6 +205,17 @@ export class SimulationPage {
     this.form.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => {
       this.runs.next(null);
     });
+  }
+
+  protected readonly presets = [
+    { label: 'Hoy', days: 0 },
+    { label: 'Mañana', days: 1 },
+    { label: 'En una semana', days: 7 },
+  ] as const;
+
+  /** "Retomar desde": the Argentina date at 00:00. Changing the form clears any result. */
+  protected resumeFrom(days: number): void {
+    this.form.setValue(dayStart(Date.now(), days));
   }
 
   private execute(mode: Mode, body: SimulationRequest): Observable<RunState> {

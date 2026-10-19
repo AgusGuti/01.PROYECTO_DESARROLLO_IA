@@ -198,6 +198,7 @@ def test_the_model_is_given_only_read_tools_and_one_proposal_tool() -> None:
         "agenda_del_dia",
         "propose_create_project",
         "propose_create_queue",
+        "propose_queue_progress",
         "optimize_project",
         "list_projects",
         "get_project",

@@ -26,6 +26,10 @@ PROJECTS = ("GET", "/api/v1/projects")
 PROJECT = ("GET", f"/api/v1/projects/{PROJECT_ID}")
 PRINTERS = ("GET", "/api/v1/printers")
 OPTIMIZE = ("POST", "/api/v1/simulations/optimizations")
+NOTE = (
+    "Es una simulación a partir del 14-10-2026: no se guardó ni se cambió nada. "
+    "El plan se calcula de nuevo cada vez que lo pedís."
+)
 CONFIRMED = "Propuesta lista; el usuario debe confirmarla en pantalla. No está creado nada todavía."
 
 
@@ -478,6 +482,7 @@ async def test_optimize_returns_a_compact_spanish_summary() -> None:
         "se cumple la fecha límite (con el orden simple no) (respecto del orden simple)",
         "piezas_sin_ubicar": [],
         "avisos": ["se agruparon piezas iguales en una misma placa"],
+        "nota": NOTE,
     }
     assert "candidates" not in out
     posts = [r for r in api.requests if r.method == "POST"]

@@ -154,6 +154,55 @@ describe('chat service', () => {
       });
     });
 
+    describe('update_queue_progress', () => {
+      const progress = {
+        kind: 'update_queue_progress',
+        payload: {
+          projectId: partId.toUpperCase(),
+          version: 3,
+          lines: [{ partId: partId.toUpperCase(), quantity: 5, completed: 5 }],
+        },
+        projectName: 'Soportes',
+        lineNames: [{ partId, name: 'Soporte' }],
+      };
+
+      it('passes a valid progress proposal through, ids lower-cased', async () => {
+        const { service, lines } = setup({
+          ask: () => Promise.resolve({ reply: 'Reanudo', proposal: progress }),
+        });
+
+        const result = await service.ask('reanuda');
+
+        expect(result.proposal).toEqual({
+          ...progress,
+          payload: {
+            projectId: partId,
+            version: 3,
+            lines: [{ partId, quantity: 5, completed: 5 }],
+          },
+        });
+        expect(lines.join('')).toContain('"proposal":"valid"');
+      });
+
+      it.each([
+        [
+          'completed over quantity',
+          {
+            ...progress,
+            payload: { ...progress.payload, lines: [{ partId, quantity: 5, completed: 6 }] },
+          },
+        ],
+        ['version 0', { ...progress, payload: { ...progress.payload, version: 0 } }],
+      ])('drops %s but keeps the reply', async (_name, proposal) => {
+        const { service, lines } = setup({
+          ask: () => Promise.resolve({ reply: 'Hola', proposal }),
+        });
+
+        await expect(service.ask('x')).resolves.toEqual({ reply: 'Hola', proposal: null });
+        expect(lines.join('')).toContain('"proposal":"dropped"');
+      });
+    });
+
     it('answers null when the assistant sends no proposal or null', async () => {
       const absent = setup({ ask: () => Promise.resolve({ reply: 'a' }) });
       const nul = setup({ ask: () => Promise.resolve({ reply: 'a', proposal: null }) });
