@@ -65,7 +65,7 @@
     "@hey-api/openapi-ts": "0.99.0",
     "@playwright/test": "1.64.0",
     "@types/node": "22.20.5",
-    "@upstash/context7-mcp": "4.4.1",
+    "@upstash/context7-mcp": "4.4.4",
     "angular-eslint": "22.6.0",
     "concurrently": "10.0.6",
     "dependency-cruiser": "18.6.0",
@@ -78,7 +78,8 @@
     "typescript-eslint": "8.71.2"
   },
   "overrides": {
-    "js-yaml": "4.3.2"
+    "js-yaml": "4.3.2",
+    "vite": "8.3.4"
   },
   "allowScripts": {
     "esbuild@0.28.2": true,
