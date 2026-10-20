@@ -42,6 +42,7 @@
         [attr.aria-invalid]="startProblem ? 'true' : null"
         [attr.aria-describedby]="startProblem ? 'sim-date-error' : null"
       />
+      <app-date-tools [control]="form.controls.date" label="fecha de inicio" />
       @if (startProblem) {
         <p class="field-error" id="sim-date-error">{{ startProblem }}</p>
       }
