@@ -168,7 +168,7 @@ describe('ProjectFormPage (create)', () => {
     expect(page.element.querySelectorAll('h1')).toHaveLength(1);
     expect(page.element.querySelector('h1')?.textContent).toBe('Nuevo proyecto');
     const controls = Array.from(page.element.querySelectorAll('input, select'));
-    expect(controls).toHaveLength(6);
+    expect(controls).toHaveLength(7);
     for (const control of controls) {
       const labelled = control as HTMLInputElement;
       expect(labelled.labels?.length, `control ${labelled.id} has no label`).toBeGreaterThan(0);
