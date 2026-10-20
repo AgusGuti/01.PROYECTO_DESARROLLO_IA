@@ -25,6 +25,7 @@ import type {
 } from '@print3d/api-contracts';
 import { catchError, map, of, startWith, Subject, switchMap } from 'rxjs';
 import { ApiError } from '../../core/api/api-error';
+import { DateTools } from '../../shared/ui/date-tools';
 import { type PickerPart, PartsPickerApi } from './parts-picker-api';
 import {
   formatDeadline,
@@ -152,7 +153,7 @@ function sameItems(project: Project, items: readonly ProjectItemInput[]): boolea
 
 @Component({
   selector: 'app-project-form-page',
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [DateTools, ReactiveFormsModule, RouterLink],
   templateUrl: './project-form-page.html',
   styleUrl: './project-form-page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

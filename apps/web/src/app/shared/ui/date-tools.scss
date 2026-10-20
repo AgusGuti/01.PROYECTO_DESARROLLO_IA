@@ -1,0 +1,31 @@
+.date-tools {
+  display: inline-flex;
+  gap: 0.5rem;
+  margin-block-start: 0.25rem;
+  position: relative;
+}
+
+// The label exists for assistive tech and tests only; nobody needs to see it.
+.picker-label {
+  block-size: 1px;
+  clip-path: inset(50%);
+  inline-size: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+}
+
+// Invisible but still laid out, so the browser anchors its calendar popup next to the buttons.
+.picker {
+  block-size: 0;
+  inline-size: 0;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
+button {
+  background: transparent;
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent);
+}

@@ -1,0 +1,25 @@
+<span class="date-tools">
+  <button
+    type="button"
+    [attr.aria-label]="'Elegir ' + label() + ' en el calendario'"
+    (click)="openCalendar()"
+  >
+    Calendario
+  </button>
+  <button type="button" [attr.aria-label]="'Poner la ' + label() + ' de hoy'" (click)="today()">
+    Hoy
+  </button>
+  <label class="picker-label">
+    Calendario de {{ label() }}
+    <input
+      #picker
+      class="picker"
+      type="date"
+      tabindex="-1"
+      aria-hidden="true"
+      min="2000-01-01"
+      max="2099-12-31"
+      (change)="picked(picker.value)"
+    />
+  </label>
+</span>

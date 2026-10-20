@@ -11,6 +11,7 @@ import type {
 } from '@print3d/api-contracts';
 import { catchError, map, type Observable, of, startWith, Subject, switchMap } from 'rxjs';
 import { ApiError } from '../../core/api/api-error';
+import { DateTools } from '../../shared/ui/date-tools';
 import {
   DEADLINE_CHANGE_TEXT,
   deadlineText,
@@ -161,7 +162,7 @@ function failureOf(error: unknown): RunState {
 
 @Component({
   selector: 'app-simulation-page',
-  imports: [NgTemplateOutlet, ReactiveFormsModule, RouterLink],
+  imports: [DateTools, NgTemplateOutlet, ReactiveFormsModule, RouterLink],
   templateUrl: './simulation-page.html',
   styleUrl: './simulation-page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
