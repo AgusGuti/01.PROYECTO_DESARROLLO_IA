@@ -60,6 +60,24 @@ export function createFilamentSummaryLookup(
   };
 }
 
+/**
+ * Builds the simulations module's `FilamentLookup` (ADR 0036): display name and remaining grams of
+ * the live spools among the ids, in one query. A missing id is unknown or deleted.
+ */
+export function createSimulationFilamentLookup(
+  repository: Pick<FilamentRepository, 'findLiveByIds'> = createMongoFilamentRepository(),
+): (ids: string[]) => Promise<ReadonlyMap<string, { name: string; availableGrams: number }>> {
+  return async (ids) => {
+    const found = await repository.findLiveByIds(ids);
+    return new Map(
+      found.map(({ id, brand, material, colorName, availableGrams }) => [
+        id,
+        { name: `${brand} ${material} ${colorName}`, availableGrams },
+      ]),
+    );
+  };
+}
+
 export function createFilamentsModule(deps: {
   clock: Clock;
   /** Tests inject a fake; production uses MongoDB. */

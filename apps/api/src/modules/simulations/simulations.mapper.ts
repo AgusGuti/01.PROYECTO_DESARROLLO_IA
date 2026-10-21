@@ -2,10 +2,35 @@
 import { formatLocalMinutes } from './simulations.domain.js';
 import type { Candidate } from './simulations.optimizer.js';
 import type { OptimizationDto, SimulationDto } from './simulations.schemas.js';
-import type { OptimizationResult, SimulationResult } from './simulations.service.js';
+import type {
+  NamedShortfall,
+  OptimizationResult,
+  SimulationResult,
+} from './simulations.service.js';
+
+const shortfallsOf = (shortfalls: readonly NamedShortfall[]) =>
+  shortfalls.map((shortfall) => ({
+    filamentId: shortfall.filamentId,
+    name: shortfall.name,
+    availableGrams: shortfall.availableGrams,
+    neededGrams: shortfall.neededGrams,
+    completablePieces: shortfall.completablePieces,
+    remainingPieces: shortfall.remainingPieces,
+  }));
+
+/** The spool fields every job carries; the name is null when the spool is unknown or deleted. */
+const spoolOf = (
+  job: { filamentId: string | null; setupMinutes: number; filamentChanged: boolean },
+  filamentNames: ReadonlyMap<string, string>,
+) => ({
+  filamentId: job.filamentId,
+  filamentName: job.filamentId === null ? null : (filamentNames.get(job.filamentId) ?? null),
+  setupMinutes: job.setupMinutes,
+  filamentChanged: job.filamentChanged,
+});
 
 export function toSimulationDto(result: SimulationResult): SimulationDto {
-  const { simulation, partNames, printerNames } = result;
+  const { simulation, partNames, printerNames, filamentNames } = result;
   const unplacedJobs = simulation.unplaced.reduce((sum, entry) => sum + entry.units, 0);
   return {
     projectId: result.projectId,
@@ -18,6 +43,7 @@ export function toSimulationDto(result: SimulationResult): SimulationDto {
       unit: job.unit,
       unitsInLine: job.unitsInLine,
       printerId: job.printerId,
+      ...spoolOf(job, filamentNames),
       startAt: formatLocalMinutes(job.start),
       endAt: formatLocalMinutes(job.end),
       handoffAt: formatLocalMinutes(job.handoff),
@@ -29,6 +55,8 @@ export function toSimulationDto(result: SimulationResult): SimulationDto {
       jobs: printer.jobs,
       busyMinutes: printer.busyMinutes,
       idleMinutes: printer.idleMinutes,
+      setupMinutes: printer.setupMinutes,
+      filamentChanges: printer.filamentChanges,
     })),
     totals: {
       placedJobs: simulation.jobs.length,
@@ -36,6 +64,8 @@ export function toSimulationDto(result: SimulationResult): SimulationDto {
       finishAt: simulation.finishAt === null ? null : formatLocalMinutes(simulation.finishAt),
       totalBusyMinutes: simulation.printers.reduce((sum, p) => sum + p.busyMinutes, 0),
       totalIdleMinutes: simulation.printers.reduce((sum, p) => sum + p.idleMinutes, 0),
+      totalSetupMinutes: simulation.totalSetupMinutes,
+      filamentChanges: simulation.filamentChanges,
     },
     deadline: { date: result.deadline.date, met: result.deadline.met },
     unplaced: simulation.unplaced.map((entry) => ({
@@ -44,6 +74,7 @@ export function toSimulationDto(result: SimulationResult): SimulationDto {
       units: entry.units,
     })),
     warnings: result.warnings.map((code) => ({ code })),
+    filamentShortfalls: shortfallsOf(result.filamentShortfalls),
   };
 }
 
@@ -61,6 +92,8 @@ function toCandidateParts(
       finishAt: plan.finishAt === null ? null : formatLocalMinutes(plan.finishAt),
       totalBusyMinutes: plan.printers.reduce((sum, p) => sum + p.busyMinutes, 0),
       totalIdleMinutes: metrics.totalIdleMinutes,
+      totalSetupMinutes: metrics.totalSetupMinutes,
+      filamentChanges: metrics.filamentChanges,
     },
     deadline: { date: deadlineDate, met: metrics.deadlineMet },
     unplaced: plan.unplaced.map((entry) => ({
@@ -72,7 +105,7 @@ function toCandidateParts(
 }
 
 export function toOptimizationDto(result: OptimizationResult): OptimizationDto {
-  const { partNames, printerNames, optimized, baseline } = result;
+  const { partNames, printerNames, filamentNames, optimized, baseline } = result;
   const base = toCandidateParts(baseline, result.deadlineDate, partNames);
   const best = toCandidateParts(optimized, result.deadlineDate, partNames);
   return {
@@ -90,6 +123,7 @@ export function toOptimizationDto(result: OptimizationResult): OptimizationDto {
         plateIndex: job.plateIndex,
         platesInLine: job.platesInLine,
         printerId: job.printerId,
+        ...spoolOf(job, filamentNames),
         startAt: formatLocalMinutes(job.start),
         endAt: formatLocalMinutes(job.end),
         handoffAt: formatLocalMinutes(job.handoff),
@@ -101,6 +135,8 @@ export function toOptimizationDto(result: OptimizationResult): OptimizationDto {
         jobs: printer.jobs,
         busyMinutes: printer.busyMinutes,
         idleMinutes: printer.idleMinutes,
+        setupMinutes: printer.setupMinutes,
+        filamentChanges: printer.filamentChanges,
       })),
       ...best,
     },
@@ -113,10 +149,13 @@ export function toOptimizationDto(result: OptimizationResult): OptimizationDto {
       strategy,
       finishAt: metrics.finishAt === null ? null : formatLocalMinutes(metrics.finishAt),
       totalIdleMinutes: metrics.totalIdleMinutes,
+      totalSetupMinutes: metrics.totalSetupMinutes,
+      filamentChanges: metrics.filamentChanges,
       deadlineMet: metrics.deadlineMet,
       placedUnits: metrics.placedUnits,
       unplacedUnits: metrics.unplacedUnits,
     })),
     warnings: result.warnings.map((code) => ({ code })),
+    filamentShortfalls: shortfallsOf(result.filamentShortfalls),
   };
 }

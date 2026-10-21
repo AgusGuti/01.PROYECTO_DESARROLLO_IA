@@ -38,6 +38,49 @@ export const simulationWarningCodeSchema = z
 
 const minutes = (description: string) => z.number().int().openapi({ description });
 
+const filamentFields = {
+  filamentId: idSchema.nullable().openapi({
+    description: 'Spool of the line; null when unknown (legacy line) or deleted.',
+  }),
+  filamentName: z.string().nullable().openapi({
+    description: 'Display name of the spool; null when `filamentId` is null.',
+  }),
+  setupMinutes: minutes(
+    'Minutes of setup before this print (bed turnaround and, if the spool changes, the change). ' +
+      'Zero for the first job of a printer.',
+  ),
+  filamentChanged: z.boolean().openapi({
+    description: 'The previous print on this printer used a different, known spool.',
+  }),
+};
+
+const setupTotals = {
+  totalSetupMinutes: minutes('Sum of the setup minutes of every printer.'),
+  filamentChanges: z.number().int().openapi({ description: 'Spool changes in the whole plan.' }),
+};
+
+const printerSetup = {
+  setupMinutes: minutes('Sum of the setup minutes of its jobs.'),
+  filamentChanges: z.number().int().openapi({ description: 'Spool changes on this printer.' }),
+};
+
+export const filamentShortfallSchema = z
+  .object({
+    filamentId: idSchema,
+    name: z.string(),
+    availableGrams: z.number().int(),
+    neededGrams: z.number().int().openapi({
+      description: 'Weight of the pending pieces of every line that uses this spool.',
+    }),
+    completablePieces: z.number().int().openapi({
+      description: 'Pieces that fit in the grams left, using the mix of the lines.',
+    }),
+    remainingPieces: z.number().int().openapi({ description: 'Pieces that would not fit.' }),
+  })
+  .openapi('FilamentShortfall', {
+    description: 'A spool without enough filament for its pending pieces. Never blocks.',
+  });
+
 export const simulationSchema = z
   .object({
     projectId: idSchema,
@@ -53,7 +96,8 @@ export const simulationSchema = z
         unit: z.number().int().openapi({ description: '1-based unit within its queue line.' }),
         unitsInLine: z.number().int(),
         printerId: idSchema,
-        startAt: localDateTime,
+        ...filamentFields,
+        startAt: localDateTime.openapi({ description: 'When the print starts, after its setup.' }),
         endAt: localDateTime,
         handoffAt: localDateTime.openapi({
           description:
@@ -61,7 +105,7 @@ export const simulationSchema = z
         }),
         unattended: z.boolean().openapi({
           description:
-            'Some minute of the print has no intervention possible (for example the night).',
+            'Some minute of the setup or the print has no intervention possible (for example the night).',
         }),
       }),
     ),
@@ -74,6 +118,7 @@ export const simulationSchema = z
         idleMinutes: minutes(
           'Sum of the waiting time of its jobs: finished, not yet collected (handoffAt - endAt).',
         ),
+        ...printerSetup,
       }),
     ),
     totals: z.object({
@@ -82,6 +127,7 @@ export const simulationSchema = z
       finishAt: localDateTime.nullable().openapi({ description: 'The last handoff, if any.' }),
       totalBusyMinutes: z.number().int(),
       totalIdleMinutes: z.number().int(),
+      ...setupTotals,
     }),
     deadline: z.object({
       date: z.string().nullable().openapi({ example: '2026-03-20' }),
@@ -94,6 +140,7 @@ export const simulationSchema = z
       z.object({ partId: idSchema, partName: z.string(), units: z.number().int() }),
     ),
     warnings: z.array(z.object({ code: simulationWarningCodeSchema })),
+    filamentShortfalls: z.array(filamentShortfallSchema),
   })
   .openapi('Simulation');
 
@@ -106,7 +153,8 @@ const strategySchema = z.enum(STRATEGIES).openapi('OptimizationStrategy', {
   description:
     'naive: the CU10 result. queue_order: queue order with batching. longest_first and ' +
     'shortest_first: plates sorted by duration. best_fit: at each start, the plate that leaves ' +
-    'the least waiting time before it is collected.',
+    'the least waiting time before it is collected. group_by_spool: prefers the plate that needs ' +
+    'no spool change.',
 });
 
 const optimizationTotalsSchema = z.object({
@@ -119,6 +167,7 @@ const optimizationTotalsSchema = z.object({
   finishAt: localDateTime.nullable().openapi({ description: 'The last handoff, if any.' }),
   totalBusyMinutes: z.number().int(),
   totalIdleMinutes: z.number().int(),
+  ...setupTotals,
 });
 
 const deadlineSchema = z.object({
@@ -159,6 +208,7 @@ export const optimizationSchema = z
           plateIndex: z.number().int().openapi({ description: '1-based plate within its line.' }),
           platesInLine: z.number().int(),
           printerId: idSchema,
+          ...filamentFields,
           startAt: localDateTime,
           endAt: localDateTime,
           handoffAt: localDateTime,
@@ -172,6 +222,7 @@ export const optimizationSchema = z
           jobs: z.number().int(),
           busyMinutes: z.number().int(),
           idleMinutes: z.number().int(),
+          ...printerSetup,
         }),
       ),
       totals: optimizationTotalsSchema,
@@ -194,6 +245,7 @@ export const optimizationSchema = z
           strategy: strategySchema,
           finishAt: localDateTime.nullable(),
           totalIdleMinutes: z.number().int(),
+          ...setupTotals,
           deadlineMet: z.boolean().nullable(),
           placedUnits: z.number().int(),
           unplacedUnits: z.number().int(),
@@ -201,6 +253,7 @@ export const optimizationSchema = z
       )
       .openapi({ description: 'Every strategy that was tried, for explainability.' }),
     warnings: z.array(z.object({ code: simulationWarningCodeSchema })),
+    filamentShortfalls: z.array(filamentShortfallSchema),
   })
   .openapi('Optimization');
 

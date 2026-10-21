@@ -1,6 +1,7 @@
 // Test doubles for the simulations module: the five read ports over in-memory data.
 import type { ScheduleRules } from '../../availability/index.js';
 import type {
+  FilamentLookup,
   Goal,
   PartData,
   PartLookup,
@@ -17,6 +18,8 @@ export const PART_A = 'a'.repeat(24);
 export const PART_B = 'b'.repeat(24);
 export const PRINTER_1 = 'd'.repeat(24);
 export const PRINTER_2 = 'e'.repeat(24);
+export const SPOOL_1 = '5'.repeat(24);
+export const SPOOL_2 = '6'.repeat(24);
 
 /** Every day 08:00-18:00, the same as the defaults of the availability module. */
 export const DAY_SHIFT: ScheduleRules = {
@@ -30,7 +33,8 @@ export const ENDER_BED = { x: 220, y: 220, z: 250 };
 /** Too big to share a plate (210 + 10 = 220 fills a side): batching never applies by default. */
 export const BIG_PART = { x: 210, y: 100, z: 50 };
 
-export type Failing = 'queue' | 'project' | 'parts' | 'printers' | 'schedule' | 'planning';
+export type Failing =
+  'queue' | 'project' | 'parts' | 'printers' | 'schedule' | 'planning' | 'filaments';
 
 export interface FakePorts {
   readonly queueReader: QueueReader;
@@ -39,6 +43,9 @@ export interface FakePorts {
   readonly printerLookup: PrinterLookup;
   readonly scheduleReader: ScheduleReader;
   readonly planningReader: PlanningReader;
+  readonly filamentLookup: FilamentLookup;
+  /** Live spools. */
+  readonly spools: Map<string, { name: string; availableGrams: number }>;
   /** project id -> queue. Anything else has no queue. */
   readonly queues: Map<
     string,
@@ -46,7 +53,7 @@ export interface FakePorts {
       goal: Goal;
       mode: 'single' | 'multi';
       printerIds: string[];
-      lines: { partId: string; quantity: number; completed: number }[];
+      lines: { partId: string; filamentId: string | null; quantity: number; completed: number }[];
     }
   >;
   /** project id -> deadline. Anything else is unknown or removed. */
@@ -56,6 +63,9 @@ export interface FakePorts {
   readonly printers: Map<string, PrinterData>;
   schedule: ScheduleRules & { version: number };
   batchSavingBasisPoints: number;
+  /** Zero keeps the schedules of ADR 0026 and 0028; tests set the minutes they need. */
+  printerTurnaroundMinutes: number;
+  filamentChangeMinutes: number;
   /** When set, the named port rejects with this error (a dependency failure). */
   failing: Failing | undefined;
 }
@@ -77,15 +87,35 @@ export function createFakePorts(): FakePorts {
           goal: 'fastest',
           mode: 'single',
           printerIds: [PRINTER_1],
-          lines: [{ partId: PART_A, quantity: 3, completed: 0 }],
+          lines: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 3, completed: 0 }],
         },
       ],
     ]),
     projects: new Map([[PROJECT_ID, null]]),
     // 2 hours per unit.
     parts: new Map([
-      [PART_A, { name: 'Soporte en L', estimatedPrintSeconds: 7200, dimensionsMm: BIG_PART }],
-      [PART_B, { name: 'Florero', estimatedPrintSeconds: 3600, dimensionsMm: BIG_PART }],
+      [
+        PART_A,
+        {
+          name: 'Soporte en L',
+          estimatedPrintSeconds: 7200,
+          estimatedWeightGrams: 30,
+          dimensionsMm: BIG_PART,
+        },
+      ],
+      [
+        PART_B,
+        {
+          name: 'Florero',
+          estimatedPrintSeconds: 3600,
+          estimatedWeightGrams: 30,
+          dimensionsMm: BIG_PART,
+        },
+      ],
+    ]),
+    spools: new Map([
+      [SPOOL_1, { name: 'Grilon3 PLA Negro', availableGrams: 1000 }],
+      [SPOOL_2, { name: 'Grilon3 PLA Rojo', availableGrams: 1000 }],
     ]),
     printers: new Map([
       [PRINTER_1, { name: 'Ender 3', buildVolume: ENDER_BED }],
@@ -93,6 +123,8 @@ export function createFakePorts(): FakePorts {
     ]),
     schedule: { ...DAY_SHIFT, version: 1 },
     batchSavingBasisPoints: 0,
+    printerTurnaroundMinutes: 0,
+    filamentChangeMinutes: 0,
     failing: undefined,
 
     queueReader(id) {
@@ -118,7 +150,15 @@ export function createFakePorts(): FakePorts {
     },
     planningReader() {
       fail('planning');
-      return Promise.resolve({ batchSavingBasisPoints: ports.batchSavingBasisPoints });
+      return Promise.resolve({
+        batchSavingBasisPoints: ports.batchSavingBasisPoints,
+        printerTurnaroundMinutes: ports.printerTurnaroundMinutes,
+        filamentChangeMinutes: ports.filamentChangeMinutes,
+      });
+    },
+    filamentLookup(ids) {
+      fail('filaments');
+      return Promise.resolve(only(ports.spools, ids));
     },
   };
   return ports;

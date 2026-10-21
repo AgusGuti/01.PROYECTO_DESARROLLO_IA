@@ -4,6 +4,7 @@ import { createSimulationsController } from './simulations.controller.js';
 import { createSimulationsRouter } from './simulations.routes.js';
 import {
   createSimulationsService,
+  type FilamentLookup,
   type PartLookup,
   type PrinterLookup,
   type ProjectReader,
@@ -14,6 +15,7 @@ import {
 
 export { registerSimulationsPaths } from './simulations.openapi.js';
 export type {
+  FilamentLookup,
   PartLookup,
   PlanningReader,
   PrinterLookup,
@@ -30,6 +32,7 @@ export function createSimulationsModule(deps: {
   printerLookup: PrinterLookup;
   scheduleReader: ScheduleReader;
   planningReader: PlanningReader;
+  filamentLookup: FilamentLookup;
 }): { router: Router } {
   const service = createSimulationsService(deps);
   return { router: createSimulationsRouter(createSimulationsController(service)) };

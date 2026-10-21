@@ -81,6 +81,7 @@ export function createSimulationPartLookup(
     {
       name: string;
       estimatedPrintSeconds: number;
+      estimatedWeightGrams: number;
       dimensionsMm: { x: number; y: number; z: number };
     }
   >
@@ -93,6 +94,7 @@ export function createSimulationPartLookup(
         {
           name: part.name,
           estimatedPrintSeconds: part.estimatedPrintSeconds,
+          estimatedWeightGrams: part.estimatedWeightGrams,
           dimensionsMm: { x: part.dimensionsMm.x, y: part.dimensionsMm.y, z: part.dimensionsMm.z },
         },
       ]),

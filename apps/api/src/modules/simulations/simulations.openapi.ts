@@ -23,7 +23,7 @@ export function registerSimulationsPaths(registry: OpenAPIRegistry): void {
       'Stateless: nothing is saved. Places every remaining unit of the project queue, in line ' +
       'order, on the printer that is free earliest. A print starts, and is collected, only when ' +
       'the intervention schedule allows. Work that would start more than 14 days after `startAt` ' +
-      'is reported in `unplaced`. All times are Argentina wall-clock `YYYY-MM-DDTHH:mm`.',
+      'is reported in `unplaced`. Between two prints of a printer there is a setup (planning settings; ADR 0036). Stock problems are warnings and `filamentShortfalls`, never an error. All times are Argentina wall-clock `YYYY-MM-DDTHH:mm`.',
     request: { body: { content: { 'application/json': { schema: simulationRequestSchema } } } },
     responses: {
       200: {
@@ -35,7 +35,7 @@ export function registerSimulationsPaths(registry: OpenAPIRegistry): void {
           '"lines": more than 1000 units left; "printerIds": no selected printer is available.',
       ),
       503: problem(
-        'The queue, project, part, printer or schedule data is temporarily unavailable.',
+        'The queue, project, part, printer, schedule, planning settings or spool data is temporarily unavailable.',
       ),
     },
   });
@@ -63,7 +63,7 @@ export function registerSimulationsPaths(registry: OpenAPIRegistry): void {
           '"lines": more than 1000 units left; "printerIds": no selected printer is available.',
       ),
       503: problem(
-        'The queue, project, part, printer, schedule or planning settings data is temporarily ' +
+        'The queue, project, part, printer, schedule, planning settings or spool data is temporarily ' +
           'unavailable.',
       ),
     },

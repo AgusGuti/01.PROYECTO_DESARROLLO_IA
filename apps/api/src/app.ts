@@ -12,6 +12,7 @@ import {
   createFilamentCostReader,
   createFilamentsModule,
   createFilamentSummaryLookup,
+  createSimulationFilamentLookup,
 } from './modules/filaments/index.js';
 import { createAvailabilityModule, createScheduleReader } from './modules/availability/index.js';
 import {
@@ -215,6 +216,7 @@ export function createApp({
       printerLookup: createSimulationPrinterLookup(printers.repository),
       scheduleReader: createScheduleReader(availability.repository),
       planningReader: createPlanningSettingsReader(planning.repository),
+      filamentLookup: createSimulationFilamentLookup(filaments.repository),
       ...simulations,
     }).router,
   );

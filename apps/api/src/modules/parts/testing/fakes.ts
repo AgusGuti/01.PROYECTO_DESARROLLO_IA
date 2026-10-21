@@ -166,6 +166,7 @@ export function createFakePartRepository(): FakePartRepository {
                   name: part.name,
                   material: part.material,
                   estimatedPrintSeconds: part.estimatedPrintSeconds,
+                  estimatedWeightGrams: part.estimatedWeightGrams,
                   dimensionsMm: part.dimensionsMm,
                 },
               ];

@@ -103,8 +103,8 @@ describe('simulations API on a real MongoDB with the real wiring', () => {
     const dto = simulationSchema.parse(response.body);
     expect(dto.jobs.map((job) => job.handoffAt)).toEqual([
       '2026-03-02T10:00',
-      '2026-03-02T12:00',
-      '2026-03-02T14:00',
+      '2026-03-02T12:10',
+      '2026-03-02T14:20',
     ]);
     expect(dto.printers[0]).toMatchObject({
       printerId: printer,
@@ -150,7 +150,7 @@ describe('simulations API on a real MongoDB with the real wiring', () => {
     const dto = simulationSchema.parse(response.body);
     expect(dto.jobs.map((job) => [job.printerId, job.startAt])).toEqual([
       [first, '2026-03-02T10:00'],
-      [first, '2026-03-02T11:00'],
+      [first, '2026-03-02T11:10'],
     ]);
     expect(dto.warnings).toEqual([{ code: 'printer_unavailable' }]);
   });
@@ -209,8 +209,8 @@ describe('simulations API on a real MongoDB with the real wiring', () => {
 
     expect(response.status).toBe(200);
     const dto = optimizationSchema.parse(response.body);
-    // Two pieces on one plate take as long as two separate prints, so naive wins the tie.
-    expect(dto.strategy).toBe('naive');
+    // One plate of two pieces (120 min) beats two prints plus the 10 min turnaround of the defaults.
+    expect(dto.strategy).toBe('queue_order');
     expect(await mongoose.connection.collection('planningSettings').countDocuments()).toBe(0);
   });
 
@@ -241,12 +241,113 @@ describe('simulations API on a real MongoDB with the real wiring', () => {
 
     expect(response.status).toBe(200);
     const dto = optimizationSchema.parse(response.body);
-    expect(dto.optimized.jobs.map((job) => job.startAt)).toEqual([
-      '2026-03-04T08:00',
-      '2026-03-04T09:00',
+    expect(dto.optimized.jobs.map((job) => job.startAt)).toEqual(['2026-03-04T08:00']);
+    expect(dto.baseline.totals.finishAt).toBe('2026-03-04T10:10');
+    expect(dto.warnings).toEqual([{ code: 'batching_applied' }]);
+  });
+
+  /** The same part on two spools, in a queue on one printer; the settings were never saved. */
+  async function twoSpoolQueue() {
+    const second = idOf(
+      await request(app)
+        .post('/api/v1/filaments')
+        .send({ ...spoolBody, colorName: 'Rojo' }),
+    );
+    const part = await makePart('Soporte', 3600);
+    const printer = await makePrinter('Ender 3');
+    const project = await makeProject([
+      { partId: part, filamentId: spool, quantity: 1 },
+      { partId: part, filamentId: second, quantity: 1 },
     ]);
-    expect(dto.baseline.totals.finishAt).toBe('2026-03-04T10:00');
-    expect(dto.warnings).toEqual([]);
+    await request(app)
+      .post('/api/v1/queues')
+      .send({ projectId: project, goal: 'fastest', mode: 'single', printerIds: [printer] })
+      .expect(201);
+    return { project, second };
+  }
+
+  it('simulates the default setup times and counts the spool change', async () => {
+    const { project, second } = await twoSpoolQueue();
+
+    const response = await request(app)
+      .post('/api/v1/simulations')
+      .send({ projectId: project, startAt: '2026-03-02T08:00' });
+
+    expect(response.status).toBe(200);
+    const dto = simulationSchema.parse(response.body);
+    // Defaults of ADR 0036: 10 minutes of turnaround plus 30 for the spool change.
+    expect(dto.jobs.map((job) => [job.filamentId, job.setupMinutes, job.filamentChanged])).toEqual([
+      [spool, 0, false],
+      [second, 40, true],
+    ]);
+    expect(dto.jobs[0]?.filamentName).toBe('Grilon3 PLA Negro');
+    expect(dto.jobs[1]?.startAt).toBe('2026-03-02T09:40');
+    expect(dto.totals).toMatchObject({ totalSetupMinutes: 40, filamentChanges: 1 });
+    expect(dto.filamentShortfalls).toEqual([]);
+  });
+
+  it('optimises with the setup fields and the sixth strategy', async () => {
+    const { project } = await twoSpoolQueue();
+
+    const response = await request(app)
+      .post('/api/v1/simulations/optimizations')
+      .send({ projectId: project, startAt: '2026-03-02T08:00' });
+
+    expect(response.status).toBe(200);
+    const dto = optimizationSchema.parse(response.body);
+    expect(dto.baseline.totals).toMatchObject({ totalSetupMinutes: 40, filamentChanges: 1 });
+    expect(dto.candidates.map((entry) => entry.strategy)).toContain('group_by_spool');
+    expect(dto.optimized.jobs[0]?.filamentName).toBe('Grilon3 PLA Negro');
+  });
+
+  it('warns filament_deleted when a spool of the queue was deleted', async () => {
+    const { project, second } = await twoSpoolQueue();
+    await request(app).delete(`/api/v1/filaments/${second}`);
+
+    const response = await request(app)
+      .post('/api/v1/simulations')
+      .send({ projectId: project, startAt: '2026-03-02T08:00' });
+
+    expect(response.status).toBe(200);
+    const dto = simulationSchema.parse(response.body);
+    expect(dto.warnings).toContainEqual({ code: 'filament_deleted' });
+    expect(dto.jobs[1]).toMatchObject({
+      filamentId: null,
+      filamentName: null,
+      filamentChanged: false,
+    });
+  });
+
+  it('warns filament_insufficient when the pending pieces outweigh the spool', async () => {
+    const small = idOf(
+      await request(app)
+        .post('/api/v1/filaments')
+        .send({ ...spoolBody, initialGrams: 50 }),
+    );
+    const part = await makePart('Soporte', 3600);
+    const printer = await makePrinter('Ender 3');
+    const project = await makeProject([{ partId: part, filamentId: small, quantity: 2 }]);
+    await request(app)
+      .post('/api/v1/queues')
+      .send({ projectId: project, goal: 'fastest', mode: 'single', printerIds: [printer] })
+      .expect(201);
+
+    const response = await request(app)
+      .post('/api/v1/simulations')
+      .send({ projectId: project, startAt: '2026-03-02T08:00' });
+
+    const dto = simulationSchema.parse(response.body);
+    expect(dto.warnings).toContainEqual({ code: 'filament_insufficient' });
+    expect(dto.filamentShortfalls).toEqual([
+      {
+        filamentId: small,
+        name: 'Grilon3 PLA Negro',
+        availableGrams: 50,
+        neededGrams: 76,
+        completablePieces: 1,
+        remainingPieces: 1,
+      },
+    ]);
   });
 
   it('answers 400 when the project has no queue', async () => {

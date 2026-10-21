@@ -11,12 +11,15 @@ import {
   PRINTER_1,
   PRINTER_2,
   PROJECT_ID,
+  SPOOL_1,
+  SPOOL_2,
   type Failing,
 } from './testing/fakes.js';
 
 const URL = '/api/v1/simulations';
 const KEYS = [
   'deadline',
+  'filamentShortfalls',
   'goal',
   'jobs',
   'printers',
@@ -59,13 +62,25 @@ describe('POST /api/v1/simulations', () => {
       unit: 1,
       unitsInLine: 3,
       printerId: PRINTER_1,
+      filamentId: SPOOL_1,
+      filamentName: 'Grilon3 PLA Negro',
+      setupMinutes: 0,
+      filamentChanged: false,
       startAt: '2026-03-02T08:00',
       endAt: '2026-03-02T10:00',
       handoffAt: '2026-03-02T10:00',
       unattended: false,
     });
     expect(dto.printers).toEqual([
-      { printerId: PRINTER_1, name: 'Ender 3', jobs: 3, busyMinutes: 360, idleMinutes: 0 },
+      {
+        printerId: PRINTER_1,
+        name: 'Ender 3',
+        jobs: 3,
+        busyMinutes: 360,
+        idleMinutes: 0,
+        setupMinutes: 0,
+        filamentChanges: 0,
+      },
     ]);
     expect(dto.totals).toEqual({
       placedJobs: 3,
@@ -73,6 +88,8 @@ describe('POST /api/v1/simulations', () => {
       finishAt: '2026-03-02T14:00',
       totalBusyMinutes: 360,
       totalIdleMinutes: 0,
+      totalSetupMinutes: 0,
+      filamentChanges: 0,
     });
     expect(dto.deadline).toEqual({ date: '2026-03-02', met: true });
     expect(dto.goal).toBe('fastest');
@@ -85,7 +102,7 @@ describe('POST /api/v1/simulations', () => {
       goal: 'fastest',
       mode: 'multi',
       printerIds: [PRINTER_1, PRINTER_2],
-      lines: [{ partId: PART_A, quantity: 4, completed: 0 }],
+      lines: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 4, completed: 0 }],
     });
 
     const dto = simulationSchema.parse((await request(app).post(URL).send(body)).body);
@@ -103,13 +120,14 @@ describe('POST /api/v1/simulations', () => {
     ports.parts.set(PART_A, {
       name: 'Soporte en L',
       estimatedPrintSeconds: 36_000,
+      estimatedWeightGrams: 30,
       dimensionsMm: BIG_PART,
     });
     ports.queues.set(PROJECT_ID, {
       goal: 'fastest',
       mode: 'single',
       printerIds: [PRINTER_1],
-      lines: [{ partId: PART_A, quantity: 20, completed: 0 }],
+      lines: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 20, completed: 0 }],
     });
     ports.projects.set(PROJECT_ID, '2030-01-01');
 
@@ -170,18 +188,81 @@ describe('POST /api/v1/simulations', () => {
     expect(problem.issues?.[0]?.path).toBe('projectId');
   });
 
-  it.each(['queue', 'project', 'parts', 'printers', 'schedule'] as Failing[])(
-    'answers a generic 503 when the %s port fails',
-    async (which) => {
-      const { app, ports } = setup();
-      ports.failing = which;
+  it.each([
+    'queue',
+    'project',
+    'parts',
+    'printers',
+    'schedule',
+    'planning',
+    'filaments',
+  ] as Failing[])('answers a generic 503 when the %s port fails', async (which) => {
+    const { app, ports } = setup();
+    ports.failing = which;
 
-      const response = await request(app).post(URL).send(body);
+    const response = await request(app).post(URL).send(body);
 
-      expectProblem(response, 503, 'service_unavailable');
-      expect(JSON.stringify(response.body)).not.toContain('boom');
-    },
-  );
+    expectProblem(response, 503, 'service_unavailable');
+    expect(JSON.stringify(response.body)).not.toContain('boom');
+  });
+
+  const twoSpools = (ports: ReturnType<typeof setup>['ports']) =>
+    ports.queues.set(PROJECT_ID, {
+      goal: 'fastest',
+      mode: 'single',
+      printerIds: [PRINTER_1],
+      lines: [
+        { partId: PART_A, filamentId: SPOOL_1, quantity: 1, completed: 0 },
+        { partId: PART_A, filamentId: SPOOL_2, quantity: 1, completed: 0 },
+      ],
+    });
+
+  it('shows the setup between two spools and the stock shortfall', async () => {
+    const { app, ports } = setup();
+    ports.printerTurnaroundMinutes = 10;
+    ports.filamentChangeMinutes = 30;
+    twoSpools(ports);
+    ports.spools.set(SPOOL_2, { name: 'Grilon3 PLA Rojo', availableGrams: 20 });
+
+    const response = await request(app).post(URL).send(body);
+
+    expect(response.status).toBe(200);
+    const dto = simulationSchema.parse(response.body);
+    expect(
+      dto.jobs.map((job) => [job.filamentName, job.setupMinutes, job.filamentChanged]),
+    ).toEqual([
+      ['Grilon3 PLA Negro', 0, false],
+      ['Grilon3 PLA Rojo', 40, true],
+    ]);
+    expect(dto.jobs[1]?.startAt).toBe('2026-03-02T10:40');
+    expect(dto.printers[0]).toMatchObject({ setupMinutes: 40, filamentChanges: 1 });
+    expect(dto.totals).toMatchObject({ totalSetupMinutes: 40, filamentChanges: 1 });
+    expect(dto.warnings).toEqual([{ code: 'filament_insufficient' }]);
+    expect(dto.filamentShortfalls).toEqual([
+      {
+        filamentId: SPOOL_2,
+        name: 'Grilon3 PLA Rojo',
+        availableGrams: 20,
+        neededGrams: 30,
+        completablePieces: 0,
+        remainingPieces: 1,
+      },
+    ]);
+  });
+
+  it('treats a deleted spool as unknown: warns and counts no change', async () => {
+    const { app, ports } = setup();
+    ports.printerTurnaroundMinutes = 10;
+    ports.filamentChangeMinutes = 30;
+    twoSpools(ports);
+    ports.spools.delete(SPOOL_2);
+
+    const dto = simulationSchema.parse((await request(app).post(URL).send(body)).body);
+
+    expect(dto.warnings).toEqual([{ code: 'filament_deleted' }]);
+    expect(dto.jobs[1]).toMatchObject({ filamentId: null, filamentName: null, setupMinutes: 10 });
+    expect(dto.totals.filamentChanges).toBe(0);
+  });
 });
 
 describe('POST /api/v1/simulations/optimizations', () => {
@@ -190,6 +271,7 @@ describe('POST /api/v1/simulations/optimizations', () => {
     'baseline',
     'candidates',
     'comparison',
+    'filamentShortfalls',
     'goal',
     'optimized',
     'projectId',
@@ -204,13 +286,14 @@ describe('POST /api/v1/simulations/optimizations', () => {
     ports.parts.set(PART_A, {
       name: 'Soporte en L',
       estimatedPrintSeconds: 7200,
+      estimatedWeightGrams: 30,
       dimensionsMm: { x: 40, y: 40, z: 20 },
     });
     ports.queues.set(PROJECT_ID, {
       goal: 'deadline',
       mode: 'single',
       printerIds: [PRINTER_1],
-      lines: [{ partId: PART_A, quantity: 6, completed: 0 }],
+      lines: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 6, completed: 0 }],
     });
     ports.projects.set(PROJECT_ID, '2026-03-02');
     ports.batchSavingBasisPoints = 3000;
@@ -235,6 +318,10 @@ describe('POST /api/v1/simulations/optimizations', () => {
         plateIndex: 1,
         platesInLine: 1,
         printerId: PRINTER_1,
+        filamentId: SPOOL_1,
+        filamentName: 'Grilon3 PLA Negro',
+        setupMinutes: 0,
+        filamentChanged: false,
         startAt: '2026-03-02T08:00',
         endAt: '2026-03-02T16:24',
         handoffAt: '2026-03-02T16:24',
@@ -242,7 +329,15 @@ describe('POST /api/v1/simulations/optimizations', () => {
       },
     ]);
     expect(dto.optimized.printers).toEqual([
-      { printerId: PRINTER_1, name: 'Ender 3', jobs: 1, busyMinutes: 504, idleMinutes: 0 },
+      {
+        printerId: PRINTER_1,
+        name: 'Ender 3',
+        jobs: 1,
+        busyMinutes: 504,
+        idleMinutes: 0,
+        setupMinutes: 0,
+        filamentChanges: 0,
+      },
     ]);
     expect(dto.optimized.totals).toEqual({
       placedPlates: 1,
@@ -251,6 +346,8 @@ describe('POST /api/v1/simulations/optimizations', () => {
       finishAt: '2026-03-02T16:24',
       totalBusyMinutes: 504,
       totalIdleMinutes: 0,
+      totalSetupMinutes: 0,
+      filamentChanges: 0,
     });
     expect(dto.optimized.deadline).toEqual({ date: '2026-03-02', met: true });
     expect(dto.baseline.totals).toMatchObject({
@@ -309,16 +406,21 @@ describe('POST /api/v1/simulations/optimizations', () => {
     expect(problem.issues).toEqual([{ path: 'projectId', message: 'The project has no queue.' }]);
   });
 
-  it.each(['queue', 'project', 'parts', 'printers', 'schedule', 'planning'] as Failing[])(
-    'answers a generic 503 when the %s port fails',
-    async (which) => {
-      const { app, ports } = setup();
-      ports.failing = which;
+  it.each([
+    'queue',
+    'project',
+    'parts',
+    'printers',
+    'schedule',
+    'planning',
+    'filaments',
+  ] as Failing[])('answers a generic 503 when the %s port fails', async (which) => {
+    const { app, ports } = setup();
+    ports.failing = which;
 
-      const response = await request(app).post(OPTIMIZE).send(body);
+    const response = await request(app).post(OPTIMIZE).send(body);
 
-      expectProblem(response, 503, 'service_unavailable');
-      expect(JSON.stringify(response.body)).not.toContain('boom');
-    },
-  );
+    expectProblem(response, 503, 'service_unavailable');
+    expect(JSON.stringify(response.body)).not.toContain('boom');
+  });
 });

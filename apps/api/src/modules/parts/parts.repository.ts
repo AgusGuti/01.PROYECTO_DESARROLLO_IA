@@ -179,11 +179,22 @@ export function createMongoPartRepository(): PartRepository {
       return guarded(async () => {
         if (ids.length === 0) return [];
         const found = await PartModel.find({ _id: { $in: [...ids] }, deletedAt: null })
-          .select({ name: 1, material: 1, estimatedPrintSeconds: 1, dimensionsMm: 1 })
+          .select({
+            name: 1,
+            material: 1,
+            estimatedPrintSeconds: 1,
+            estimatedWeightGrams: 1,
+            dimensionsMm: 1,
+          })
           .lean<
             Pick<
               StoredPart,
-              '_id' | 'name' | 'material' | 'estimatedPrintSeconds' | 'dimensionsMm'
+              | '_id'
+              | 'name'
+              | 'material'
+              | 'estimatedPrintSeconds'
+              | 'estimatedWeightGrams'
+              | 'dimensionsMm'
             >[]
           >();
         return found.map((stored): LivePartSummary => ({
@@ -191,6 +202,7 @@ export function createMongoPartRepository(): PartRepository {
           name: stored.name,
           material: stored.material,
           estimatedPrintSeconds: stored.estimatedPrintSeconds,
+          estimatedWeightGrams: stored.estimatedWeightGrams,
           dimensionsMm: {
             x: stored.dimensionsMm.x,
             y: stored.dimensionsMm.y,

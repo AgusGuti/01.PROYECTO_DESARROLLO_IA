@@ -883,7 +883,23 @@ export type Simulation = {
         unitsInLine: number;
         printerId: string;
         /**
-         * Wall-clock time of America/Argentina/Buenos_Aires: YYYY-MM-DDTHH:mm.
+         * Spool of the line; null when unknown (legacy line) or deleted.
+         */
+        filamentId: string | null;
+        /**
+         * Display name of the spool; null when `filamentId` is null.
+         */
+        filamentName: string | null;
+        /**
+         * Minutes of setup before this print (bed turnaround and, if the spool changes, the change). Zero for the first job of a printer.
+         */
+        setupMinutes: number;
+        /**
+         * The previous print on this printer used a different, known spool.
+         */
+        filamentChanged: boolean;
+        /**
+         * When the print starts, after its setup.
          */
         startAt: string;
         /**
@@ -895,7 +911,7 @@ export type Simulation = {
          */
         handoffAt: string;
         /**
-         * Some minute of the print has no intervention possible (for example the night).
+         * Some minute of the setup or the print has no intervention possible (for example the night).
          */
         unattended: boolean;
     }>;
@@ -911,6 +927,14 @@ export type Simulation = {
          * Sum of the waiting time of its jobs: finished, not yet collected (handoffAt - endAt).
          */
         idleMinutes: number;
+        /**
+         * Sum of the setup minutes of its jobs.
+         */
+        setupMinutes: number;
+        /**
+         * Spool changes on this printer.
+         */
+        filamentChanges: number;
     }>;
     totals: {
         placedJobs: number;
@@ -921,6 +945,14 @@ export type Simulation = {
         finishAt: string | null;
         totalBusyMinutes: number;
         totalIdleMinutes: number;
+        /**
+         * Sum of the setup minutes of every printer.
+         */
+        totalSetupMinutes: number;
+        /**
+         * Spool changes in the whole plan.
+         */
+        filamentChanges: number;
     };
     deadline: {
         date: string | null;
@@ -937,9 +969,31 @@ export type Simulation = {
     warnings: Array<{
         code: SimulationWarningCode;
     }>;
+    filamentShortfalls: Array<FilamentShortfall>;
 };
 
 export type SimulationWarningCode = 'part_deleted' | 'printer_unavailable' | 'availability_not_configured' | 'nothing_to_print' | 'batching_applied' | 'filament_insufficient' | 'filament_deleted';
+
+/**
+ * A spool without enough filament for its pending pieces. Never blocks.
+ */
+export type FilamentShortfall = {
+    filamentId: string;
+    name: string;
+    availableGrams: number;
+    /**
+     * Weight of the pending pieces of every line that uses this spool.
+     */
+    neededGrams: number;
+    /**
+     * Pieces that fit in the grams left, using the mix of the lines.
+     */
+    completablePieces: number;
+    /**
+     * Pieces that would not fit.
+     */
+    remainingPieces: number;
+};
 
 export type SimulationRequest = {
     projectId: string;
@@ -977,6 +1031,14 @@ export type Optimization = {
             finishAt: string | null;
             totalBusyMinutes: number;
             totalIdleMinutes: number;
+            /**
+             * Sum of the setup minutes of every printer.
+             */
+            totalSetupMinutes: number;
+            /**
+             * Spool changes in the whole plan.
+             */
+            filamentChanges: number;
         };
         deadline: {
             date: string | null;
@@ -1007,6 +1069,22 @@ export type Optimization = {
             platesInLine: number;
             printerId: string;
             /**
+             * Spool of the line; null when unknown (legacy line) or deleted.
+             */
+            filamentId: string | null;
+            /**
+             * Display name of the spool; null when `filamentId` is null.
+             */
+            filamentName: string | null;
+            /**
+             * Minutes of setup before this print (bed turnaround and, if the spool changes, the change). Zero for the first job of a printer.
+             */
+            setupMinutes: number;
+            /**
+             * The previous print on this printer used a different, known spool.
+             */
+            filamentChanged: boolean;
+            /**
              * Wall-clock time of America/Argentina/Buenos_Aires: YYYY-MM-DDTHH:mm.
              */
             startAt: string;
@@ -1026,6 +1104,14 @@ export type Optimization = {
             jobs: number;
             busyMinutes: number;
             idleMinutes: number;
+            /**
+             * Sum of the setup minutes of its jobs.
+             */
+            setupMinutes: number;
+            /**
+             * Spool changes on this printer.
+             */
+            filamentChanges: number;
         }>;
         totals: {
             /**
@@ -1040,6 +1126,14 @@ export type Optimization = {
             finishAt: string | null;
             totalBusyMinutes: number;
             totalIdleMinutes: number;
+            /**
+             * Sum of the setup minutes of every printer.
+             */
+            totalSetupMinutes: number;
+            /**
+             * Spool changes in the whole plan.
+             */
+            filamentChanges: number;
         };
         deadline: {
             date: string | null;
@@ -1075,6 +1169,14 @@ export type Optimization = {
          */
         finishAt: string | null;
         totalIdleMinutes: number;
+        /**
+         * Sum of the setup minutes of every printer.
+         */
+        totalSetupMinutes: number;
+        /**
+         * Spool changes in the whole plan.
+         */
+        filamentChanges: number;
         deadlineMet: boolean | null;
         placedUnits: number;
         unplacedUnits: number;
@@ -1082,6 +1184,7 @@ export type Optimization = {
     warnings: Array<{
         code: SimulationWarningCode;
     }>;
+    filamentShortfalls: Array<FilamentShortfall>;
 };
 
 /**
@@ -2409,7 +2512,7 @@ export type SimulatePlanningErrors = {
      */
     400: Problem;
     /**
-     * The queue, project, part, printer or schedule data is temporarily unavailable.
+     * The queue, project, part, printer, schedule, planning settings or spool data is temporarily unavailable.
      */
     503: Problem;
 };
@@ -2438,7 +2541,7 @@ export type OptimizePlanningErrors = {
      */
     400: Problem;
     /**
-     * The queue, project, part, printer, schedule or planning settings data is temporarily unavailable.
+     * The queue, project, part, printer, schedule, planning settings or spool data is temporarily unavailable.
      */
     503: Problem;
 };

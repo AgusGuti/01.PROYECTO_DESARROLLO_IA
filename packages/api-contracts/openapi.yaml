@@ -1943,10 +1943,29 @@ components:
                 type: string
                 pattern: ^[0-9a-f]{24}$/i
                 example: 66f0c0ffee0123456789abcd
+              filamentId:
+                type:
+                  - string
+                  - "null"
+                pattern: ^[0-9a-f]{24}$/i
+                example: 66f0c0ffee0123456789abcd
+                description: Spool of the line; null when unknown (legacy line) or deleted.
+              filamentName:
+                type:
+                  - string
+                  - "null"
+                description: Display name of the spool; null when `filamentId` is null.
+              setupMinutes:
+                type: integer
+                description: Minutes of setup before this print (bed turnaround and, if the spool changes, the
+                  change). Zero for the first job of a printer.
+              filamentChanged:
+                type: boolean
+                description: The previous print on this printer used a different, known spool.
               startAt:
                 type: string
                 example: 2026-03-02T08:00
-                description: "Wall-clock time of America/Argentina/Buenos_Aires: YYYY-MM-DDTHH:mm."
+                description: When the print starts, after its setup.
               endAt:
                 type: string
                 example: 2026-03-02T08:00
@@ -1957,7 +1976,8 @@ components:
                 description: "When the piece is removed: the first intervention minute at or after endAt."
               unattended:
                 type: boolean
-                description: Some minute of the print has no intervention possible (for example the night).
+                description: Some minute of the setup or the print has no intervention possible (for example the
+                  night).
             required:
               - order
               - partId
@@ -1965,6 +1985,10 @@ components:
               - unit
               - unitsInLine
               - printerId
+              - filamentId
+              - filamentName
+              - setupMinutes
+              - filamentChanged
               - startAt
               - endAt
               - handoffAt
@@ -1988,12 +2012,20 @@ components:
               idleMinutes:
                 type: integer
                 description: "Sum of the waiting time of its jobs: finished, not yet collected (handoffAt - endAt)."
+              setupMinutes:
+                type: integer
+                description: Sum of the setup minutes of its jobs.
+              filamentChanges:
+                type: integer
+                description: Spool changes on this printer.
             required:
               - printerId
               - name
               - jobs
               - busyMinutes
               - idleMinutes
+              - setupMinutes
+              - filamentChanges
         totals:
           type: object
           properties:
@@ -2011,12 +2043,20 @@ components:
               type: integer
             totalIdleMinutes:
               type: integer
+            totalSetupMinutes:
+              type: integer
+              description: Sum of the setup minutes of every printer.
+            filamentChanges:
+              type: integer
+              description: Spool changes in the whole plan.
           required:
             - placedJobs
             - unplacedJobs
             - finishAt
             - totalBusyMinutes
             - totalIdleMinutes
+            - totalSetupMinutes
+            - filamentChanges
         deadline:
           type: object
           properties:
@@ -2059,6 +2099,10 @@ components:
                 $ref: "#/components/schemas/SimulationWarningCode"
             required:
               - code
+        filamentShortfalls:
+          type: array
+          items:
+            $ref: "#/components/schemas/FilamentShortfall"
       required:
         - projectId
         - goal
@@ -2069,6 +2113,7 @@ components:
         - deadline
         - unplaced
         - warnings
+        - filamentShortfalls
     SimulationWarningCode:
       type: string
       enum:
@@ -2079,6 +2124,34 @@ components:
         - batching_applied
         - filament_insufficient
         - filament_deleted
+    FilamentShortfall:
+      type: object
+      properties:
+        filamentId:
+          type: string
+          pattern: ^[0-9a-f]{24}$/i
+          example: 66f0c0ffee0123456789abcd
+        name:
+          type: string
+        availableGrams:
+          type: integer
+        neededGrams:
+          type: integer
+          description: Weight of the pending pieces of every line that uses this spool.
+        completablePieces:
+          type: integer
+          description: Pieces that fit in the grams left, using the mix of the lines.
+        remainingPieces:
+          type: integer
+          description: Pieces that would not fit.
+      required:
+        - filamentId
+        - name
+        - availableGrams
+        - neededGrams
+        - completablePieces
+        - remainingPieces
+      description: A spool without enough filament for its pending pieces. Never blocks.
     SimulationRequest:
       type: object
       properties:
@@ -2139,6 +2212,12 @@ components:
                   type: integer
                 totalIdleMinutes:
                   type: integer
+                totalSetupMinutes:
+                  type: integer
+                  description: Sum of the setup minutes of every printer.
+                filamentChanges:
+                  type: integer
+                  description: Spool changes in the whole plan.
               required:
                 - placedPlates
                 - placedUnits
@@ -2146,6 +2225,8 @@ components:
                 - finishAt
                 - totalBusyMinutes
                 - totalIdleMinutes
+                - totalSetupMinutes
+                - filamentChanges
             deadline:
               type: object
               properties:
@@ -2212,6 +2293,25 @@ components:
                     type: string
                     pattern: ^[0-9a-f]{24}$/i
                     example: 66f0c0ffee0123456789abcd
+                  filamentId:
+                    type:
+                      - string
+                      - "null"
+                    pattern: ^[0-9a-f]{24}$/i
+                    example: 66f0c0ffee0123456789abcd
+                    description: Spool of the line; null when unknown (legacy line) or deleted.
+                  filamentName:
+                    type:
+                      - string
+                      - "null"
+                    description: Display name of the spool; null when `filamentId` is null.
+                  setupMinutes:
+                    type: integer
+                    description: Minutes of setup before this print (bed turnaround and, if the spool changes, the
+                      change). Zero for the first job of a printer.
+                  filamentChanged:
+                    type: boolean
+                    description: The previous print on this printer used a different, known spool.
                   startAt:
                     type: string
                     example: 2026-03-02T08:00
@@ -2234,6 +2334,10 @@ components:
                   - plateIndex
                   - platesInLine
                   - printerId
+                  - filamentId
+                  - filamentName
+                  - setupMinutes
+                  - filamentChanged
                   - startAt
                   - endAt
                   - handoffAt
@@ -2255,12 +2359,20 @@ components:
                     type: integer
                   idleMinutes:
                     type: integer
+                  setupMinutes:
+                    type: integer
+                    description: Sum of the setup minutes of its jobs.
+                  filamentChanges:
+                    type: integer
+                    description: Spool changes on this printer.
                 required:
                   - printerId
                   - name
                   - jobs
                   - busyMinutes
                   - idleMinutes
+                  - setupMinutes
+                  - filamentChanges
             totals:
               type: object
               properties:
@@ -2281,6 +2393,12 @@ components:
                   type: integer
                 totalIdleMinutes:
                   type: integer
+                totalSetupMinutes:
+                  type: integer
+                  description: Sum of the setup minutes of every printer.
+                filamentChanges:
+                  type: integer
+                  description: Spool changes in the whole plan.
               required:
                 - placedPlates
                 - placedUnits
@@ -2288,6 +2406,8 @@ components:
                 - finishAt
                 - totalBusyMinutes
                 - totalIdleMinutes
+                - totalSetupMinutes
+                - filamentChanges
             deadline:
               type: object
               properties:
@@ -2359,7 +2479,8 @@ components:
                   - $ref: "#/components/schemas/OptimizationStrategy"
                   - description: "naive: the CU10 result. queue_order: queue order with batching. longest_first and
                       shortest_first: plates sorted by duration. best_fit: at each start, the plate
-                      that leaves the least waiting time before it is collected."
+                      that leaves the least waiting time before it is collected. group_by_spool:
+                      prefers the plate that needs no spool change."
               finishAt:
                 type:
                   - string
@@ -2368,6 +2489,12 @@ components:
                 description: "Wall-clock time of America/Argentina/Buenos_Aires: YYYY-MM-DDTHH:mm."
               totalIdleMinutes:
                 type: integer
+              totalSetupMinutes:
+                type: integer
+                description: Sum of the setup minutes of every printer.
+              filamentChanges:
+                type: integer
+                description: Spool changes in the whole plan.
               deadlineMet:
                 type:
                   - boolean
@@ -2380,6 +2507,8 @@ components:
               - strategy
               - finishAt
               - totalIdleMinutes
+              - totalSetupMinutes
+              - filamentChanges
               - deadlineMet
               - placedUnits
               - unplacedUnits
@@ -2393,6 +2522,10 @@ components:
                 $ref: "#/components/schemas/SimulationWarningCode"
             required:
               - code
+        filamentShortfalls:
+          type: array
+          items:
+            $ref: "#/components/schemas/FilamentShortfall"
       required:
         - projectId
         - goal
@@ -2403,6 +2536,7 @@ components:
         - comparison
         - candidates
         - warnings
+        - filamentShortfalls
     OptimizationStrategy:
       type: string
       enum:
@@ -4269,7 +4403,9 @@ paths:
       description: "Stateless: nothing is saved. Places every remaining unit of the project queue, in line
         order, on the printer that is free earliest. A print starts, and is collected, only when the
         intervention schedule allows. Work that would start more than 14 days after `startAt` is
-        reported in `unplaced`. All times are Argentina wall-clock `YYYY-MM-DDTHH:mm`."
+        reported in `unplaced`. Between two prints of a printer there is a setup (planning settings;
+        ADR 0036). Stock problems are warnings and `filamentShortfalls`, never an error. All times
+        are Argentina wall-clock `YYYY-MM-DDTHH:mm`."
       requestBody:
         content:
           application/json:
@@ -4290,7 +4426,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
         "503":
-          description: The queue, project, part, printer or schedule data is temporarily unavailable.
+          description: The queue, project, part, printer, schedule, planning settings or spool data is
+            temporarily unavailable.
           content:
             application/problem+json:
               schema:
@@ -4326,8 +4463,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
         "503":
-          description: The queue, project, part, printer, schedule or planning settings data is temporarily
-            unavailable.
+          description: The queue, project, part, printer, schedule, planning settings or spool data is
+            temporarily unavailable.
           content:
             application/problem+json:
               schema:
