@@ -1,0 +1,45 @@
+<dialog
+  #dialog
+  aria-labelledby="spool-dialog-title"
+  aria-describedby="spool-dialog-text"
+  (cancel)="onCancelEvent($event)"
+>
+  <h2 id="spool-dialog-title">{{ heading() }}</h2>
+  <p id="spool-dialog-text">{{ intro() }}</p>
+
+  @if (options().length === 0) {
+    <p role="status">No hay bobinas para elegir.</p>
+  } @else {
+    <div class="field">
+      <label for="spool-dialog-select">Bobina</label>
+      <select
+        #select
+        id="spool-dialog-select"
+        [attr.aria-invalid]="missing() ? 'true' : null"
+        [attr.aria-describedby]="missing() ? 'spool-dialog-error' : null"
+        (change)="missing.set(false)"
+      >
+        <option value="">Elegí una bobina</option>
+        @for (option of options(); track option.id) {
+          <option [value]="option.id" [disabled]="option.disabled === true">
+            {{ option.label }}
+          </option>
+        }
+      </select>
+      @if (missing()) {
+        <p id="spool-dialog-error" class="field-error" role="alert">Elegí una bobina.</p>
+      }
+    </div>
+  }
+
+  <p><a routerLink="/filamentos/nuevo">Crear una bobina nueva</a></p>
+
+  <div class="actions">
+    <button #cancelButton type="button" class="secondary" (click)="cancelled.emit()">
+      Cancelar
+    </button>
+    @if (options().length > 0) {
+      <button type="button" (click)="confirm()">{{ confirmLabel() }}</button>
+    }
+  </div>
+</dialog>

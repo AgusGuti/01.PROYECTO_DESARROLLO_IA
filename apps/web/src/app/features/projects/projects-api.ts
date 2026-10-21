@@ -40,11 +40,19 @@ function narrow<T>(guard: (value: unknown) => value is T): (body: unknown) => T 
 function isProjectItem(value: unknown): value is ProjectItem {
   if (!isRecord(value)) return false;
   const part = value['part'];
+  const filament = value['filament'];
   return (
     typeof value['partId'] === 'string' &&
+    isNullableString(value['filamentId']) &&
     isWholeNumber(value['quantity']) &&
     (part === null ||
-      (isRecord(part) && typeof part['name'] === 'string' && isMaterial(part['material'])))
+      (isRecord(part) && typeof part['name'] === 'string' && isMaterial(part['material']))) &&
+    (filament === null ||
+      (isRecord(filament) &&
+        typeof filament['brand'] === 'string' &&
+        isMaterial(filament['material']) &&
+        typeof filament['colorName'] === 'string' &&
+        isWholeNumber(filament['availableGrams'])))
   );
 }
 

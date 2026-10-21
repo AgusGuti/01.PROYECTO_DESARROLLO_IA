@@ -25,6 +25,7 @@
       @let priorityError = errorFor('priority');
       @let deadlineError = errorFor('deadline');
       @let catalogue = picker();
+      @let spools = spoolPicker();
       @let lineList = lines();
       @let full = lineList.length >= maxLines;
       @let addProblem = addError();
@@ -137,6 +138,33 @@
             }
           }
 
+          @switch (spools.kind) {
+            @case ('loading') {
+              <p class="status" role="status">Cargando las bobinas disponibles…</p>
+            }
+            @case ('failed') {
+              <div class="status status--error" role="alert">
+                <p>{{ spools.message }}</p>
+                <button type="button" (click)="retrySpools()">Reintentar</button>
+              </div>
+            }
+            @case ('ready') {
+              @if (spools.spools.length === 0) {
+                <p id="no-spools" class="hint">
+                  Todavía no hay bobinas cargadas.
+                  <a routerLink="/filamentos/nuevo">Creá una bobina</a>
+                  para poder asignarla a las piezas del proyecto.
+                </p>
+              }
+              @if (spools.truncated) {
+                <p class="hint">
+                  Hay demasiadas bobinas para este selector: se muestran solo las primeras, por
+                  orden alfabético de marca.
+                </p>
+              }
+            }
+          }
+
           <div class="add-row">
             <div class="field">
               <label for="field-part">Pieza</label>
@@ -148,6 +176,20 @@
               >
                 <option value="">Elegí una pieza</option>
                 @for (option of partOptions(); track option.id) {
+                  <option [value]="option.id">{{ option.label }}</option>
+                }
+              </select>
+            </div>
+            <div class="field">
+              <label for="field-add-spool">Bobina</label>
+              <select
+                id="field-add-spool"
+                [formControl]="spoolControl"
+                [attr.aria-invalid]="addProblem ? 'true' : null"
+                [attr.aria-describedby]="addProblem ? 'error-add' : null"
+              >
+                <option value="">Elegí una bobina</option>
+                @for (option of spoolOptions(); track option.id) {
                   <option [value]="option.id">{{ option.label }}</option>
                 }
               </select>
@@ -194,15 +236,48 @@
               <thead>
                 <tr>
                   <th scope="col">Pieza</th>
+                  <th scope="col">Bobina</th>
                   <th scope="col">Cantidad</th>
                   <th scope="col">Acciones</th>
                 </tr>
               </thead>
               <tbody>
-                @for (line of lineList; track line.partId; let i = $index) {
+                @for (line of lineList; track line; let i = $index) {
                   @let problem = lineError(line, i);
+                  @let spoolProblem = spoolError(line, i);
                   <tr>
                     <th scope="row">{{ lineName(line) }}</th>
+                    <td>
+                      <label class="visually-hidden" [for]="'line-spool-' + i">
+                        Bobina de «{{ lineName(line) }}»
+                      </label>
+                      <select
+                        [id]="'line-spool-' + i"
+                        [formControl]="line.filamentId"
+                        [attr.aria-invalid]="spoolProblem ? 'true' : null"
+                        [attr.aria-describedby]="spoolProblem ? 'line-spool-error-' + i : null"
+                        (change)="clearLineIssues()"
+                      >
+                        <option value="">Elegí una bobina</option>
+                        @for (option of spoolChoices(line); track option.id) {
+                          <option [value]="option.id">{{ option.label }}</option>
+                        }
+                      </select>
+                      @if (spoolProblem) {
+                        <p [id]="'line-spool-error-' + i" class="field-error">{{ spoolProblem }}</p>
+                      }
+                      @if (line.spoolGone && line.filamentId.value === '') {
+                        <button
+                          type="button"
+                          [id]="'line-spool-fix-' + i"
+                          [attr.aria-label]="'Elegir otra bobina para «' + lineName(line) + '»'"
+                          [disabled]="saving"
+                          (click)="openSpoolDialog(i)"
+                        >
+                          Elegir otra bobina
+                        </button>
+                      }
+                    </td>
                     <td>
                       <label class="visually-hidden" [for]="'line-qty-' + i">
                         Cantidad de «{{ lineName(line) }}»
@@ -249,6 +324,16 @@
           <a routerLink="/proyectos">Cancelar</a>
         </div>
       </form>
+
+      @if (dialogLine() !== null) {
+        <app-spool-dialog
+          heading="Elegir otra bobina"
+          intro="La bobina de esta línea ya no existe. Elegí otra existente o creá una nueva."
+          [options]="spoolOptions()"
+          (picked)="pickSpool($event)"
+          (cancelled)="closeSpoolDialog()"
+        />
+      }
     }
   }
 </section>

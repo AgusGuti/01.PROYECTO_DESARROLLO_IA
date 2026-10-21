@@ -86,6 +86,12 @@
         }
       </fieldset>
 
+      @if (view.spools.length === 0) {
+        <p class="status" id="no-spools">
+          No hay bobinas cargadas. <a routerLink="/filamentos/nuevo">Cargar una bobina</a>
+        </p>
+      }
+
       @if (options.length === 0) {
         <p class="status" id="no-printers">
           No hay impresoras activas. <a routerLink="/impresoras/nueva">Cargar una impresora</a>
@@ -152,6 +158,7 @@
             <thead>
               <tr>
                 <th scope="col">Pieza</th>
+                <th scope="col">Bobina</th>
                 <th scope="col">Cantidad</th>
                 @if (ready) {
                   <th scope="col">Completadas</th>
@@ -163,8 +170,70 @@
               @for (group of lines.controls; track group; let i = $index) {
                 @let lineProblem = lineError(i);
                 @let name = group.controls.name.value;
+                @let spoolProblem = spoolError(i);
+                @let spoolLine = view.kind === 'ready' ? view.queue.lines[i] : undefined;
+                @let printed = spoolLine !== undefined && spoolLine.completed > 0;
+                @let currentSpool = group.controls.filamentId.value;
                 <tr [formGroupName]="i">
                   <th scope="row">{{ name }}</th>
+                  <td>
+                    <label class="visually-hidden" [for]="'line-' + i + '-spool'"
+                      >Bobina de {{ name }}</label
+                    >
+                    <select
+                      [id]="'line-' + i + '-spool'"
+                      [disabled]="printed || mutating()"
+                      [attr.aria-invalid]="spoolProblem ? 'true' : null"
+                      [attr.aria-describedby]="
+                        spoolProblem
+                          ? 'line-' + i + '-spool-error'
+                          : printed
+                            ? 'line-' + i + '-spool-hint'
+                            : null
+                      "
+                      (change)="pickRowSpool(i, $event)"
+                    >
+                      <option value="" [selected]="currentSpool === ''">Elegí una bobina</option>
+                      @for (spool of spoolChoices(view, i); track spool.id) {
+                        <option [value]="spool.id" [selected]="spool.id === currentSpool">
+                          {{ spool.label }}
+                        </option>
+                      }
+                    </select>
+                    @if (spoolProblem) {
+                      <p class="field-error" [id]="'line-' + i + '-spool-error'">
+                        {{ spoolProblem }}
+                      </p>
+                    }
+                    @if (spoolIsGone(i)) {
+                      <p class="hint" [id]="'line-' + i + '-spool-gone'">
+                        La bobina de esta línea ya no existe.
+                      </p>
+                      <button
+                        type="button"
+                        [id]="'line-' + i + '-spool-replace'"
+                        [attr.aria-label]="'Elegir otra bobina para ' + name"
+                        [disabled]="mutating()"
+                        (click)="openDialog('replace', i, $event)"
+                      >
+                        Elegir otra bobina
+                      </button>
+                    }
+                    @if (printed) {
+                      <p class="hint" [id]="'line-' + i + '-spool-hint'">{{ printedHint }}</p>
+                    }
+                    @if (canSplit(i)) {
+                      <button
+                        type="button"
+                        [id]="'line-' + i + '-split'"
+                        [attr.aria-label]="'Dividir línea de ' + name"
+                        [disabled]="mutating()"
+                        (click)="openDialog('split', i, $event)"
+                      >
+                        Dividir línea
+                      </button>
+                    }
+                  </td>
                   <td>
                     <label class="visually-hidden" [for]="'line-' + i + '-quantity'"
                       >Cantidad de {{ name }}</label
@@ -300,6 +369,22 @@
         }
       </div>
     </form>
+
+    @let open = dialog();
+    @if (open !== null) {
+      <app-spool-dialog
+        [heading]="open.kind === 'split' ? 'Dividir línea' : 'Elegir otra bobina'"
+        [intro]="
+          open.kind === 'split'
+            ? 'Las piezas ya impresas quedan con la bobina actual. Las pendientes pasan a una línea nueva con la bobina que elijas.'
+            : 'La bobina de esta línea ya no existe. Elegí otra existente o creá una nueva.'
+        "
+        [confirmLabel]="open.kind === 'split' ? 'Dividir' : 'Elegir bobina'"
+        [options]="dialogOptions(view, open.index)"
+        (picked)="pickFromDialog($event)"
+        (cancelled)="closeDialog()"
+      />
+    }
 
     @if (confirmingDelete()) {
       <app-queue-delete-dialog

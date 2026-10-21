@@ -15,8 +15,15 @@ const project: Project = {
   priority: 'normal',
   deadline: '2026-11-30',
   items: [
-    { partId: 'a1', quantity: 2, part: { name: 'Soporte', material: 'PLA' } },
-    { partId: 'b2', quantity: 1, part: null },
+    {
+      partId: 'a1',
+      filamentId: 'f1',
+      quantity: 2,
+      part: { name: 'Soporte', material: 'PLA' },
+      filament: { brand: 'Grilon3', material: 'PLA', colorName: 'Rojo', availableGrams: 800 },
+    },
+    // A legacy line (no spool) and a deleted part: both are valid stored states.
+    { partId: 'b2', filamentId: null, quantity: 1, part: null, filament: null },
   ],
   version: 1,
   createdAt: '2026-10-15T12:00:00.000Z',
@@ -92,7 +99,7 @@ describe('ProjectsApi', () => {
   });
 
   it('creates a project with a POST and the given body', async () => {
-    const body = { name: 'Soportes', items: [{ partId: 'a1', quantity: 2 }] };
+    const body = { name: 'Soportes', items: [{ partId: 'a1', filamentId: 'f1', quantity: 2 }] };
     const result = firstValueFrom(api.create(body));
 
     const request = http.expectOne({ method: 'POST', url: URL });
@@ -196,13 +203,75 @@ describe('isProject', () => {
     ['an undefined description', { ...project, description: undefined }],
     [
       'a line with a fractional quantity',
-      { ...project, items: [{ partId: 'a', quantity: 1.5, part: null }] },
+      {
+        ...project,
+        items: [{ partId: 'a', filamentId: null, quantity: 1.5, part: null, filament: null }],
+      },
     ],
     [
       'a line whose part has an unknown material',
-      { ...project, items: [{ partId: 'a', quantity: 1, part: { name: 'x', material: 'GOLD' } }] },
+      {
+        ...project,
+        items: [
+          {
+            partId: 'a',
+            filamentId: null,
+            quantity: 1,
+            part: { name: 'x', material: 'GOLD' },
+            filament: null,
+          },
+        ],
+      },
     ],
-    ['a line without part', { ...project, items: [{ partId: 'a', quantity: 1 }] }],
+    [
+      'a line without part',
+      { ...project, items: [{ partId: 'a', filamentId: null, quantity: 1, filament: null }] },
+    ],
+    [
+      'a line without the filamentId key',
+      { ...project, items: [{ partId: 'a', quantity: 1, part: null, filament: null }] },
+    ],
+    [
+      'a line with a numeric filamentId',
+      {
+        ...project,
+        items: [{ partId: 'a', filamentId: 7, quantity: 1, part: null, filament: null }],
+      },
+    ],
+    [
+      'a line without the filament summary key',
+      { ...project, items: [{ partId: 'a', filamentId: 'f', quantity: 1, part: null }] },
+    ],
+    [
+      'a line whose spool summary has an unknown material',
+      {
+        ...project,
+        items: [
+          {
+            partId: 'a',
+            filamentId: 'f',
+            quantity: 1,
+            part: null,
+            filament: { brand: 'x', material: 'GOLD', colorName: 'y', availableGrams: 1 },
+          },
+        ],
+      },
+    ],
+    [
+      'a line whose spool summary has fractional grams',
+      {
+        ...project,
+        items: [
+          {
+            partId: 'a',
+            filamentId: 'f',
+            quantity: 1,
+            part: null,
+            filament: { brand: 'x', material: 'PLA', colorName: 'y', availableGrams: 1.5 },
+          },
+        ],
+      },
+    ],
     ['items that are not an array', { ...project, items: 'none' }],
     ['a missing version', { ...project, version: undefined }],
   ])('rejects %s', (_name, value) => {

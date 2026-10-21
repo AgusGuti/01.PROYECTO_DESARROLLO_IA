@@ -4,6 +4,7 @@ import type { Project } from '@print3d/api-contracts';
 import { Subject } from 'rxjs';
 import { vi } from 'vitest';
 import { ApiError, type ApiFieldIssue } from '../../core/api/api-error';
+import { FilamentsPickerApi, type PickerSpool, type SpoolCatalogue } from './filaments-picker-api';
 import { PartsPickerApi, type PickerCatalogue, type PickerPart } from './parts-picker-api';
 import { ProjectFormPage } from './project-form-page';
 import { ProjectsApi } from './projects-api';
@@ -17,6 +18,26 @@ const PARTS: PickerPart[] = [
   { id: 'c3', name: 'Base', material: 'PA_CF' },
 ];
 
+const SPOOLS: PickerSpool[] = [
+  { id: 's1', brand: 'Grilon3', material: 'PLA', colorName: 'Rojo', availableGrams: 800 },
+  { id: 's2', brand: 'Esun', material: 'PETG', colorName: 'Azul', availableGrams: 300 },
+];
+const RED = 'Grilon3 · Rojo · PLA · 800 g disponibles';
+const BLUE = 'Esun · Azul · PETG · 300 g disponibles';
+
+type Item = Project['items'][number];
+
+function item(overrides: Partial<Item> = {}): Item {
+  return {
+    partId: 'a1',
+    filamentId: 's1',
+    quantity: 2,
+    part: { name: 'Soporte', material: 'PLA' },
+    filament: { brand: 'Grilon3', material: 'PLA', colorName: 'Rojo', availableGrams: 800 },
+    ...overrides,
+  };
+}
+
 function makeProject(overrides: Partial<Project> = {}): Project {
   return {
     id: 'p1',
@@ -24,7 +45,7 @@ function makeProject(overrides: Partial<Project> = {}): Project {
     description: 'Para el taller',
     priority: 'high',
     deadline: '2026-11-30',
-    items: [{ partId: 'a1', quantity: 2, part: { name: 'Soporte', material: 'PLA' } }],
+    items: [item()],
     version: 3,
     createdAt: '2026-10-15T12:00:00.000Z',
     updatedAt: '2026-10-15T12:00:00.000Z',
@@ -38,10 +59,13 @@ function problem(status: number, issues: ApiFieldIssue[] = []): ApiError {
   });
 }
 
-async function render(options: { editing?: boolean; parts?: PickerPart[] } = {}) {
+async function render(
+  options: { editing?: boolean; parts?: PickerPart[]; spools?: PickerSpool[] } = {},
+) {
   const gets: Subject<Project>[] = [];
   const saves: Subject<Project>[] = [];
   const catalogues: Subject<PickerCatalogue>[] = [];
+  const spoolCatalogues: Subject<SpoolCatalogue>[] = [];
   const api = {
     get: vi.fn((_id: string) => {
       const reply = new Subject<Project>();
@@ -66,6 +90,13 @@ async function render(options: { editing?: boolean; parts?: PickerPart[] } = {})
       return reply;
     }),
   } satisfies Pick<PartsPickerApi, 'loadAll'>;
+  const spoolPicker = {
+    loadAll: vi.fn(() => {
+      const reply = new Subject<SpoolCatalogue>();
+      spoolCatalogues.push(reply);
+      return reply;
+    }),
+  } satisfies Pick<FilamentsPickerApi, 'loadAll'>;
   const params = options.editing === true ? { id: 'p1' } : {};
   TestBed.configureTestingModule({
     imports: [ProjectFormPage],
@@ -73,6 +104,7 @@ async function render(options: { editing?: boolean; parts?: PickerPart[] } = {})
       provideRouter([]),
       { provide: ProjectsApi, useValue: api },
       { provide: PartsPickerApi, useValue: picker },
+      { provide: FilamentsPickerApi, useValue: spoolPicker },
       { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap(params) } } },
     ],
   });
@@ -86,10 +118,12 @@ async function render(options: { editing?: boolean; parts?: PickerPart[] } = {})
     element,
     api,
     picker,
+    spoolPicker,
     navigate,
     gets,
     saves,
     catalogues,
+    spoolCatalogues,
     text: () => element.textContent,
     byId: (id: string) => element.querySelector<HTMLInputElement>(`#${id}`),
     selectById: (id: string) => element.querySelector<HTMLSelectElement>(`#${id}`),
@@ -131,12 +165,23 @@ async function render(options: { editing?: boolean; parts?: PickerPart[] } = {})
       catalogues[catalogues.length - 1]?.next({ parts, truncated });
       await fixture.whenStable();
     },
+    async answerSpools(spools: PickerSpool[] = options.spools ?? SPOOLS, truncated = false) {
+      spoolCatalogues[spoolCatalogues.length - 1]?.next({ spools, truncated });
+      await fixture.whenStable();
+    },
     async loadProject(project: Project) {
       gets[gets.length - 1]?.next(project);
       await fixture.whenStable();
     },
-    async addPart(id: string, quantity?: string) {
+    /** The dialog opens in afterNextRender, so one extra render pass is needed. */
+    async settle() {
+      await fixture.whenStable();
+      fixture.detectChanges();
+      await fixture.whenStable();
+    },
+    async addPart(id: string, quantity?: string, spool = 's1') {
       await view.choose('field-part', id);
+      await view.choose('field-add-spool', spool);
       if (quantity !== undefined) await view.type('field-add-quantity', quantity);
       await view.click(view.button('Agregar'));
     },
@@ -148,18 +193,27 @@ async function render(options: { editing?: boolean; parts?: PickerPart[] } = {})
   return view;
 }
 
-async function renderCreating(parts: PickerPart[] = PARTS) {
+async function renderCreating(parts: PickerPart[] = PARTS, spools: PickerSpool[] = SPOOLS) {
   const view = await render();
   await view.answerPicker(parts);
+  await view.answerSpools(spools);
   return view;
 }
 
 async function renderEditing(project: Project = makeProject()) {
   const view = await render({ editing: true });
   await view.answerPicker();
+  await view.answerSpools();
   await view.loadProject(project);
   return view;
 }
+
+beforeEach(() => {
+  // jsdom does not implement showModal(); this stand-in only marks the dialog as open.
+  HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+    this.setAttribute('open', '');
+  };
+});
 
 describe('ProjectFormPage (create)', () => {
   it('has one h1 and a label for every control', async () => {
@@ -168,7 +222,7 @@ describe('ProjectFormPage (create)', () => {
     expect(page.element.querySelectorAll('h1')).toHaveLength(1);
     expect(page.element.querySelector('h1')?.textContent).toBe('Nuevo proyecto');
     const controls = Array.from(page.element.querySelectorAll('input, select'));
-    expect(controls).toHaveLength(7);
+    expect(controls).toHaveLength(8);
     for (const control of controls) {
       const labelled = control as HTMLInputElement;
       expect(labelled.labels?.length, `control ${labelled.id} has no label`).toBeGreaterThan(0);
@@ -287,8 +341,8 @@ describe('ProjectFormPage (create)', () => {
         priority: 'urgent',
         deadline: '2026-11-30',
         items: [
-          { partId: 'a1', quantity: 4 },
-          { partId: 'b2', quantity: 1 },
+          { partId: 'a1', filamentId: 's1', quantity: 4 },
+          { partId: 'b2', filamentId: 's1', quantity: 1 },
         ],
       });
     });
@@ -473,15 +527,12 @@ describe('ProjectFormPage (create)', () => {
       expect(document.activeElement).toBe(page.selectById('field-part'));
     });
 
-    it('stops offering a part once it was added', async () => {
+    it('keeps offering a part after it was added, so it can take another spool', async () => {
       const page = await renderCreating();
 
       await page.addPart('b2');
 
-      expect(page.partOptions()).toEqual([
-        'Soporte · PLA',
-        'Base · Nailon con fibra de carbono (PA-CF)',
-      ]);
+      expect(page.partOptions()).toHaveLength(3);
     });
 
     it('asks for a part when Agregar is pressed with none chosen', async () => {
@@ -499,6 +550,7 @@ describe('ProjectFormPage (create)', () => {
       async (quantity) => {
         const page = await renderCreating();
         await page.choose('field-part', 'a1');
+        await page.choose('field-add-spool', 's1');
         await page.type('field-add-quantity', quantity);
 
         await page.click(page.button('Agregar'));
@@ -523,6 +575,7 @@ describe('ProjectFormPage (create)', () => {
       const page = await renderCreating();
       await page.type('field-name', 'Soportes');
       await page.choose('field-part', 'a1');
+      await page.choose('field-add-spool', 's1');
 
       page
         .byId('field-add-quantity')
@@ -570,7 +623,7 @@ describe('ProjectFormPage (create)', () => {
       await page.submit();
 
       expect(page.api.create).toHaveBeenCalledWith(
-        expect.objectContaining({ items: [{ partId: 'a1', quantity: 7 }] }),
+        expect.objectContaining({ items: [{ partId: 'a1', filamentId: 's1', quantity: 7 }] }),
       );
     });
 
@@ -666,6 +719,7 @@ describe('ProjectFormPage (create)', () => {
 
     await page.type('field-name', 'Soportes');
     await page.choose('field-part', 'a1');
+    await page.choose('field-add-spool', 's1');
     page
       .byId('field-add-quantity')
       ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }));
@@ -675,7 +729,7 @@ describe('ProjectFormPage (create)', () => {
     await page.fixture.whenStable();
 
     expect(page.api.create).toHaveBeenCalledWith(
-      expect.objectContaining({ items: [{ partId: 'a1', quantity: 1 }] }),
+      expect.objectContaining({ items: [{ partId: 'a1', filamentId: 's1', quantity: 1 }] }),
     );
   });
 });
@@ -689,6 +743,7 @@ describe('ProjectFormPage (edit)', () => {
     expect(page.api.get).toHaveBeenCalledWith('p1');
 
     await page.answerPicker();
+    await page.answerSpools();
     await page.loadProject(makeProject());
 
     expect(page.element.querySelector('h1')?.textContent).toBe('Editar proyecto');
@@ -782,8 +837,8 @@ describe('ProjectFormPage (edit)', () => {
     expect(page.api.update).toHaveBeenCalledWith('p1', {
       version: 3,
       items: [
-        { partId: 'a1', quantity: 9 },
-        { partId: 'b2', quantity: 3 },
+        { partId: 'a1', filamentId: 's1', quantity: 9 },
+        { partId: 'b2', filamentId: 's1', quantity: 3 },
       ],
     });
   });
@@ -821,10 +876,7 @@ describe('ProjectFormPage (edit)', () => {
   describe('a line whose part was deleted', () => {
     const withDeleted = () =>
       makeProject({
-        items: [
-          { partId: 'a1', quantity: 2, part: { name: 'Soporte', material: 'PLA' } },
-          { partId: 'zz', quantity: 1, part: null },
-        ],
+        items: [item(), item({ partId: 'zz', quantity: 1, part: null })],
       });
 
     it('shows "Pieza eliminada" and explains that it has to be removed', async () => {
@@ -855,7 +907,7 @@ describe('ProjectFormPage (edit)', () => {
 
       expect(page.api.update).toHaveBeenCalledWith('p1', {
         version: 3,
-        items: [{ partId: 'a1', quantity: 2 }],
+        items: [{ partId: 'a1', filamentId: 's1', quantity: 2 }],
       });
     });
   });
@@ -918,6 +970,286 @@ describe('ProjectFormPage (edit)', () => {
       await page.rejectSave(problem(404));
 
       expect(page.navigate).toHaveBeenCalledWith(['/proyectos'], { state: { notice: 'gone' } });
+    });
+  });
+});
+
+describe('ProjectFormPage (spools)', () => {
+  const goneSpool = () => makeProject({ items: [item({ filamentId: 'gone', filament: null })] });
+  const legacy = () => makeProject({ items: [item({ filamentId: null, filament: null })] });
+
+  const dialogOf = (page: Awaited<ReturnType<typeof render>>) =>
+    page.element.querySelector('dialog');
+
+  async function openDialog(page: Awaited<ReturnType<typeof render>>) {
+    await page.click(page.byId('line-spool-fix-0'));
+    await page.settle();
+  }
+
+  it('shows the stock of each spool in its option text', async () => {
+    const page = await renderCreating();
+
+    const options = Array.from(page.selectById('field-add-spool')?.options ?? []).map((o) =>
+      o.textContent.trim(),
+    );
+
+    expect(options).toEqual(['Elegí una bobina', RED, BLUE]);
+  });
+
+  it('lets the same part be added on two lines with different spools and sends both', async () => {
+    const page = await renderCreating();
+    await page.type('field-name', 'Soportes');
+
+    await page.addPart('a1', '2', 's1');
+    await page.addPart('a1', '3', 's2');
+    await page.submit();
+
+    expect(page.lineNames()).toEqual(['Soporte', 'Soporte']);
+    expect(page.selectById('line-spool-0')?.value).toBe('s1');
+    expect(page.selectById('line-spool-1')?.value).toBe('s2');
+    expect(page.api.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: [
+          { partId: 'a1', filamentId: 's1', quantity: 2 },
+          { partId: 'a1', filamentId: 's2', quantity: 3 },
+        ],
+      }),
+    );
+  });
+
+  it('identifies a line by its position: removing the first leaves the second one intact', async () => {
+    const page = await renderCreating();
+    await page.addPart('a1', '2', 's1');
+    await page.addPart('a1', '3', 's2');
+
+    await page.click(page.byId('line-remove-0'));
+
+    expect(page.lineNames()).toEqual(['Soporte']);
+    expect(page.selectById('line-spool-0')?.value).toBe('s2');
+    expect(page.byId('line-qty-0')?.value).toBe('3');
+  });
+
+  it('refuses to add a part without a spool', async () => {
+    const page = await renderCreating();
+    await page.choose('field-part', 'a1');
+
+    await page.click(page.button('Agregar'));
+
+    expect(page.errorOf('error-add')).toBe('Elegí una bobina para agregar.');
+    expect(page.lineNames()).toEqual([]);
+    expect(document.activeElement).toBe(page.selectById('field-add-spool'));
+  });
+
+  it('refuses the same part with the same spool twice', async () => {
+    const page = await renderCreating();
+    await page.addPart('a1', '1', 's1');
+
+    await page.addPart('a1', '1', 's1');
+
+    expect(page.errorOf('error-add')).toBe('Esa pieza ya está en el proyecto con esa bobina.');
+    expect(page.lineNames()).toEqual(['Soporte']);
+  });
+
+  it('puts a 400 on items.N.filamentId on the spool of that line only', async () => {
+    const page = await renderCreating();
+    await page.type('field-name', 'Soportes');
+    await page.addPart('a1', '1', 's1');
+    await page.addPart('b2', '1', 's2');
+    await page.submit();
+
+    await page.rejectSave(problem(400, [{ path: 'items.1.filamentId', message: SENTINEL }]));
+
+    expect(page.errorOf('line-spool-error-1')).toContain('Esta bobina no es válida');
+    expect(page.errorOf('line-spool-error-0')).toBeNull();
+    expect(page.selectById('line-spool-1')?.getAttribute('aria-invalid')).toBe('true');
+    expect(page.selectById('line-spool-1')?.getAttribute('aria-describedby')).toBe(
+      'line-spool-error-1',
+    );
+    expect(document.activeElement).toBe(page.selectById('line-spool-1'));
+    expect(page.element.innerHTML).not.toContain(SENTINEL);
+
+    await page.choose('line-spool-1', 's1');
+    expect(page.errorOf('line-spool-error-1')).toBeNull();
+  });
+
+  describe('a legacy line without a spool', () => {
+    it('loads with an empty spool, blocks saving with a message and focuses the select', async () => {
+      const page = await renderEditing(legacy());
+      await page.type('field-name', 'Otro nombre');
+      expect(page.selectById('line-spool-0')?.value).toBe('');
+
+      await page.submit();
+
+      expect(page.api.update).not.toHaveBeenCalled();
+      expect(page.errorOf('line-spool-error-0')).toBe('Elegí una bobina para esta línea.');
+      expect(document.activeElement).toBe(page.selectById('line-spool-0'));
+    });
+
+    it('saves once a spool is assigned', async () => {
+      const page = await renderEditing(legacy());
+      await page.choose('line-spool-0', 's2');
+
+      await page.submit();
+
+      expect(page.api.update).toHaveBeenCalledWith('p1', {
+        version: 3,
+        items: [{ partId: 'a1', filamentId: 's2', quantity: 2 }],
+      });
+    });
+  });
+
+  describe('spool catalogue states', () => {
+    it('shows a loading message while the spools are read', async () => {
+      const page = await render();
+      await page.answerPicker();
+
+      expect(page.text()).toContain('Cargando las bobinas disponibles');
+    });
+
+    it('shows a safe error with Reintentar and asks again when it is pressed', async () => {
+      const page = await render();
+      await page.answerPicker();
+      page.spoolCatalogues[0]?.error(problem(503));
+      await page.fixture.whenStable();
+      expect(page.element.querySelector('[role="alert"]')?.textContent).toContain(
+        'Mensaje seguro en español.',
+      );
+      expect(page.element.innerHTML).not.toContain(SENTINEL);
+
+      await page.click(page.button('Reintentar'));
+      await page.answerSpools();
+
+      expect(page.spoolPicker.loadAll).toHaveBeenCalledTimes(2);
+      expect(page.selectById('field-add-spool')?.options).toHaveLength(3);
+    });
+
+    it('points to the filaments screen when there are no spools at all', async () => {
+      const page = await renderCreating(PARTS, []);
+
+      expect(page.errorOf('no-spools')).toContain('Todavía no hay bobinas cargadas.');
+      expect(page.element.querySelector('#no-spools a')?.getAttribute('href')).toBe(
+        '/filamentos/nuevo',
+      );
+    });
+
+    it('warns when the spool list was cut', async () => {
+      const page = await render();
+      await page.answerSpools(SPOOLS, true);
+
+      expect(page.text()).toContain('Hay demasiadas bobinas para este selector');
+    });
+  });
+
+  describe('a line whose spool was deleted', () => {
+    it('shows a notice on the line and an action to pick another spool', async () => {
+      const page = await renderEditing(goneSpool());
+
+      expect(page.selectById('line-spool-0')?.value).toBe('');
+      expect(page.errorOf('line-spool-error-0')).toContain('ya no existe');
+      expect(page.byId('line-spool-fix-0')?.getAttribute('aria-label')).toBe(
+        'Elegir otra bobina para «Soporte»',
+      );
+    });
+
+    it('holds the save until a spool is chosen, but the page can still be left', async () => {
+      const page = await renderEditing(goneSpool());
+      await page.type('field-name', 'Otro nombre');
+
+      await page.submit();
+
+      expect(page.api.update).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(page.selectById('line-spool-0'));
+      expect(page.element.querySelector('a[href="/proyectos"]')?.textContent.trim()).toBe(
+        'Cancelar',
+      );
+    });
+
+    it('opens an accessible dialog with the spools and moves the focus into it', async () => {
+      const page = await renderEditing(goneSpool());
+
+      await openDialog(page);
+
+      const dialog = dialogOf(page);
+      expect(dialog?.getAttribute('aria-labelledby')).toBe('spool-dialog-title');
+      expect(page.element.querySelector('h2')?.textContent).toBe('Elegir otra bobina');
+      expect(document.activeElement).toBe(page.selectById('spool-dialog-select'));
+      const options = Array.from(page.selectById('spool-dialog-select')?.options ?? []).map((o) =>
+        o.textContent.trim(),
+      );
+      expect(options).toEqual(['Elegí una bobina', RED, BLUE]);
+      expect(dialog?.querySelector('a')?.getAttribute('href')).toBe('/filamentos/nuevo');
+    });
+
+    it('closes on Escape and returns the focus to the button that opened it', async () => {
+      const page = await renderEditing(goneSpool());
+      await openDialog(page);
+
+      dialogOf(page)?.dispatchEvent(new Event('cancel', { cancelable: true }));
+      await page.settle();
+
+      expect(dialogOf(page)).toBeNull();
+      expect(document.activeElement).toBe(page.byId('line-spool-fix-0'));
+      expect(page.api.update).not.toHaveBeenCalled();
+    });
+
+    it('closes with Cancelar and keeps the line as it was', async () => {
+      const page = await renderEditing(goneSpool());
+      await openDialog(page);
+
+      await page.click(page.button('Cancelar'));
+      await page.settle();
+
+      expect(dialogOf(page)).toBeNull();
+      expect(page.selectById('line-spool-0')?.value).toBe('');
+      expect(document.activeElement).toBe(page.byId('line-spool-fix-0'));
+    });
+
+    it('asks to choose when confirmed with nothing selected and stays open', async () => {
+      const page = await renderEditing(goneSpool());
+      await openDialog(page);
+
+      await page.click(page.button('Elegir bobina'));
+
+      expect(page.errorOf('spool-dialog-error')).toBe('Elegí una bobina.');
+      expect(dialogOf(page)).not.toBeNull();
+    });
+
+    it('assigns the chosen spool, announces it and then lets the project be saved', async () => {
+      const page = await renderEditing(goneSpool());
+      await openDialog(page);
+      await page.choose('spool-dialog-select', 's2');
+
+      await page.click(page.button('Elegir bobina'));
+      await page.settle();
+
+      expect(dialogOf(page)).toBeNull();
+      expect(page.selectById('line-spool-0')?.value).toBe('s2');
+      expect(page.byId('line-spool-fix-0')).toBeNull();
+      expect(page.live()).toBe('Bobina elegida');
+      expect(document.activeElement).toBe(page.selectById('line-spool-0'));
+
+      await page.submit();
+      expect(page.api.update).toHaveBeenCalledWith('p1', {
+        version: 3,
+        items: [{ partId: 'a1', filamentId: 's2', quantity: 2 }],
+      });
+    });
+
+    it('always offers a way out with no spools to pick: Cancelar and the create link', async () => {
+      const page = await render({ editing: true });
+      await page.answerPicker();
+      await page.answerSpools([]);
+      await page.loadProject(goneSpool());
+      await openDialog(page);
+
+      const dialog = dialogOf(page);
+      expect(dialog?.textContent).toContain('No hay bobinas para elegir.');
+      expect(page.button('Elegir bobina')).toBeUndefined();
+      expect(dialog?.querySelector('a')?.getAttribute('href')).toBe('/filamentos/nuevo');
+      expect(document.activeElement).toBe(page.button('Cancelar'));
+
+      await page.click(page.button('Cancelar'));
+      expect(dialogOf(page)).toBeNull();
     });
   });
 });

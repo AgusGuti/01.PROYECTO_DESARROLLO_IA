@@ -9,6 +9,7 @@ import type {
 import { catchError, map, of, type Observable, throwError } from 'rxjs';
 import { API_BASE_URL } from '../../core/api/api-config';
 import { ApiError } from '../../core/api/api-error';
+import { type SpoolOption, spoolLabel } from '../../shared/ui/spool-dialog';
 import { isGoal, isMode } from './queue-labels';
 
 /** A live printer the user may pick. */
@@ -23,6 +24,10 @@ export interface ProjectSnapshot {
   readonly lines: readonly {
     readonly partId: string;
     readonly name: string | null;
+    /** Null for a line saved before ADR 0036. */
+    readonly filamentId: string | null;
+    /** The line has a spool id but that spool is no longer live. */
+    readonly spoolGone: boolean;
     readonly quantity: number;
   }[];
 }
@@ -46,10 +51,25 @@ function narrow<T>(guard: (value: unknown) => value is T): (body: unknown) => T 
   };
 }
 
+/** The spool summary of a line: null when it has no live spool. */
+function isSpoolSummary(value: unknown): boolean {
+  return (
+    value === null ||
+    (isRecord(value) &&
+      typeof value['brand'] === 'string' &&
+      typeof value['material'] === 'string' &&
+      typeof value['colorName'] === 'string' &&
+      isWholeNumber(value['availableGrams']))
+  );
+}
+
 function isQueueLine(value: unknown): value is QueueLine {
   return (
     isRecord(value) &&
     typeof value['partId'] === 'string' &&
+    (value['filamentId'] === null || typeof value['filamentId'] === 'string') &&
+    isSpoolSummary(value['filament']) &&
+    typeof value['filamentDeleted'] === 'boolean' &&
     isWholeNumber(value['quantity']) &&
     isWholeNumber(value['completed']) &&
     isWholeNumber(value['pendingUnits']) &&
@@ -105,7 +125,20 @@ function pickProject(value: unknown): ProjectSnapshot | null {
       if (!isRecord(part) || typeof part['name'] !== 'string') return null;
       name = part['name'];
     }
-    lines.push({ partId: row['partId'], name, quantity: row['quantity'] });
+    const filamentId = row['filamentId'];
+    if (
+      (filamentId !== null && typeof filamentId !== 'string') ||
+      !isSpoolSummary(row['filament'])
+    ) {
+      return null;
+    }
+    lines.push({
+      partId: row['partId'],
+      name,
+      filamentId,
+      spoolGone: filamentId !== null && row['filament'] === null,
+      quantity: row['quantity'],
+    });
   }
   return { name: value['name'], lines };
 }
@@ -168,6 +201,46 @@ export class QueuesApi {
           if (picked !== undefined) printers.push(picked);
         }
         return printers;
+      }),
+    );
+  }
+
+  /**
+   * Live spools, by brand, as select options with their stock. shortcut: first 100 only, upgrade
+   * if one workshop owns more spools.
+   */
+  spools(): Observable<readonly SpoolOption[]> {
+    const params = new HttpParams()
+      .set('page', 1)
+      .set('pageSize', 100)
+      .set('sort', 'brand')
+      .set('order', 'asc');
+    return this.http.get<unknown>(`${this.baseUrl}/api/v1/filaments`, { params }).pipe(
+      map((body) => {
+        if (!isRecord(body) || !Array.isArray(body['items'])) throw unexpected();
+        const options: SpoolOption[] = [];
+        for (const row of body['items'] as unknown[]) {
+          if (
+            !isRecord(row) ||
+            typeof row['id'] !== 'string' ||
+            typeof row['brand'] !== 'string' ||
+            typeof row['colorName'] !== 'string' ||
+            typeof row['material'] !== 'string' ||
+            !isWholeNumber(row['availableGrams'])
+          ) {
+            throw unexpected();
+          }
+          options.push({
+            id: row['id'],
+            label: spoolLabel({
+              brand: row['brand'],
+              colorName: row['colorName'],
+              material: row['material'],
+              availableGrams: row['availableGrams'],
+            }),
+          });
+        }
+        return options;
       }),
     );
   }

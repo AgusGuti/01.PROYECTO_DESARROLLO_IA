@@ -1,10 +1,12 @@
 import {
+  afterNextRender,
   ChangeDetectionStrategy,
   Component,
   computed,
   DestroyRef,
   ElementRef,
   inject,
+  Injector,
   signal,
 } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
@@ -26,6 +28,8 @@ import type {
 import { catchError, map, of, startWith, Subject, switchMap } from 'rxjs';
 import { ApiError } from '../../core/api/api-error';
 import { DateTools } from '../../shared/ui/date-tools';
+import { SpoolDialog, type SpoolOption, spoolLabel } from '../../shared/ui/spool-dialog';
+import { FilamentsPickerApi, type PickerSpool } from './filaments-picker-api';
 import { type PickerPart, PartsPickerApi } from './parts-picker-api';
 import {
   formatDeadline,
@@ -56,12 +60,23 @@ type PickerState =
   | { readonly kind: 'ready'; readonly parts: readonly PickerPart[]; readonly truncated: boolean }
   | { readonly kind: 'failed'; readonly message: string };
 
+type SpoolPickerState =
+  | { readonly kind: 'loading' }
+  | { readonly kind: 'ready'; readonly spools: readonly PickerSpool[]; readonly truncated: boolean }
+  | { readonly kind: 'failed'; readonly message: string };
+
 type FieldKey = 'name' | 'description' | 'priority' | 'deadline';
 
 /** One row of the items editor. `name` is null when the part is no longer live ("deleted"). */
 interface Line {
   readonly partId: string;
   readonly name: string | null;
+  /** The spool id; '' while none is chosen (a legacy line, or one whose spool was deleted). */
+  readonly filamentId: FormControl<string>;
+  /** True when the stored spool no longer exists: the line asks for another one (ADR 0036). */
+  readonly spoolGone: boolean;
+  /** The spool as the project loaded it, so the select can show it if the catalogue is missing. */
+  readonly loadedSpool: SpoolOption | null;
   readonly quantity: FormControl<number | null>;
 }
 
@@ -76,7 +91,7 @@ const ISSUE_FIELD: ReadonlyMap<string, FieldKey> = new Map([
 ]);
 
 /** The dotted path the API uses for a problem inside one line: `items.3.quantity`. */
-const LINE_PATH = /^items\.(\d+)\.(partId|quantity)$/;
+const LINE_PATH = /^items\.(\d+)\.(partId|filamentId|quantity)$/;
 
 const SERVER_REJECTED: Readonly<Record<FieldKey, string>> = {
   name: 'El nombre no es válido.',
@@ -94,9 +109,15 @@ const GENERIC_ERROR = 'Ocurrió un error inesperado. Intentá de nuevo.';
 const QUANTITY_MESSAGE = `Ingresá una cantidad entera entre ${String(MIN_QUANTITY)} y ${String(MAX_QUANTITY)}.`;
 const PART_ISSUE_MESSAGE =
   'Esta pieza no es válida: ya no existe o está repetida. Quitala e intentá de nuevo.';
+const SPOOL_ISSUE_MESSAGE =
+  'Esta bobina no es válida: ya no existe o esta pieza ya está con esa bobina en otra línea.';
+const SPOOL_REQUIRED_MESSAGE = 'Elegí una bobina para esta línea.';
+const SPOOL_GONE_MESSAGE = 'La bobina de esta línea ya no existe. Elegí otra para poder guardar.';
+const DUPLICATE_LINE_MESSAGE = 'Esa pieza ya está en el proyecto con esa bobina.';
 const ITEMS_ISSUE_MESSAGE = 'Revisá las piezas del proyecto.';
 const INITIAL_LOAD: LoadState = { kind: 'loading' };
 const INITIAL_PICKER: PickerState = { kind: 'loading' };
+const INITIAL_SPOOLS: SpoolPickerState = { kind: 'loading' };
 
 const VALIDATION_MESSAGES: Readonly<Record<FieldKey, (errors: ValidationErrors) => string>> = {
   name: (errors) =>
@@ -133,6 +154,10 @@ function quantityValidator(control: AbstractControl): ValidationErrors | null {
     : { range: true };
 }
 
+function spoolValidator(control: AbstractControl): ValidationErrors | null {
+  return control.value === '' ? { required: true } : null;
+}
+
 function deadlineValidator(control: AbstractControl<string>): ValidationErrors | null {
   return control.value === '' || isDeadlineInRange(control.value) ? null : { range: true };
 }
@@ -146,14 +171,16 @@ function sameItems(project: Project, items: readonly ProjectItemInput[]): boolea
     project.items.length === items.length &&
     project.items.every(
       (item, index) =>
-        item.partId === items[index]?.partId && item.quantity === items[index].quantity,
+        item.partId === items[index]?.partId &&
+        item.filamentId === items[index].filamentId &&
+        item.quantity === items[index].quantity,
     )
   );
 }
 
 @Component({
   selector: 'app-project-form-page',
-  imports: [DateTools, ReactiveFormsModule, RouterLink],
+  imports: [DateTools, ReactiveFormsModule, RouterLink, SpoolDialog],
   templateUrl: './project-form-page.html',
   styleUrl: './project-form-page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -161,6 +188,8 @@ function sameItems(project: Project, items: readonly ProjectItemInput[]): boolea
 export class ProjectFormPage {
   private readonly api = inject(ProjectsApi);
   private readonly pickerApi = inject(PartsPickerApi);
+  private readonly spoolsApi = inject(FilamentsPickerApi);
+  private readonly injector = inject(Injector);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -184,6 +213,7 @@ export class ProjectFormPage {
 
   // The "add a part" controls are standalone: they are not part of what gets saved.
   protected readonly partControl = this.fb.control('');
+  protected readonly spoolControl = this.fb.control('');
   protected readonly addQuantity = this.fb.control<number | null>(1);
 
   protected readonly submitted = signal(false);
@@ -191,13 +221,17 @@ export class ProjectFormPage {
   protected readonly lines = signal<readonly Line[]>([]);
   /** Problems the API reported for one line (by index) or for the items as a whole. */
   protected readonly lineIssues = signal<ReadonlyMap<number, string>>(new Map());
+  protected readonly spoolIssues = signal<ReadonlyMap<number, string>>(new Map());
   protected readonly itemsIssue = signal<string | null>(null);
+  /** Index of the line whose "choose another spool" dialog is open, or null. */
+  protected readonly dialogLine = signal<number | null>(null);
   protected readonly addError = signal<string | null>(null);
   /** Text for the polite live region: "Pieza agregada" / "Pieza quitada". */
   protected readonly announcement = signal('');
 
   private readonly loadRequests = new Subject<void>();
   private readonly pickerRequests = new Subject<void>();
+  private readonly spoolRequests = new Subject<void>();
 
   /** Create: ready at once. Edit: loads the project; `switchMap` drops superseded loads. */
   protected readonly load = toSignal(
@@ -252,14 +286,46 @@ export class ProjectFormPage {
     { initialValue: INITIAL_PICKER },
   );
 
-  /** "Name · Material" for each part not yet in the project. */
+  /** Every live spool, for the line selects; loaded once and again on "Reintentar". */
+  protected readonly spoolPicker = toSignal(
+    this.spoolRequests.pipe(
+      startWith(undefined),
+      switchMap(() =>
+        this.spoolsApi.loadAll().pipe(
+          map((catalogue): SpoolPickerState => ({
+            kind: 'ready',
+            spools: catalogue.spools,
+            truncated: catalogue.truncated,
+          })),
+          catchError((error: unknown) =>
+            of<SpoolPickerState>({
+              kind: 'failed',
+              message: error instanceof ApiError ? error.message : GENERIC_ERROR,
+            }),
+          ),
+          startWith<SpoolPickerState>({ kind: 'loading' }),
+        ),
+      ),
+    ),
+    { initialValue: INITIAL_SPOOLS },
+  );
+
+  /** "Brand · Colour · Material · N g disponibles" for each live spool. */
+  protected readonly spoolOptions = computed((): readonly SpoolOption[] => {
+    const picker = this.spoolPicker();
+    return picker.kind === 'ready'
+      ? picker.spools.map((spool) => ({ id: spool.id, label: spoolLabel(spool) }))
+      : [];
+  });
+
+  /** "Name · Material" for every part: the same part may be added again with another spool. */
   protected readonly partOptions = computed(() => {
     const picker = this.picker();
     if (picker.kind !== 'ready') return [];
-    const used = new Set(this.lines().map((line) => line.partId));
-    return picker.parts
-      .filter((part) => !used.has(part.id))
-      .map((part) => ({ id: part.id, label: `${part.name} · ${MATERIAL_LABELS[part.material]}` }));
+    return picker.parts.map((part) => ({
+      id: part.id,
+      label: `${part.name} · ${MATERIAL_LABELS[part.material]}`,
+    }));
   });
 
   protected readonly hasDeletedLine = computed(() =>
@@ -292,6 +358,24 @@ export class ProjectFormPage {
     return this.lineIssues().get(index) ?? null;
   }
 
+  /** The spool problem of one line: a stored spool that is gone, none chosen, or the API's answer. */
+  protected spoolError(line: Line, index: number): string | null {
+    if (line.spoolGone && line.filamentId.value === '') return SPOOL_GONE_MESSAGE;
+    if (line.filamentId.invalid && (line.filamentId.touched || this.submitted())) {
+      return SPOOL_REQUIRED_MESSAGE;
+    }
+    return this.spoolIssues().get(index) ?? null;
+  }
+
+  /** The live spools, plus the line's own spool when the catalogue does not list it. */
+  protected spoolChoices(line: Line): readonly SpoolOption[] {
+    const options = this.spoolOptions();
+    const own = line.loadedSpool;
+    return own !== null && !options.some((option) => option.id === own.id)
+      ? [own, ...options]
+      : options;
+  }
+
   protected lineName(line: Line): string {
     return line.name ?? 'Pieza eliminada';
   }
@@ -310,15 +394,38 @@ export class ProjectFormPage {
       this.focus('field-part');
       return;
     }
+    const spoolId = this.spoolControl.value;
+    if (!this.spoolOptions().some((option) => option.id === spoolId)) {
+      this.addError.set('Elegí una bobina para agregar.');
+      this.focus('field-add-spool');
+      return;
+    }
     if (quantityValidator(this.addQuantity) !== null) {
       this.addError.set(QUANTITY_MESSAGE);
       this.focus('field-add-quantity');
       return;
     }
+    if (this.lines().some((line) => line.partId === part.id && line.filamentId.value === spoolId)) {
+      this.addError.set(DUPLICATE_LINE_MESSAGE);
+      this.focus('field-add-spool');
+      return;
+    }
 
     const quantity = this.fb.control<number | null>(this.addQuantity.value, quantityValidator);
-    this.lines.update((lines) => [...lines, { partId: part.id, name: part.name, quantity }]);
+    const filamentId = this.fb.control(spoolId, spoolValidator);
+    this.lines.update((lines) => [
+      ...lines,
+      {
+        partId: part.id,
+        name: part.name,
+        filamentId,
+        spoolGone: false,
+        loadedSpool: null,
+        quantity,
+      },
+    ]);
     this.partControl.setValue('');
+    this.spoolControl.setValue('');
     this.addQuantity.setValue(1);
     this.itemsChanged('Pieza agregada');
     this.focus('field-part');
@@ -330,9 +437,36 @@ export class ProjectFormPage {
     this.focus('field-part');
   }
 
-  /** The user edited a quantity: what the API said about the lines no longer applies. */
+  /** The user edited a quantity or a spool: what the API said about the lines no longer applies. */
   protected clearLineIssues(): void {
     if (this.lineIssues().size > 0) this.lineIssues.set(new Map());
+    if (this.spoolIssues().size > 0) this.spoolIssues.set(new Map());
+  }
+
+  protected retrySpools(): void {
+    this.spoolRequests.next();
+  }
+
+  protected openSpoolDialog(index: number): void {
+    this.dialogLine.set(index);
+  }
+
+  protected closeSpoolDialog(): void {
+    const index = this.dialogLine();
+    this.dialogLine.set(null);
+    if (index !== null) this.focusAfterRender(`line-spool-fix-${String(index)}`);
+  }
+
+  protected pickSpool(spoolId: string): void {
+    const index = this.dialogLine();
+    this.dialogLine.set(null);
+    const line = index === null ? undefined : this.lines()[index];
+    if (index === null || line === undefined) return;
+    line.filamentId.setValue(spoolId);
+    line.filamentId.markAsTouched();
+    this.clearLineIssues();
+    this.announcement.set('Bobina elegida');
+    this.focusAfterRender(`line-spool-${String(index)}`);
   }
 
   protected retryPicker(): void {
@@ -343,6 +477,7 @@ export class ProjectFormPage {
     this.addError.set(null);
     this.itemsIssue.set(null);
     this.lineIssues.set(new Map());
+    this.spoolIssues.set(new Map());
     this.announcement.set(announcement);
   }
 
@@ -352,11 +487,16 @@ export class ProjectFormPage {
     if (this.save().kind === 'saving') return;
     this.submitted.set(true);
     this.form.markAllAsTouched();
-    for (const line of this.lines()) line.quantity.markAsTouched();
+    for (const line of this.lines()) {
+      line.quantity.markAsTouched();
+      line.filamentId.markAsTouched();
+    }
     const loaded = this.load();
     if (loaded.kind !== 'ready') return;
 
-    const linesInvalid = this.lines().some((line) => line.quantity.invalid);
+    const linesInvalid = this.lines().some(
+      (line) => line.quantity.invalid || line.filamentId.invalid,
+    );
     if (this.form.invalid || linesInvalid || this.hasDeletedLine()) {
       this.focusFirstInvalid();
       return;
@@ -368,6 +508,7 @@ export class ProjectFormPage {
     const priority = this.form.controls.priority.value;
     const items: ProjectItemInput[] = this.lines().map((line) => ({
       partId: line.partId,
+      filamentId: line.filamentId.value,
       // The validator guarantees a whole number; the fallback only satisfies the type.
       quantity: line.quantity.value ?? MIN_QUANTITY,
     }));
@@ -461,6 +602,7 @@ export class ProjectFormPage {
   /** Puts each issue next to its control. Returns false when none could be placed. */
   private showIssues(error: ApiError): boolean {
     const lineIssues = new Map<number, string>();
+    const spoolIssues = new Map<number, string>();
     let itemsIssue: string | null = null;
     let placed = false;
 
@@ -475,13 +617,22 @@ export class ProjectFormPage {
         placed = true;
       } else if (line !== null) {
         const index = Number(line[1]);
-        if (index < this.lines().length && !lineIssues.has(index)) {
-          lineIssues.set(index, line[2] === 'quantity' ? QUANTITY_MESSAGE : PART_ISSUE_MESSAGE);
+        const target = line[2] === 'filamentId' ? spoolIssues : lineIssues;
+        if (index < this.lines().length && !target.has(index)) {
+          target.set(
+            index,
+            line[2] === 'quantity'
+              ? QUANTITY_MESSAGE
+              : line[2] === 'filamentId'
+                ? SPOOL_ISSUE_MESSAGE
+                : PART_ISSUE_MESSAGE,
+          );
           placed = true;
         }
       }
     }
     this.lineIssues.set(lineIssues);
+    this.spoolIssues.set(spoolIssues);
     this.itemsIssue.set(itemsIssue);
     return placed;
   }
@@ -494,16 +645,29 @@ export class ProjectFormPage {
       deadline: project.deadline === null ? '' : formatDeadline(project.deadline),
     });
     this.lines.set(
-      project.items.map((item) => ({
-        partId: item.partId,
-        name: item.part?.name ?? null,
-        quantity: this.fb.control<number | null>(item.quantity, quantityValidator),
-      })),
+      project.items.map((item) => {
+        // A stored spool that is gone has an id but no summary; a legacy line has neither.
+        const gone = item.filamentId !== null && item.filament === null;
+        return {
+          partId: item.partId,
+          name: item.part?.name ?? null,
+          filamentId: this.fb.control(gone ? '' : (item.filamentId ?? ''), spoolValidator),
+          spoolGone: gone,
+          loadedSpool:
+            item.filamentId !== null && item.filament !== null
+              ? { id: item.filamentId, label: spoolLabel(item.filament) }
+              : null,
+          quantity: this.fb.control<number | null>(item.quantity, quantityValidator),
+        };
+      }),
     );
     this.partControl.setValue('');
+    this.spoolControl.setValue('');
     this.addQuantity.setValue(1);
     this.submitted.set(false);
     this.lineIssues.set(new Map());
+    this.spoolIssues.set(new Map());
+    this.dialogLine.set(null);
     this.itemsIssue.set(null);
     this.addError.set(null);
     this.announcement.set('');
@@ -517,10 +681,16 @@ export class ProjectFormPage {
     }
     const lines = this.lines();
     const withProblem = lines.findIndex(
-      (line, index) => line.quantity.invalid || this.lineIssues().has(index),
+      (line, index) =>
+        line.filamentId.invalid ||
+        line.quantity.invalid ||
+        this.lineIssues().has(index) ||
+        this.spoolIssues().has(index),
     );
     if (withProblem >= 0) {
-      this.focus(`line-qty-${String(withProblem)}`);
+      const spoolProblem =
+        lines[withProblem]?.filamentId.invalid === true || this.spoolIssues().has(withProblem);
+      this.focus(`${spoolProblem ? 'line-spool' : 'line-qty'}-${String(withProblem)}`);
       return;
     }
     const deleted = lines.findIndex((line) => line.name === null);
@@ -530,5 +700,15 @@ export class ProjectFormPage {
 
   private focus(id: string): void {
     this.host.nativeElement.querySelector<HTMLElement>(`#${id}`)?.focus();
+  }
+
+  /** For after a dialog closes: its host element is gone and the page is interactive again. */
+  private focusAfterRender(id: string): void {
+    afterNextRender(
+      () => {
+        this.focus(id);
+      },
+      { injector: this.injector },
+    );
   }
 }

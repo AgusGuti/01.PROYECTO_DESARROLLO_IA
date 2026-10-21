@@ -5,6 +5,7 @@ import { Subject } from 'rxjs';
 import { vi } from 'vitest';
 import { ApiError, type ApiFieldIssue } from '../../core/api/api-error';
 import { formatDuration, parseQuantity } from './queue-labels';
+import type { SpoolOption } from '../../shared/ui/spool-dialog';
 import { QueuePage } from './queue-page';
 import { type PrinterOption, type ProjectSnapshot, QueuesApi } from './queues-api';
 
@@ -16,11 +17,23 @@ const PRINTERS: readonly PrinterOption[] = [
   { id: 'pr3', name: 'Bambu' },
 ];
 
+const SPOOLS: readonly SpoolOption[] = [
+  { id: 's1', label: 'Grilon3 · Rojo · PLA · 800 g disponibles' },
+  { id: 's2', label: 'Esun · Azul · PETG · 300 g disponibles' },
+];
+
+const RED_SUMMARY = {
+  brand: 'Grilon3',
+  material: 'PLA',
+  colorName: 'Rojo',
+  availableGrams: 800,
+} as const;
+
 const PROJECT: ProjectSnapshot = {
   name: 'Soportes',
   lines: [
-    { partId: 'a', name: 'Soporte de cable', quantity: 3 },
-    { partId: 'b', name: 'Tapa', quantity: 2 },
+    { partId: 'a', name: 'Soporte de cable', filamentId: 's1', spoolGone: false, quantity: 3 },
+    { partId: 'b', name: 'Tapa', filamentId: 's1', spoolGone: false, quantity: 2 },
   ],
 };
 
@@ -33,6 +46,9 @@ function makeQueue(overrides: Partial<Queue> = {}): Queue {
     lines: [
       {
         partId: 'a',
+        filamentId: 's1',
+        filament: RED_SUMMARY,
+        filamentDeleted: false,
         quantity: 3,
         completed: 1,
         pendingUnits: 2,
@@ -42,6 +58,9 @@ function makeQueue(overrides: Partial<Queue> = {}): Queue {
       },
       {
         partId: 'b',
+        filamentId: 's1',
+        filament: RED_SUMMARY,
+        filamentDeleted: false,
         quantity: 2,
         completed: 0,
         pendingUnits: 2,
@@ -73,6 +92,7 @@ function problem(status: number, issues: ApiFieldIssue[] = []): ApiError {
 async function render() {
   const gets: Subject<Queue | null>[] = [];
   const printerReplies: Subject<readonly PrinterOption[]>[] = [];
+  const spoolReplies: Subject<readonly SpoolOption[]>[] = [];
   const projectReplies: Subject<ProjectSnapshot>[] = [];
   const creates: { body: CreateQueueRequest; reply: Subject<Queue> }[] = [];
   const updates: { body: UpdateQueueRequest; reply: Subject<Queue> }[] = [];
@@ -87,6 +107,11 @@ async function render() {
     printers: vi.fn(() => {
       const reply = new Subject<readonly PrinterOption[]>();
       printerReplies.push(reply);
+      return reply;
+    }),
+    spools: vi.fn(() => {
+      const reply = new Subject<readonly SpoolOption[]>();
+      spoolReplies.push(reply);
       return reply;
     }),
     project: vi.fn((_id: string) => {
@@ -148,6 +173,7 @@ async function render() {
     element,
     gets,
     printerReplies,
+    spoolReplies,
     projectReplies,
     creates,
     updates,
@@ -166,6 +192,8 @@ async function render() {
       gets[0]?.complete();
       printerReplies[0]?.next(PRINTERS);
       printerReplies[0]?.complete();
+      spoolReplies[0]?.next(SPOOLS);
+      spoolReplies[0]?.complete();
       if (queue === null) {
         projectReplies[0]?.next(PROJECT);
         projectReplies[0]?.complete();
@@ -237,6 +265,7 @@ describe('QueuePage', () => {
 
     page.gets[0]?.next(null);
     page.printerReplies[0]?.error(problem(503));
+    page.spoolReplies[0]?.next(SPOOLS);
     page.projectReplies[0]?.next(PROJECT);
     await page.settle();
 
@@ -296,7 +325,7 @@ describe('QueuePage', () => {
         goal: 'fastest',
         mode: 'single',
         printerIds: ['pr2'],
-        lines: [{ partId: 'a', quantity: 5 }],
+        lines: [{ partId: 'a', filamentId: 's1', quantity: 5 }],
       });
       expect(page.button('Creando…')?.disabled).toBe(true);
 
@@ -428,6 +457,8 @@ describe('QueuePage', () => {
       page.gets[0]?.complete();
       page.printerReplies[0]?.next([]);
       page.printerReplies[0]?.complete();
+      page.spoolReplies[0]?.next(SPOOLS);
+      page.spoolReplies[0]?.complete();
       page.projectReplies[0]?.next(PROJECT);
       page.projectReplies[0]?.complete();
       await page.settle();
@@ -478,8 +509,8 @@ describe('QueuePage', () => {
       expect(page.updates[0]?.body).toEqual({
         version: 7,
         lines: [
-          { partId: 'a', quantity: 3, completed: 2 },
-          { partId: 'b', quantity: 2, completed: 0 },
+          { partId: 'a', filamentId: 's1', quantity: 3, completed: 2 },
+          { partId: 'b', filamentId: 's1', quantity: 2, completed: 0 },
         ],
       });
       expect(page.btn('#line-0-plus')?.disabled).toBe(true);
@@ -561,8 +592,8 @@ describe('QueuePage', () => {
         expect(page.updates[0]?.body).toEqual({
           version: 7,
           lines: [
-            { partId: 'a', quantity: 3, completed: 3 },
-            { partId: 'b', quantity: 2, completed: 0 },
+            { partId: 'a', filamentId: 's1', quantity: 3, completed: 3 },
+            { partId: 'b', filamentId: 's1', quantity: 2, completed: 0 },
           ],
         });
         expect(page.input('#line-0-completed')?.disabled).toBe(true);
@@ -627,8 +658,8 @@ describe('QueuePage', () => {
         expect(page.updates[0]?.body).toEqual({
           version: 7,
           lines: [
-            { partId: 'a', quantity: 3, completed: 3 },
-            { partId: 'b', quantity: 2, completed: 0 },
+            { partId: 'a', filamentId: 's1', quantity: 3, completed: 3 },
+            { partId: 'b', filamentId: 's1', quantity: 2, completed: 0 },
           ],
         });
         page.updates[0]?.reply.next(savedWith(3));
@@ -692,8 +723,8 @@ describe('QueuePage', () => {
         version: 7,
         goal: 'minimal_idle',
         lines: [
-          { partId: 'a', quantity: 4, completed: 1 },
-          { partId: 'b', quantity: 2, completed: 0 },
+          { partId: 'a', filamentId: 's1', quantity: 4, completed: 1 },
+          { partId: 'b', filamentId: 's1', quantity: 2, completed: 0 },
         ],
       });
       expect(page.button('Guardando…')?.disabled).toBe(true);
@@ -767,7 +798,7 @@ describe('QueuePage', () => {
 
       expect(page.updates[0]?.body).toEqual({
         version: 7,
-        lines: [{ partId: 'a', quantity: 3, completed: 1 }],
+        lines: [{ partId: 'a', filamentId: 's1', quantity: 3, completed: 1 }],
       });
       const saved = makeQueue({
         version: 8,
@@ -785,7 +816,7 @@ describe('QueuePage', () => {
       await page.click(page.btn('#line-0-plus'));
       expect(page.updates[1]?.body).toEqual({
         version: 8,
-        lines: [{ partId: 'a', quantity: 3, completed: 2 }],
+        lines: [{ partId: 'a', filamentId: 's1', quantity: 3, completed: 2 }],
       });
     });
 
@@ -797,8 +828,8 @@ describe('QueuePage', () => {
       await page.click(page.btn('#line-0-plus'));
 
       expect(page.updates[0]?.body.lines).toEqual([
-        { partId: 'a', quantity: 3, completed: 2 },
-        { partId: 'b', quantity: 2, completed: 0 },
+        { partId: 'a', filamentId: 's1', quantity: 3, completed: 2 },
+        { partId: 'b', filamentId: 's1', quantity: 2, completed: 0 },
       ]);
     });
 
@@ -822,8 +853,8 @@ describe('QueuePage', () => {
         version: 8,
         goal: 'fastest',
         lines: [
-          { partId: 'a', quantity: 4, completed: 2 },
-          { partId: 'b', quantity: 2, completed: 0 },
+          { partId: 'a', filamentId: 's1', quantity: 4, completed: 2 },
+          { partId: 'b', filamentId: 's1', quantity: 2, completed: 0 },
         ],
       });
     });
@@ -899,6 +930,373 @@ describe('QueuePage', () => {
         expect(page.q('dialog')).toBeNull();
         expect(page.q('#action-error')?.textContent).toContain('La cola cambió');
         expect(page.button('Recargar')).toBeDefined();
+      });
+    });
+  });
+
+  describe('spools (ADR 0036)', () => {
+    const BLUE_SUMMARY = {
+      brand: 'Esun',
+      material: 'PETG',
+      colorName: 'Azul',
+      availableGrams: 300,
+    } as const;
+
+    /** Line 1 of makeQueue() with a deleted spool. */
+    const withGoneSpool = () => {
+      const queue = makeQueue();
+      queue.lines[1] = withLine(queue, 1, {
+        filamentId: 'gone',
+        filament: null,
+        filamentDeleted: true,
+      });
+      return queue;
+    };
+
+    /** Splitting part "a" (1 of 3 printed): the saved queue as the API would answer. */
+    const splitResult = () => {
+      const queue = makeQueue({ version: 8 });
+      const printed = withLine(queue, 0, { quantity: 1, pendingUnits: 0 });
+      const rest = withLine(queue, 0, {
+        filamentId: 's2',
+        filament: BLUE_SUMMARY,
+        quantity: 2,
+        completed: 0,
+        pendingUnits: 2,
+      });
+      queue.lines.splice(0, 1, printed, rest);
+      return queue;
+    };
+
+    const optionTexts = (select: HTMLSelectElement | null) =>
+      Array.from(select?.options ?? []).map((option) => option.textContent.trim());
+
+    it('shows the spool of every line in a labelled select with its stock', async () => {
+      const page = await render();
+
+      await page.open(makeQueue());
+
+      expect(page.q('label[for="line-0-spool"]')?.textContent).toBe('Bobina de Soporte de cable');
+      expect(page.select('#line-0-spool')?.value).toBe('s1');
+      expect(optionTexts(page.select('#line-0-spool'))).toEqual([
+        'Elegí una bobina',
+        'Grilon3 · Rojo · PLA · 800 g disponibles',
+        'Esun · Azul · PETG · 300 g disponibles',
+      ]);
+    });
+
+    it('disables the spool select of a line with printed pieces and explains why', async () => {
+      const page = await render();
+
+      await page.open(makeQueue());
+
+      expect(page.select('#line-0-spool')?.disabled).toBe(true);
+      expect(page.q('#line-0-spool-hint')?.textContent).toBe(
+        'Esta línea ya tiene piezas impresas: para usar otra bobina, dividila.',
+      );
+      expect(page.select('#line-0-spool')?.getAttribute('aria-describedby')).toBe(
+        'line-0-spool-hint',
+      );
+      expect(page.select('#line-1-spool')?.disabled).toBe(false);
+      expect(page.q('#line-1-spool-hint')).toBeNull();
+    });
+
+    it('offers "Dividir línea" only on a line with printed and pending pieces', async () => {
+      const page = await render();
+      await page.open(makeQueue());
+
+      expect(page.btn('#line-0-split')?.textContent.trim()).toBe('Dividir línea');
+      expect(page.btn('#line-1-split')).toBeNull();
+    });
+
+    it('does not offer "Dividir línea" when every piece of the line is printed', async () => {
+      const full = makeQueue();
+      full.lines[0] = withLine(full, 0, { completed: 3, pendingUnits: 0 });
+      const page = await render();
+
+      await page.open(full);
+
+      expect(page.btn('#line-0-split')).toBeNull();
+    });
+
+    it('sends the whole-lines PATCH of a split with the current version', async () => {
+      const page = await render();
+      await page.open(makeQueue());
+      await page.click(page.btn('#line-0-split'));
+      await page.choose(page.select('#spool-dialog-select'), 's2');
+
+      await page.click(page.button('Dividir'));
+
+      expect(page.updates).toHaveLength(1);
+      expect(page.updates[0]?.body).toEqual({
+        version: 7,
+        lines: [
+          { partId: 'a', filamentId: 's1', quantity: 1, completed: 1 },
+          { partId: 'a', filamentId: 's2', quantity: 2, completed: 0 },
+          { partId: 'b', filamentId: 's1', quantity: 2, completed: 0 },
+        ],
+      });
+      expect(page.q('dialog')).toBeNull();
+
+      page.updates[0]?.reply.next(splitResult());
+      page.updates[0]?.reply.complete();
+      await page.settle();
+
+      const names = Array.from(page.element.querySelectorAll('tbody th')).map(
+        (th) => th.textContent,
+      );
+      expect(names).toEqual(['Soporte de cable', 'Soporte de cable', 'Pieza eliminada']);
+      expect(page.input('#line-0-quantity')?.value).toBe('1');
+      expect(page.input('#line-1-quantity')?.value).toBe('2');
+      expect(page.select('#line-1-spool')?.value).toBe('s2');
+      expect(page.select('#line-1-spool')?.disabled).toBe(false);
+      expect(page.text()).toContain('La línea se dividió.');
+      expect(document.activeElement).toBe(page.q('#line-1-spool'));
+    });
+
+    it('disables the current spool and the ones the same part already uses in the split picker', async () => {
+      const queue = makeQueue();
+      queue.lines.splice(
+        1,
+        0,
+        withLine(queue, 0, { filamentId: 's2', filament: BLUE_SUMMARY, completed: 0 }),
+      );
+      const page = await render();
+      await page.open(queue);
+
+      await page.click(page.btn('#line-0-split'));
+
+      const options = Array.from(page.select('#spool-dialog-select')?.options ?? []);
+      expect(options.map((option) => option.disabled)).toEqual([false, true, true]);
+    });
+
+    it('disables only the current spool when the part has no other line', async () => {
+      const page = await render();
+      await page.open(makeQueue());
+
+      await page.click(page.btn('#line-0-split'));
+
+      const options = Array.from(page.select('#spool-dialog-select')?.options ?? []);
+      expect(options.map((option) => option.disabled)).toEqual([false, true, false]);
+    });
+
+    it('closes the split picker with Escape, sends nothing and returns the focus to the button', async () => {
+      const page = await render();
+      await page.open(makeQueue());
+      await page.click(page.btn('#line-0-split'));
+      expect(document.activeElement).toBe(page.q('#spool-dialog-select'));
+
+      page.q('dialog')?.dispatchEvent(new Event('cancel', { cancelable: true }));
+      await page.settle();
+
+      expect(page.q('dialog')).toBeNull();
+      expect(page.api.update).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(page.q('#line-0-split'));
+    });
+
+    it('keeps the split picker open and asks to choose when confirmed with nothing selected', async () => {
+      const page = await render();
+      await page.open(makeQueue());
+      await page.click(page.btn('#line-0-split'));
+
+      await page.click(page.button('Dividir'));
+
+      expect(page.q('#spool-dialog-error')?.textContent).toBe('Elegí una bobina.');
+      expect(page.api.update).not.toHaveBeenCalled();
+    });
+
+    it('offers Recargar when a split hits a stale version (409), without backend text', async () => {
+      const page = await render();
+      await page.open(makeQueue());
+      await page.click(page.btn('#line-0-split'));
+      await page.choose(page.select('#spool-dialog-select'), 's2');
+      await page.click(page.button('Dividir'));
+
+      page.updates[0]?.reply.error(problem(409));
+      await page.settle();
+
+      expect(page.q('#action-error')?.textContent).toContain('La cola cambió');
+      expect(page.button('Recargar')).toBeDefined();
+      expect(page.element.textContent).not.toContain(SENTINEL);
+      expect(page.element.querySelectorAll('tbody tr')).toHaveLength(2);
+    });
+
+    it('marks the spool of the line the API rejected (lines.N.filamentId) with a fixed message', async () => {
+      const page = await render();
+      await page.open(makeQueue());
+      await page.click(page.btn('#line-0-split'));
+      await page.choose(page.select('#spool-dialog-select'), 's2');
+      await page.click(page.button('Dividir'));
+
+      page.updates[0]?.reply.error(
+        problem(400, [{ path: 'lines.1.filamentId', message: SENTINEL }]),
+      );
+      await page.settle();
+
+      expect(page.q('#line-1-spool-error')?.textContent).toContain('La bobina no es válida');
+      expect(page.q('#action-error')?.textContent).toContain('Revisá los datos marcados');
+      expect(page.element.textContent).not.toContain(SENTINEL);
+    });
+
+    it('saves a spool change on an unprinted line with the whole-lines PATCH', async () => {
+      const page = await render();
+      await page.open(makeQueue());
+      await page.choose(page.select('#line-1-spool'), 's2');
+
+      await page.click(page.button('Guardar cambios'));
+
+      expect(page.updates[0]?.body).toEqual({
+        version: 7,
+        lines: [
+          { partId: 'a', filamentId: 's1', quantity: 3, completed: 1 },
+          { partId: 'b', filamentId: 's2', quantity: 2, completed: 0 },
+        ],
+      });
+    });
+
+    it('says there is no spool when the list is empty and links to the filaments screen', async () => {
+      const page = await render();
+      page.gets[0]?.next(makeQueue());
+      page.gets[0]?.complete();
+      page.printerReplies[0]?.next(PRINTERS);
+      page.printerReplies[0]?.complete();
+      page.spoolReplies[0]?.next([]);
+      page.spoolReplies[0]?.complete();
+      await page.settle();
+
+      expect(page.q('#no-spools')?.textContent).toContain('No hay bobinas cargadas.');
+      expect(page.q('#no-spools a')?.getAttribute('href')).toBe('/filamentos/nuevo');
+    });
+
+    it('fails safely when the spools cannot be read', async () => {
+      const page = await render();
+
+      page.gets[0]?.next(makeQueue());
+      page.printerReplies[0]?.next(PRINTERS);
+      page.spoolReplies[0]?.error(problem(503));
+      await page.settle();
+
+      expect(page.q('[role="alert"]')?.textContent).toContain('Mensaje seguro en español.');
+      expect(page.element.textContent).not.toContain(SENTINEL);
+      expect(page.button('Reintentar')).toBeDefined();
+    });
+
+    describe('a line whose spool was deleted', () => {
+      it('shows a notice and the action to choose another spool, leaving the select empty', async () => {
+        const page = await render();
+
+        await page.open(withGoneSpool());
+
+        expect(page.select('#line-1-spool')?.value).toBe('');
+        expect(page.q('#line-1-spool-gone')?.textContent).toContain('ya no existe');
+        expect(page.btn('#line-1-spool-replace')).not.toBeNull();
+        expect(page.q('#line-0-spool-gone')).toBeNull();
+      });
+
+      it('holds a save that touches the lines until a spool is chosen', async () => {
+        const page = await render();
+        await page.open(withGoneSpool());
+        await page.type(page.input('#line-0-quantity'), '2');
+
+        await page.click(page.button('Guardar cambios'));
+
+        expect(page.api.update).not.toHaveBeenCalled();
+        expect(page.q('#line-1-spool-error')?.textContent.trim()).toBe(
+          'Elegí una bobina para esta línea.',
+        );
+        expect(document.activeElement).toBe(page.q('#line-1-spool'));
+      });
+
+      it('still saves a change that does not touch the lines', async () => {
+        const page = await render();
+        await page.open(withGoneSpool());
+        await page.choose(page.select('#queue-goal'), 'fastest');
+
+        await page.click(page.button('Guardar cambios'));
+
+        expect(page.updates[0]?.body).toEqual({ version: 7, goal: 'fastest' });
+      });
+
+      it('does not send the progress of another line while a spool is missing', async () => {
+        const page = await render();
+        await page.open(withGoneSpool());
+
+        await page.click(page.q('#line-0-plus') ?? undefined);
+
+        expect(page.api.update).not.toHaveBeenCalled();
+        expect(page.q('#action-error')?.textContent).toContain('Elegí una bobina');
+      });
+
+      it('opens the dialog, closes it with Escape and gives the focus back', async () => {
+        const page = await render();
+        await page.open(withGoneSpool());
+        const trigger = page.btn('#line-1-spool-replace');
+
+        await page.click(trigger);
+        expect(page.q('dialog')).not.toBeNull();
+        expect(page.q('dialog a')?.getAttribute('href')).toBe('/filamentos/nuevo');
+        page.q('dialog')?.dispatchEvent(new Event('cancel', { cancelable: true }));
+        await page.settle();
+
+        expect(page.q('dialog')).toBeNull();
+        expect(document.activeElement).toBe(trigger);
+      });
+
+      it('assigns the chosen spool, then the save is no longer held', async () => {
+        const page = await render();
+        await page.open(withGoneSpool());
+        await page.click(page.btn('#line-1-spool-replace'));
+        await page.choose(page.select('#spool-dialog-select'), 's2');
+
+        await page.click(page.button('Elegir bobina'));
+
+        expect(page.q('dialog')).toBeNull();
+        expect(page.select('#line-1-spool')?.value).toBe('s2');
+        expect(page.q('#line-1-spool-gone')).toBeNull();
+        expect(document.activeElement).toBe(page.q('#line-1-spool'));
+        await page.click(page.button('Guardar cambios'));
+        expect(page.updates[0]?.body).toEqual({
+          version: 7,
+          lines: [
+            { partId: 'a', filamentId: 's1', quantity: 3, completed: 1 },
+            { partId: 'b', filamentId: 's2', quantity: 2, completed: 0 },
+          ],
+        });
+      });
+    });
+
+    describe('creating a queue from a project with spool problems', () => {
+      const legacyProject: ProjectSnapshot = {
+        name: 'Soportes',
+        lines: [{ partId: 'a', name: 'Soporte', filamentId: null, spoolGone: false, quantity: 3 }],
+      };
+
+      it('blocks Crear cola until every line has a spool, then sends it', async () => {
+        const page = await render();
+        page.gets[0]?.next(null);
+        page.gets[0]?.complete();
+        page.printerReplies[0]?.next(PRINTERS);
+        page.printerReplies[0]?.complete();
+        page.spoolReplies[0]?.next(SPOOLS);
+        page.spoolReplies[0]?.complete();
+        page.projectReplies[0]?.next(legacyProject);
+        page.projectReplies[0]?.complete();
+        await page.settle();
+        await page.choose(page.select('#queue-printer'), 'pr1');
+
+        await page.click(page.button('Crear cola'));
+
+        expect(page.api.create).not.toHaveBeenCalled();
+        expect(page.q('#line-0-spool-error')?.textContent.trim()).toBe(
+          'Elegí una bobina para esta línea.',
+        );
+        expect(document.activeElement).toBe(page.q('#line-0-spool'));
+
+        await page.choose(page.select('#line-0-spool'), 's2');
+        await page.click(page.button('Crear cola'));
+        expect(page.creates[0]?.body.lines).toEqual([
+          { partId: 'a', filamentId: 's2', quantity: 3 },
+        ]);
       });
     });
   });

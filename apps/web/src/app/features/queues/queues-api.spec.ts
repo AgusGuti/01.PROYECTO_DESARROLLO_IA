@@ -18,6 +18,9 @@ const QUEUE = {
   lines: [
     {
       partId: 'a',
+      filamentId: 'f1',
+      filament: { brand: 'Grilon3', material: 'PLA', colorName: 'Rojo', availableGrams: 800 },
+      filamentDeleted: false,
       quantity: 3,
       completed: 1,
       pendingUnits: 2,
@@ -83,6 +86,27 @@ describe('QueuesApi', () => {
     ['an unknown goal', { ...QUEUE, goal: 'whenever' }],
     ['a fractional version', { ...QUEUE, version: 1.5 }],
     ['a line without a flag', { ...QUEUE, lines: [{ ...QUEUE.lines[0], partDeleted: 'no' }] }],
+    [
+      'a line without the spool flag',
+      { ...QUEUE, lines: [{ ...QUEUE.lines[0], filamentDeleted: 'no' }] },
+    ],
+    ['a line with a numeric spool id', { ...QUEUE, lines: [{ ...QUEUE.lines[0], filamentId: 7 }] }],
+    [
+      'a line without the spool summary',
+      { ...QUEUE, lines: [{ ...QUEUE.lines[0], filament: undefined }] },
+    ],
+    [
+      'a spool summary with fractional grams',
+      {
+        ...QUEUE,
+        lines: [
+          {
+            ...QUEUE.lines[0],
+            filament: { brand: 'x', material: 'PLA', colorName: 'y', availableGrams: 1.5 },
+          },
+        ],
+      },
+    ],
     ['missing totals', { ...QUEUE, totals: null }],
   ])('rejects %s as an unexpected response', async (_name, body) => {
     const result = firstValueFrom(api.get('p1'));
@@ -159,18 +183,70 @@ describe('QueuesApi', () => {
     http.expectOne(`${BASE}/projects/p1`).flush({
       name: 'Taller',
       items: [
-        { partId: 'a', quantity: 3, part: { name: 'Soporte' } },
-        { partId: 'b', quantity: 1, part: null },
+        {
+          partId: 'a',
+          filamentId: 'f1',
+          quantity: 3,
+          part: { name: 'Soporte' },
+          filament: { brand: 'G', material: 'PLA', colorName: 'Rojo', availableGrams: 5 },
+        },
+        { partId: 'b', filamentId: 'gone', quantity: 1, part: null, filament: null },
+        { partId: 'c', filamentId: null, quantity: 1, part: null, filament: null },
       ],
     });
 
     await expect(result).resolves.toEqual({
       name: 'Taller',
       lines: [
-        { partId: 'a', name: 'Soporte', quantity: 3 },
-        { partId: 'b', name: null, quantity: 1 },
+        { partId: 'a', name: 'Soporte', filamentId: 'f1', spoolGone: false, quantity: 3 },
+        { partId: 'b', name: null, filamentId: 'gone', spoolGone: true, quantity: 1 },
+        { partId: 'c', name: null, filamentId: null, spoolGone: false, quantity: 1 },
       ],
     });
+  });
+
+  it('rejects a project line without the spool keys', async () => {
+    const result = firstValueFrom(api.project('p1'));
+
+    http
+      .expectOne(`${BASE}/projects/p1`)
+      .flush({ name: 'x', items: [{ partId: 'a', quantity: 1, part: null }] });
+
+    await expect(result).rejects.toMatchObject({ code: 'unexpected_response' });
+  });
+
+  it('lists the live spools as options with their stock', async () => {
+    const result = firstValueFrom(api.spools());
+
+    const request = http.expectOne((r) => r.url === `${BASE}/filaments`);
+    expect(request.request.params.get('pageSize')).toBe('100');
+    expect(request.request.params.get('sort')).toBe('brand');
+    request.flush({
+      items: [
+        {
+          id: 'f1',
+          brand: 'Grilon3',
+          material: 'PLA',
+          colorName: 'Rojo',
+          availableGrams: 800,
+          extra: 1,
+        },
+      ],
+    });
+
+    await expect(result).resolves.toEqual([
+      { id: 'f1', label: 'Grilon3 · Rojo · PLA · 800 g disponibles' },
+    ]);
+  });
+
+  it('rejects a malformed spool list', async () => {
+    const result = firstValueFrom(api.spools());
+
+    http
+      .expectOne((r) => r.url === `${BASE}/filaments`)
+      .flush({ items: [{ id: 'f1', brand: 'x' }] });
+
+    await expect(result).rejects.toMatchObject({ code: 'unexpected_response' });
   });
 
   it('rejects a malformed project', async () => {
