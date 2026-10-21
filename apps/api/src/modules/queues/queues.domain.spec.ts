@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { lineIssues, pendingOf, printerSelectionIssues, queueTotals } from './queues.domain.js';
-import { line, PART_A, PART_B, PART_C } from './testing/fakes.js';
+import {
+  lineIssues,
+  lockedLineIssues,
+  missingSpoolIssues,
+  newQueueLineIssues,
+  pendingOf,
+  printerSelectionIssues,
+  queueTotals,
+} from './queues.domain.js';
+import { line, PART_A, PART_B, PART_C, SPOOL_1, SPOOL_2 } from './testing/fakes.js';
 
 describe('pendingOf', () => {
   it.each([
@@ -17,11 +25,60 @@ describe('lineIssues', () => {
     expect(lineIssues([line(PART_A, 4, 4), line(PART_B, 1, 0)])).toEqual([]);
   });
 
-  it('reports a repeated part and an excess of completed with their indexed paths', () => {
+  it('reports a repeated pair and an excess of completed with their indexed paths', () => {
     expect(lineIssues([line(PART_A, 2), line(PART_B, 2, 3), line(PART_A, 1)])).toEqual([
       { path: 'lines.1.completed', message: 'Must not be more than the quantity.' },
-      { path: 'lines.2.partId', message: 'The part is repeated.' },
+      { path: 'lines.2.filamentId', message: 'The part and spool are repeated.' },
     ]);
+  });
+
+  it('allows the same part on several lines with different spools', () => {
+    expect(lineIssues([line(PART_A, 2, 0, SPOOL_1), line(PART_A, 3, 0, SPOOL_2)])).toEqual([]);
+  });
+});
+
+describe('missingSpoolIssues', () => {
+  it('names each line without a spool, with the given message', () => {
+    expect(missingSpoolIssues([line(PART_A, 1), line(PART_B, 1, 0, null)], 'Pick one.')).toEqual([
+      { path: 'lines.1.filamentId', message: 'Pick one.' },
+    ]);
+  });
+});
+
+describe('newQueueLineIssues', () => {
+  it('rejects printed pieces on a new queue', () => {
+    expect(newQueueLineIssues([line(PART_A, 4, 0), line(PART_B, 4, 1)])).toEqual([
+      { path: 'lines.1.completed', message: 'A new queue starts with nothing printed.' },
+    ]);
+  });
+});
+
+describe('lockedLineIssues', () => {
+  const stored = [line(PART_A, 4, 2, SPOOL_1), line(PART_B, 3, 0, SPOOL_1)];
+
+  it('accepts the same pair, any change to an unprinted line and a new line', () => {
+    expect(
+      lockedLineIssues(stored, [line(PART_A, 5, 2, SPOOL_1), line(PART_C, 1, 0, SPOOL_2)]),
+    ).toEqual([]);
+  });
+
+  it('rejects a printed line that changes spool or is removed', () => {
+    expect(lockedLineIssues(stored, [line(PART_A, 4, 2, SPOOL_2)])).toHaveLength(1);
+    expect(lockedLineIssues(stored, [line(PART_B, 3)])).toHaveLength(1);
+    expect(lockedLineIssues(stored, [])[0]).toMatchObject({ path: 'lines' });
+  });
+
+  it('accepts a split: the printed line shrinks to its completed and a second spool takes the rest', () => {
+    expect(
+      lockedLineIssues(stored, [line(PART_A, 2, 2, SPOOL_1), line(PART_A, 2, 0, SPOOL_2)]),
+    ).toEqual([]);
+  });
+
+  it('lets a legacy printed line without a spool gain one but not leave', () => {
+    const legacy = [line(PART_A, 4, 2, null)];
+
+    expect(lockedLineIssues(legacy, [line(PART_A, 4, 2, SPOOL_2)])).toEqual([]);
+    expect(lockedLineIssues(legacy, [line(PART_B, 4, 0, SPOOL_2)])).toHaveLength(1);
   });
 });
 

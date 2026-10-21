@@ -89,12 +89,86 @@ describe('queues API on a real MongoDB with the real wiring', () => {
 
     const edited = await request(app)
       .patch(`/api/v1/queues/${project}`)
-      .send({ version: 1, lines: [{ partId: part, quantity: 3, completed: 1 }] });
+      .send({
+        version: 1,
+        lines: [{ partId: part, filamentId: spool, quantity: 3, completed: 1 }],
+      });
     expect(edited.body).toMatchObject({ version: 2, totals: { pendingSeconds: 7200 } });
 
     const removed = await request(app).delete(`/api/v1/queues/${project}`).query({ version: 2 });
     expect(removed.status).toBe(204);
     expect((await request(app).get(`/api/v1/queues/${project}`)).status).toBe(404);
+  });
+
+  it('keeps the spools of the project lines and splits a printed line onto a second spool', async () => {
+    const part = await makePart('Soporte', 600);
+    const printer = await makePrinter('Ender 3');
+    const other = idOf(await request(app).post('/api/v1/filaments').send(spoolBody));
+    const project = await makeProject([
+      { partId: part, filamentId: spool, quantity: 4 },
+      { partId: part, filamentId: other, quantity: 1 },
+    ]);
+
+    const created = await request(app)
+      .post('/api/v1/queues')
+      .send({ projectId: project, goal: 'fastest', mode: 'single', printerIds: [printer] });
+    const printed = await request(app)
+      .patch(`/api/v1/queues/${project}`)
+      .send({
+        version: 1,
+        lines: [
+          { partId: part, filamentId: spool, quantity: 4, completed: 2 },
+          { partId: part, filamentId: other, quantity: 1, completed: 0 },
+        ],
+      });
+    const changed = await request(app)
+      .patch(`/api/v1/queues/${project}`)
+      .send({
+        version: 2,
+        lines: [
+          { partId: part, filamentId: other, quantity: 4, completed: 2 },
+          { partId: part, filamentId: other, quantity: 1, completed: 0 },
+        ],
+      });
+    const split = await request(app)
+      .patch(`/api/v1/queues/${project}`)
+      .send({
+        version: 2,
+        lines: [
+          { partId: part, filamentId: spool, quantity: 2, completed: 2 },
+          { partId: part, filamentId: other, quantity: 3, completed: 0 },
+        ],
+      });
+
+    expect(created.body).toMatchObject({
+      lines: [
+        { filamentId: spool, filament: { brand: 'Grilon3' }, filamentDeleted: false },
+        { filamentId: other, quantity: 1 },
+      ],
+    });
+    expect(printed.status).toBe(200);
+    expect(changed.status).toBe(400);
+    expect(split.status).toBe(200);
+    expect(split.body).toMatchObject({ version: 3, totals: { pendingUnits: 3 } });
+  });
+
+  it('refuses to create a queue from a project line saved before spools existed', async () => {
+    const part = await makePart('Soporte', 600);
+    const printer = await makePrinter('Ender 3');
+    const project = await makeProject([{ partId: part, filamentId: spool, quantity: 2 }]);
+    await mongoose.connection
+      .collection('projects')
+      .updateOne(
+        { _id: new mongoose.Types.ObjectId(project) },
+        { $unset: { 'items.0.filamentId': '' } },
+      );
+
+    const response = await request(app)
+      .post('/api/v1/queues')
+      .send({ projectId: project, goal: 'fastest', mode: 'single', printerIds: [printer] });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({ issues: [{ path: 'lines.0.filamentId' }] });
   });
 
   it('keeps its own lines when the project is edited afterwards', async () => {
@@ -153,7 +227,7 @@ describe('queues API on a real MongoDB with the real wiring', () => {
       .send({
         version: 1,
         printerIds: [other],
-        lines: [{ partId: part, quantity: 2, completed: 2 }],
+        lines: [{ partId: part, filamentId: spool, quantity: 2, completed: 2 }],
       });
     expect(finished.status).toBe(200);
     expect((await request(app).delete(`/api/v1/printers/${other}`)).status).toBe(204);

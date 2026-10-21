@@ -1,5 +1,6 @@
 // Zod schemas for the queues API: the source of the OpenAPI contract (standard §7.1).
 // Every input object is strict, so an unknown key (`id`, `createdAt`, `totals`...) is a 400.
+import { materialSchema } from '../../shared/catalog/materials.schemas.js';
 import { z } from '../../shared/http/zod.js';
 import {
   GOALS,
@@ -28,23 +29,26 @@ const printerIdsSchema = z.array(idSchema).max(MAX_PRINTERS).openapi({
     'Live, not archived printers. Single mode: exactly 1. Multi mode: 2 to 10. No repeats.',
 });
 
+// The spool is required on every saved line (ADR 0036): null, missing or malformed is a 400.
 const lineShape = {
   partId: idSchema,
+  filamentId: idSchema.openapi({ description: 'The spool of the line. Required.' }),
   quantity: z.number().int().min(1).max(MAX_QUANTITY),
 };
 const completedSchema = z.number().int().min(0).max(MAX_QUANTITY);
 
-// On create the completed count defaults to 0; on edit it is required, so replacing the lines can never
-// silently zero the progress.
+// On create the completed count is 0 (default); on edit it is required, so replacing the lines can
+// never silently zero the progress.
 const lineInputSchema = z
-  .strictObject({ ...lineShape, completed: completedSchema.default(0) })
+  .strictObject({ ...lineShape, completed: z.literal(0).default(0) })
   .openapi('QueueLineInput');
 const lineEditSchema = z
   .strictObject({ ...lineShape, completed: completedSchema })
   .openapi('QueueLineEdit');
 
 const LINES_DESCRIPTION =
-  'Up to 100 lines, each part at most once, completed at most the quantity.';
+  'Up to 100 lines, each (part, spool) pair at most once, completed at most the quantity. A part ' +
+  'may repeat with different spools.';
 const linesSchema = z
   .array(lineInputSchema)
   .max(MAX_LINES)
@@ -57,7 +61,7 @@ const editLinesSchema = z
 interface Checked {
   mode?: Mode | undefined;
   printerIds?: string[] | undefined;
-  lines?: { partId: string; quantity: number; completed: number }[] | undefined;
+  lines?: { partId: string; filamentId: string; quantity: number; completed: number }[] | undefined;
 }
 
 // Shape rules with indexed paths, so they are a 400 before any lookup (ADR 0025).
@@ -79,8 +83,9 @@ export const createQueueSchema = z
     printerIds: printerIdsSchema,
     lines: linesSchema.optional().openapi({
       description:
-        'Omit to copy the project lines with completed 0. The queue keeps its own copy: later ' +
-        'edits to the project do not change it.',
+        'Omit to copy the project lines (with their spools) and completed 0; every project line ' +
+        'must have a spool. The queue keeps its own copy: later edits to the project do not ' +
+        'change it. completed must be 0 on create.',
     }),
   })
   .superRefine(checkShape)
@@ -117,12 +122,34 @@ const timestamp = z.iso.datetime().openapi({ example: '2026-01-01T12:00:00.000Z'
 export const queueLineSchema = z
   .object({
     partId: z.string(),
+    filamentId: z
+      .string()
+      .nullable()
+      .openapi({
+        type: ['string', 'null'],
+        description: 'The spool of the line; null only for a line saved before ADR 0036.',
+      }),
     quantity: z.number().int(),
     completed: z.number().int(),
     pendingUnits: z.number().int(),
     partName: z.string().nullable(),
     estimatedPrintSeconds: z.number().int().nullable(),
     partDeleted: z.boolean().openapi({ description: 'The part is no longer live.' }),
+    filament: z
+      .object({
+        brand: z.string(),
+        material: materialSchema,
+        colorName: z.string(),
+        availableGrams: z.number().int(),
+      })
+      .nullable()
+      .openapi({
+        description:
+          'The spool as it is now, or null when the line has no spool or it is not live.',
+      }),
+    filamentDeleted: z.boolean().openapi({
+      description: 'The line has a spool id but that spool is no longer live: choose another.',
+    }),
   })
   .openapi('QueueLine');
 

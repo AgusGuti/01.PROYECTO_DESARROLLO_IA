@@ -764,6 +764,10 @@ export type Queue = {
 
 export type QueueLine = {
     partId: string;
+    /**
+     * The spool of the line; null only for a line saved before ADR 0036.
+     */
+    filamentId: string | null;
     quantity: number;
     completed: number;
     pendingUnits: number;
@@ -773,6 +777,19 @@ export type QueueLine = {
      * The part is no longer live.
      */
     partDeleted: boolean;
+    /**
+     * The spool as it is now, or null when the line has no spool or it is not live.
+     */
+    filament: {
+        brand: string;
+        material: Material;
+        colorName: string;
+        availableGrams: number;
+    } | null;
+    /**
+     * The line has a spool id but that spool is no longer live: choose another.
+     */
+    filamentDeleted: boolean;
 };
 
 export type QueueTotals = {
@@ -800,15 +817,19 @@ export type CreateQueueRequest = {
      */
     printerIds: Array<string>;
     /**
-     * Omit to copy the project lines with completed 0. The queue keeps its own copy: later edits to the project do not change it.
+     * Omit to copy the project lines (with their spools) and completed 0; every project line must have a spool. The queue keeps its own copy: later edits to the project do not change it. completed must be 0 on create.
      */
     lines?: Array<QueueLineInput>;
 };
 
 export type QueueLineInput = {
     partId: string;
+    /**
+     * The spool of the line. Required.
+     */
+    filamentId: string;
     quantity: number;
-    completed?: number;
+    completed?: 0;
 };
 
 export type UpdateQueueRequest = {
@@ -826,13 +847,17 @@ export type UpdateQueueRequest = {
      */
     printerIds?: Array<string>;
     /**
-     * Up to 100 lines, each part at most once, completed at most the quantity. completed is required.
+     * Up to 100 lines, each (part, spool) pair at most once, completed at most the quantity. A part may repeat with different spools. completed is required.
      */
     lines?: Array<QueueLineEdit>;
 };
 
 export type QueueLineEdit = {
     partId: string;
+    /**
+     * The spool of the line. Required.
+     */
+    filamentId: string;
     quantity: number;
     completed: number;
 };
@@ -914,7 +939,7 @@ export type Simulation = {
     }>;
 };
 
-export type SimulationWarningCode = 'part_deleted' | 'printer_unavailable' | 'availability_not_configured' | 'nothing_to_print' | 'batching_applied';
+export type SimulationWarningCode = 'part_deleted' | 'printer_unavailable' | 'availability_not_configured' | 'nothing_to_print' | 'batching_applied' | 'filament_insufficient' | 'filament_deleted';
 
 export type SimulationRequest = {
     projectId: string;
@@ -1062,7 +1087,7 @@ export type Optimization = {
 /**
  * The strategy whose plan is `optimized`.
  */
-export type OptimizationStrategy = 'naive' | 'queue_order' | 'longest_first' | 'shortest_first' | 'best_fit';
+export type OptimizationStrategy = 'naive' | 'queue_order' | 'longest_first' | 'shortest_first' | 'best_fit' | 'group_by_spool';
 
 export type GcodeAnalysis = {
     slicer: 'cura';

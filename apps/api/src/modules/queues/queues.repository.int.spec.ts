@@ -16,6 +16,7 @@ import {
   PRINTER_2,
   PRINTER_3,
   PROJECT_ID,
+  SPOOL_2,
   validFields,
 } from './testing/fakes.js';
 
@@ -27,6 +28,9 @@ describe('queue repository on a real MongoDB', () => {
   let database: Database;
   const repository = createMongoQueueRepository();
   const collection = () => mongoose.connection.collection('queues');
+  // Same collection with a string _id, for raw inserts of documents stored by older code.
+  const rawQueues = () =>
+    mongoose.connection.collection<{ _id: string; [field: string]: unknown }>('queues');
 
   async function failureOf(promise: Promise<unknown>): Promise<AppError> {
     const error = await promise.then(
@@ -70,6 +74,47 @@ describe('queue repository on a real MongoDB', () => {
     const raw = await collection().findOne({});
     expect(raw).toMatchObject({ _id: PROJECT_ID, version: 1 });
     expect(raw).not.toHaveProperty('__v');
+  });
+
+  it('keeps two lines of one part with different spools', async () => {
+    const lines = [line(PART_A, 2, 2), line(PART_A, 3, 0, SPOOL_2)];
+
+    await repository.create(PROJECT_ID, { ...validFields, lines }, T0);
+
+    expect((await repository.findById(PROJECT_ID))?.lines).toEqual(lines);
+    expect(((await collection().findOne({}))?.['lines'] as unknown[]).length).toBe(2);
+  });
+
+  it('reads a queue stored before ADR 0036 (lines without filamentId) as null spools', async () => {
+    await rawQueues().insertOne({
+      _id: PROJECT_ID,
+      goal: 'fastest',
+      mode: 'single',
+      printerIds: [PRINTER_1],
+      lines: [{ partId: PART_A, quantity: 4, completed: 1 }],
+      version: 1,
+      createdAt: T0,
+      updatedAt: T0,
+    });
+
+    expect((await repository.findById(PROJECT_ID))?.lines).toEqual([line(PART_A, 4, 1, null)]);
+  });
+
+  it('lets a legacy line gain a spool through update', async () => {
+    await rawQueues().insertOne({
+      _id: PROJECT_ID,
+      goal: 'fastest',
+      mode: 'single',
+      printerIds: [PRINTER_1],
+      lines: [{ partId: PART_A, quantity: 4, completed: 1 }],
+      version: 1,
+      createdAt: T0,
+      updatedAt: T0,
+    });
+
+    const updated = await repository.update(PROJECT_ID, 1, { lines: [line(PART_A, 4, 1)] }, T1);
+
+    expect(updated?.lines).toEqual([line(PART_A, 4, 1)]);
   });
 
   it('finds nothing for an unknown id', async () => {

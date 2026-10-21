@@ -4,8 +4,12 @@ import { AppError, type FieldIssue } from '../../shared/errors/app-error.js';
 import type { Clock } from '../health/index.js';
 import {
   lineIssues,
+  lockedLineIssues,
+  missingSpoolIssues,
+  newQueueLineIssues,
   printerSelectionIssues,
   queueTotals,
+  type FilamentInfo,
   type Goal,
   type Mode,
   type PartInfo,
@@ -33,9 +37,11 @@ export interface QueueRepository {
 }
 
 /** Ports owned by this module. A rejection is a dependency failure, never "does not exist". */
-export type ProjectReader = (
-  id: string,
-) => Promise<{ items: readonly { partId: string; quantity: number }[] } | null>;
+export type ProjectReader = (id: string) => Promise<{
+  items: readonly { partId: string; filamentId: string | null; quantity: number }[];
+} | null>;
+/** The live spools among the ids, in one call. A missing id is unknown or deleted (ADR 0036). */
+export type FilamentLookup = (ids: string[]) => Promise<ReadonlyMap<string, FilamentInfo>>;
 /** The live parts among the ids, in one call. A missing id is unknown or deleted. */
 export type PartLookup = (ids: string[]) => Promise<ReadonlyMap<string, PartInfo>>;
 /** The ids that are live and not archived printers. */
@@ -87,6 +93,7 @@ export function createQueuesService(deps: {
   repository: QueueRepository;
   projectReader: ProjectReader;
   partLookup: PartLookup;
+  filamentLookup: FilamentLookup;
   printerLookup: PrinterLookup;
   clock: Clock;
 }): QueuesService {
@@ -99,15 +106,27 @@ export function createQueuesService(deps: {
       ? new Map()
       : dependable(() => deps.partLookup([...new Set(lines.map((line) => line.partId))]));
 
-  /** Parts and printers that do not exist (or are archived), with indexed paths. */
+  /** A legacy line without a spool is not looked up. */
+  const lookupFilaments = async (
+    lines: readonly QueueLine[],
+  ): Promise<ReadonlyMap<string, FilamentInfo>> => {
+    const ids = [
+      ...new Set(lines.flatMap((line) => (line.filamentId === null ? [] : [line.filamentId]))),
+    ];
+    return ids.length === 0 ? new Map() : dependable(() => deps.filamentLookup(ids));
+  };
+
+  /** Parts, spools and printers that do not exist (or are archived), with indexed paths. */
   async function referenceIssues(
     lines: readonly QueueLine[] | undefined,
     printerIds: readonly string[] | undefined,
     // Part ids kept as they are (an edit does not re-check the lines it did not touch).
     unchanged: ReadonlySet<string> = new Set(),
   ): Promise<FieldIssue[]> {
-    const [parts, selectable] = await Promise.all([
+    const [parts, filaments, selectable] = await Promise.all([
       lookupParts((lines ?? []).filter((line) => !unchanged.has(line.partId))),
+      // Every spool is checked, even on an untouched line: saving is held until it is replaced.
+      lookupFilaments(lines ?? []),
       printerIds === undefined || printerIds.length === 0
         ? Promise.resolve(new Set<string>())
         : dependable(() => deps.printerLookup([...new Set(printerIds)])),
@@ -117,6 +136,11 @@ export function createQueuesService(deps: {
         unchanged.has(line.partId) || parts.has(line.partId)
           ? []
           : [{ path: `lines.${String(index)}.partId`, message: 'The part does not exist.' }],
+      ),
+      ...(lines ?? []).flatMap((line, index) =>
+        line.filamentId === null || filaments.has(line.filamentId)
+          ? []
+          : [{ path: `lines.${String(index)}.filamentId`, message: 'The spool does not exist.' }],
       ),
       ...(printerIds ?? []).flatMap((id, index) =>
         selectable.has(id)
@@ -133,12 +157,15 @@ export function createQueuesService(deps: {
 
   /** The queue with the parts as they are now, and its totals. */
   async function detail(queue: Queue): Promise<QueueDetail> {
-    const parts = await lookupParts(queue.lines);
+    const [parts, filaments] = await Promise.all([
+      lookupParts(queue.lines),
+      lookupFilaments(queue.lines),
+    ]);
     const totals = queueTotals(queue.lines, parts);
     if (totals === null) {
       throw new AppError('internal', 'The queue totals are out of range.');
     }
-    return { queue, parts, totals };
+    return { queue, parts, filaments, totals };
   }
 
   return {
@@ -146,17 +173,28 @@ export function createQueuesService(deps: {
       const rules = [
         ...printerSelectionIssues(input.mode, input.printerIds),
         ...lineIssues(input.lines ?? []),
+        ...newQueueLineIssues(input.lines ?? []),
+        ...missingSpoolIssues(input.lines ?? []),
       ];
       if (rules.length > 0) throw invalid(rules);
 
       const project = await dependable(() => deps.projectReader(input.projectId));
-      const lines =
+      const lines: readonly QueueLine[] =
         input.lines ??
-        project?.items.map(({ partId, quantity }) => ({ partId, quantity, completed: 0 })) ??
+        project?.items.map(({ partId, filamentId, quantity }) => ({
+          partId,
+          filamentId,
+          quantity,
+          completed: 0,
+        })) ??
         [];
       const issues = [
         ...(project === null
           ? [{ path: 'projectId', message: 'The project does not exist.' }]
+          : []),
+        // Copied lines: a project line that still has no spool blocks the queue.
+        ...(input.lines === undefined
+          ? missingSpoolIssues(lines, 'Assign a spool to this line in the project first.')
           : []),
         ...(await referenceIssues(lines, input.printerIds)),
       ];
@@ -189,7 +227,13 @@ export function createQueuesService(deps: {
           patch.mode ?? current.mode,
           patch.printerIds ?? current.printerIds,
         ),
-        ...(patch.lines === undefined ? [] : lineIssues(patch.lines)),
+        ...(patch.lines === undefined
+          ? []
+          : [
+              ...lineIssues(patch.lines),
+              ...missingSpoolIssues(patch.lines),
+              ...lockedLineIssues(current.lines, patch.lines),
+            ]),
       ];
       if (rules.length > 0) throw invalid(rules);
       // Only what is new is checked: a printer archived or a part deleted later must not block an

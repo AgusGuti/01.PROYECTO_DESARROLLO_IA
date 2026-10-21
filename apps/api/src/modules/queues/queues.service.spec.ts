@@ -12,6 +12,8 @@ import {
   PRINTER_1,
   PRINTER_2,
   PROJECT_ID,
+  SPOOL_1,
+  SPOOL_2,
   validFields,
 } from './testing/fakes.js';
 
@@ -44,7 +46,7 @@ describe('create', () => {
 
     const { queue, totals } = await service.create(input);
 
-    expect(queue.lines).toEqual([line(PART_A, 4), line(PART_B, 2)]);
+    expect(queue.lines).toEqual([line(PART_A, 4, 0, SPOOL_1), line(PART_B, 2, 0, SPOOL_2)]);
     expect(queue.version).toBe(1);
     // 4 x 3600 + 2 x 600
     expect(totals).toEqual({
@@ -59,9 +61,71 @@ describe('create', () => {
   it('keeps the lines it is given and ignores the project items', async () => {
     const { service } = setup();
 
-    const { queue } = await service.create({ ...input, lines: [line(PART_B, 3, 1)] });
+    const { queue } = await service.create({ ...input, lines: [line(PART_B, 3, 0, SPOOL_2)] });
 
-    expect(queue.lines).toEqual([line(PART_B, 3, 1)]);
+    expect(queue.lines).toEqual([line(PART_B, 3, 0, SPOOL_2)]);
+  });
+
+  it('copies two project lines of one part with different spools', async () => {
+    const { service, ports } = setup();
+    ports.projects.set(PROJECT_ID, [
+      { partId: PART_A, filamentId: SPOOL_1, quantity: 2 },
+      { partId: PART_A, filamentId: SPOOL_2, quantity: 3 },
+    ]);
+
+    const { queue } = await service.create(input);
+
+    expect(queue.lines).toEqual([line(PART_A, 2, 0, SPOOL_1), line(PART_A, 3, 0, SPOOL_2)]);
+  });
+
+  it('rejects, naming the line, a project line without a spool', async () => {
+    const { service, repository, ports } = setup();
+    ports.projects.set(PROJECT_ID, [
+      { partId: PART_A, filamentId: SPOOL_1, quantity: 2 },
+      { partId: PART_B, filamentId: null, quantity: 3 },
+    ]);
+
+    const error = await failureOf(service.create(input));
+
+    expect(error.issues).toEqual([
+      { path: 'lines.1.filamentId', message: 'Assign a spool to this line in the project first.' },
+    ]);
+    expect(repository.stored.size).toBe(0);
+  });
+
+  it('rejects printed pieces on create', async () => {
+    const { service } = setup();
+
+    const error = await failureOf(service.create({ ...input, lines: [line(PART_A, 3, 1)] }));
+
+    expect(error.issues.map((issue) => issue.path)).toEqual(['lines.0.completed']);
+  });
+
+  it('rejects a given line without a spool and a repeated pair', async () => {
+    const { service } = setup();
+
+    const error = await failureOf(
+      service.create({
+        ...input,
+        lines: [line(PART_A, 1, 0, null), line(PART_B, 1), line(PART_B, 1)],
+      }),
+    );
+
+    expect(error.issues.map((issue) => issue.path)).toEqual([
+      'lines.2.filamentId',
+      'lines.0.filamentId',
+    ]);
+  });
+
+  it('reports a spool that was deleted since the project was saved', async () => {
+    const { service, ports } = setup();
+    ports.filaments.delete(SPOOL_2);
+
+    const error = await failureOf(service.create(input));
+
+    expect(error.issues).toEqual([
+      { path: 'lines.1.filamentId', message: 'The spool does not exist.' },
+    ]);
   });
 
   it('reports a missing project, missing parts and bad printers all at once', async () => {
@@ -114,7 +178,7 @@ describe('create', () => {
     expect(error).toMatchObject({ code: 'conflict', issues: [{ path: 'projectId' }] });
   });
 
-  it.each(['project', 'parts', 'printers'] as const)(
+  it.each(['project', 'parts', 'filaments', 'printers'] as const)(
     'answers a generic 503 and writes nothing when the %s port fails',
     async (failing) => {
       const { service, repository, ports } = setup();
@@ -283,13 +347,107 @@ describe('update', () => {
 
   it('replaces the lines and reports a missing part by index', async () => {
     const { service, repository } = setup();
-    repository.seed(PROJECT_ID);
+    repository.seed(PROJECT_ID, { ...validFields, lines: [line(PART_A, 4)] });
 
     const error = await failureOf(
       service.update(PROJECT_ID, { version: 1, lines: [line(PART_B, 1), line(PART_C, 1)] }),
     );
 
     expect(error.issues).toEqual([{ path: 'lines.1.partId', message: 'The part does not exist.' }]);
+  });
+});
+
+describe('update lines and spools', () => {
+  const seeded = { ...validFields, lines: [line(PART_A, 4, 2, SPOOL_1), line(PART_B, 2)] };
+
+  it('splits a printed line: it shrinks to its completed and another spool takes the rest', async () => {
+    const { service, repository } = setup();
+    repository.seed(PROJECT_ID, seeded);
+
+    const { queue } = await service.update(PROJECT_ID, {
+      version: 1,
+      lines: [line(PART_A, 2, 2, SPOOL_1), line(PART_A, 2, 0, SPOOL_2), line(PART_B, 2)],
+    });
+
+    expect(queue.lines).toHaveLength(3);
+    expect(queue.version).toBe(2);
+  });
+
+  it.each([
+    ['changes the spool', [line(PART_A, 4, 2, SPOOL_2), line(PART_B, 2)]],
+    ['is removed', [line(PART_B, 2)]],
+  ])('rejects a printed line that %s', async (_label, lines) => {
+    const { service, repository } = setup();
+    repository.seed(PROJECT_ID, seeded);
+
+    const error = await failureOf(service.update(PROJECT_ID, { version: 1, lines }));
+
+    expect(error).toMatchObject({ code: 'validation_failed', issues: [{ path: 'lines' }] });
+    expect(error.issues[0]?.message).toMatch(/split/);
+    expect(repository.calls).not.toContain('update');
+  });
+
+  it('lets a legacy printed line without a spool gain one', async () => {
+    const { service, repository } = setup();
+    repository.seed(PROJECT_ID, { ...validFields, lines: [line(PART_A, 4, 2, null)] });
+
+    const { queue } = await service.update(PROJECT_ID, {
+      version: 1,
+      lines: [line(PART_A, 4, 2, SPOOL_2)],
+    });
+
+    expect(queue.lines).toEqual([line(PART_A, 4, 2, SPOOL_2)]);
+  });
+
+  it('rejects a legacy line saved again without a spool', async () => {
+    const { service, repository } = setup();
+    repository.seed(PROJECT_ID, { ...validFields, lines: [line(PART_A, 4, 0, null)] });
+
+    const error = await failureOf(
+      service.update(PROJECT_ID, { version: 1, lines: [line(PART_A, 5, 0, null)] }),
+    );
+
+    expect(error.issues.map((issue) => issue.path)).toEqual(['lines.0.filamentId']);
+  });
+
+  it('rejects a spool that does not exist, even on an untouched line', async () => {
+    const { service, repository, ports } = setup();
+    repository.seed(PROJECT_ID, seeded);
+    ports.filaments.delete(SPOOL_1);
+
+    const error = await failureOf(
+      service.update(PROJECT_ID, {
+        version: 1,
+        lines: [line(PART_A, 4, 2, SPOOL_1), line(PART_B, 2)],
+      }),
+    );
+
+    expect(error.issues).toEqual([
+      { path: 'lines.0.filamentId', message: 'The spool does not exist.' },
+      { path: 'lines.1.filamentId', message: 'The spool does not exist.' },
+    ]);
+  });
+
+  it('answers 503 when the spool lookup fails and writes nothing', async () => {
+    const { service, repository, ports } = setup();
+    repository.seed(PROJECT_ID, seeded);
+    ports.failing = 'filaments';
+
+    const error = await failureOf(
+      service.update(PROJECT_ID, { version: 1, lines: [line(PART_A, 4, 2), line(PART_B, 2)] }),
+    );
+
+    expect(error.code).toBe('service_unavailable');
+    expect(repository.calls).not.toContain('update');
+  });
+
+  it('still answers 409 for a stale version before checking the lines', async () => {
+    const { service, repository } = setup();
+    repository.seed(PROJECT_ID, seeded);
+
+    const error = await failureOf(service.update(PROJECT_ID, { version: 5, lines: [] }));
+
+    expect(error.code).toBe('conflict');
   });
 });
 

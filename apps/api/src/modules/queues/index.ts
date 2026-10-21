@@ -7,6 +7,7 @@ import { createMongoQueueRepository } from './queues.repository.js';
 import { createQueuesRouter } from './queues.routes.js';
 import {
   createQueuesService,
+  type FilamentLookup,
   type PartLookup,
   type PrinterLookup,
   type ProjectReader,
@@ -14,7 +15,7 @@ import {
 } from './queues.service.js';
 
 export { registerQueuesPaths } from './queues.openapi.js';
-export type { PartLookup, PrinterLookup, ProjectReader } from './queues.service.js';
+export type { FilamentLookup, PartLookup, PrinterLookup, ProjectReader } from './queues.service.js';
 
 /**
  * Builds the simulations module's queue port (ADR 0026): the stored queue of a project, or null.
@@ -26,7 +27,7 @@ export function createSimulationQueueReader(
   goal: Goal;
   mode: Mode;
   printerIds: string[];
-  lines: { partId: string; quantity: number; completed: number }[];
+  lines: { partId: string; filamentId: string | null; quantity: number; completed: number }[];
 } | null> {
   return async (projectId) => {
     const queue = await repository.findById(projectId);
@@ -35,8 +36,9 @@ export function createSimulationQueueReader(
       goal: queue.goal,
       mode: queue.mode,
       printerIds: [...queue.printerIds],
-      lines: queue.lines.map(({ partId, quantity, completed }) => ({
+      lines: queue.lines.map(({ partId, filamentId, quantity, completed }) => ({
         partId,
+        filamentId,
         quantity,
         completed,
       })),
@@ -65,6 +67,7 @@ export function createQueuesModule(deps: {
   /** Read ports owned by this module, built in app.ts from each provider (ADR 0017). */
   projectReader: ProjectReader;
   partLookup: PartLookup;
+  filamentLookup: FilamentLookup;
   printerLookup: PrinterLookup;
   /** Tests inject a fake; production uses MongoDB. */
   repository?: QueueRepository;
@@ -73,6 +76,7 @@ export function createQueuesModule(deps: {
     repository: deps.repository ?? createMongoQueueRepository(),
     projectReader: deps.projectReader,
     partLookup: deps.partLookup,
+    filamentLookup: deps.filamentLookup,
     printerLookup: deps.printerLookup,
     clock: deps.clock,
   });

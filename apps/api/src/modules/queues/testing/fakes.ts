@@ -1,8 +1,9 @@
 // Test doubles for the queues module: in-memory repository, the three ports and a movable clock.
 import { AppError } from '../../../shared/errors/app-error.js';
 import type { Clock } from '../../health/index.js';
-import type { PartInfo, Queue, QueueFields, QueueLine } from '../queues.domain.js';
+import type { FilamentInfo, PartInfo, Queue, QueueFields, QueueLine } from '../queues.domain.js';
 import type {
+  FilamentLookup,
   PartLookup,
   PrinterLookup,
   ProjectReader,
@@ -23,8 +24,17 @@ export const PRINTER_1 = 'd'.repeat(24);
 export const PRINTER_2 = 'e'.repeat(24);
 export const PRINTER_3 = 'f'.repeat(24);
 
-export const line = (partId: string, quantity: number, completed = 0): QueueLine => ({
+export const SPOOL_1 = '7'.repeat(24);
+export const SPOOL_2 = '8'.repeat(24);
+
+export const line = (
+  partId: string,
+  quantity: number,
+  completed = 0,
+  filamentId: string | null = SPOOL_1,
+): QueueLine => ({
   partId,
+  filamentId,
   quantity,
   completed,
 });
@@ -122,16 +132,19 @@ export function createFakeQueueRepository(): FakeQueueRepository {
 export interface FakePorts {
   readonly projectReader: ProjectReader;
   readonly partLookup: PartLookup;
+  readonly filamentLookup: FilamentLookup;
   readonly printerLookup: PrinterLookup;
   /** project id -> its lines. Anything else is unknown or removed. */
-  readonly projects: Map<string, { partId: string; quantity: number }[]>;
+  readonly projects: Map<string, { partId: string; filamentId: string | null; quantity: number }[]>;
   readonly parts: Map<string, PartInfo>;
+  /** The live spools. Anything else is unknown or deleted. */
+  readonly filaments: Map<string, FilamentInfo>;
   /** Live, not archived printers. */
   readonly printers: Set<string>;
   /** The ids asked on every part lookup, in order. */
   readonly partCalls: string[][];
   /** When set, the named port rejects with this error (a dependency failure). */
-  failing: 'project' | 'parts' | 'printers' | undefined;
+  failing: 'project' | 'parts' | 'filaments' | 'printers' | undefined;
 }
 
 export function createFakePorts(): FakePorts {
@@ -140,14 +153,18 @@ export function createFakePorts(): FakePorts {
       [
         PROJECT_ID,
         [
-          { partId: PART_A, quantity: 4 },
-          { partId: PART_B, quantity: 2 },
+          { partId: PART_A, filamentId: SPOOL_1, quantity: 4 },
+          { partId: PART_B, filamentId: SPOOL_2, quantity: 2 },
         ],
       ],
     ]),
     parts: new Map([
       [PART_A, { name: 'Soporte en L', estimatedPrintSeconds: 3600 }],
       [PART_B, { name: 'Florero', estimatedPrintSeconds: 600 }],
+    ]),
+    filaments: new Map<string, FilamentInfo>([
+      [SPOOL_1, { brand: 'Grilon3', material: 'PETG', colorName: 'Negro', availableGrams: 800 }],
+      [SPOOL_2, { brand: 'Printalot', material: 'PLA', colorName: 'Rojo', availableGrams: 450 }],
     ]),
     printers: new Set([PRINTER_1, PRINTER_2, PRINTER_3]),
     partCalls: [],
@@ -165,6 +182,15 @@ export function createFakePorts(): FakePorts {
       for (const id of ids) {
         const part = ports.parts.get(id);
         if (part !== undefined) found.set(id, part);
+      }
+      return Promise.resolve(found);
+    },
+    filamentLookup(ids) {
+      if (ports.failing === 'filaments') return Promise.reject(new Error('boom'));
+      const found = new Map<string, FilamentInfo>();
+      for (const id of ids) {
+        const spool = ports.filaments.get(id);
+        if (spool !== undefined) found.set(id, spool);
       }
       return Promise.resolve(found);
     },

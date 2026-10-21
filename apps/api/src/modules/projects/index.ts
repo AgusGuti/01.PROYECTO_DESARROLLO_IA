@@ -24,12 +24,20 @@ export type { FilamentLookup, PartLookup } from './projects.service.js';
  */
 export function createQueueProjectReader(
   repository: Pick<ProjectRepository, 'findLiveById'> = createMongoProjectRepository(),
-): (id: string) => Promise<{ items: { partId: string; quantity: number }[] } | null> {
+): (id: string) => Promise<{
+  items: { partId: string; filamentId: string | null; quantity: number }[];
+} | null> {
   return async (id) => {
     const project = await repository.findLiveById(id);
     return project === null
       ? null
-      : { items: project.items.map(({ partId, quantity }) => ({ partId, quantity })) };
+      : {
+          items: project.items.map(({ partId, filamentId, quantity }) => ({
+            partId,
+            filamentId,
+            quantity,
+          })),
+        };
   };
 }
 

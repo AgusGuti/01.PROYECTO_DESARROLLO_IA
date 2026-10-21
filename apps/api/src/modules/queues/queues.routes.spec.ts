@@ -11,10 +11,13 @@ import {
   createTestClock,
   line,
   PART_A,
+  PART_B,
   PART_C,
   PRINTER_1,
   PRINTER_2,
   PROJECT_ID,
+  SPOOL_1,
+  SPOOL_2,
 } from './testing/fakes.js';
 
 const QUEUES = '/api/v1/queues';
@@ -63,8 +66,75 @@ describe('POST /api/v1/queues', () => {
     const dto = queueSchema.parse(response.body);
     expect(Object.keys(response.body as object).sort()).toEqual(KEYS);
     expect(dto.lines[0]).toMatchObject({ partId: PART_A, partName: 'Soporte en L', completed: 0 });
+    // The spools of the project lines are copied and shown as they are now.
+    expect(dto.lines[0]).toMatchObject({
+      filamentId: SPOOL_1,
+      filament: { brand: 'Grilon3', material: 'PETG', colorName: 'Negro', availableGrams: 800 },
+      filamentDeleted: false,
+    });
+    expect(dto.lines[1]?.filamentId).toBe(SPOOL_2);
+    expect(Object.keys(dto.lines[0] ?? {}).sort()).toEqual([
+      'completed',
+      'estimatedPrintSeconds',
+      'filament',
+      'filamentDeleted',
+      'filamentId',
+      'partDeleted',
+      'partId',
+      'partName',
+      'pendingUnits',
+      'quantity',
+    ]);
     expect(dto.totals.pendingSeconds).toBe(15_600);
     expect(dto.version).toBe(1);
+  });
+
+  it('answers 400 on lines.1.filamentId when a project line has no spool', async () => {
+    const { app, ports, repository } = setup();
+    ports.projects.set(PROJECT_ID, [
+      { partId: PART_A, filamentId: SPOOL_1, quantity: 1 },
+      { partId: PART_A, filamentId: null, quantity: 1 },
+    ]);
+
+    const problem = expectProblem(
+      await request(app).post(QUEUES).send(body),
+      400,
+      'validation_failed',
+    );
+
+    expect(problem.issues).toEqual([
+      { path: 'lines.1.filamentId', message: 'Assign a spool to this line in the project first.' },
+    ]);
+    expect(repository.stored.size).toBe(0);
+  });
+
+  it.each([
+    ['a null spool', [{ partId: PART_A, filamentId: null, quantity: 1 }], 'lines.0.filamentId'],
+    ['no spool', [{ partId: PART_A, quantity: 1 }], 'lines.0.filamentId'],
+    [
+      'printed pieces',
+      [{ partId: PART_A, filamentId: SPOOL_1, quantity: 2, completed: 1 }],
+      'lines.0.completed',
+    ],
+    [
+      'a repeated part and spool',
+      [
+        { partId: PART_A, filamentId: SPOOL_1, quantity: 1 },
+        { partId: PART_A, filamentId: SPOOL_1, quantity: 1 },
+      ],
+      'lines.1.filamentId',
+    ],
+  ])('answers 400 on %s in the given lines', async (_label, lines, path) => {
+    const { app, repository } = setup();
+
+    const response = await request(app)
+      .post(QUEUES)
+      .send({ ...body, lines });
+
+    expect(expectProblem(response, 400, 'validation_failed').issues?.map((i) => i.path)).toEqual([
+      path,
+    ]);
+    expect(repository.stored.size).toBe(0);
   });
 
   it('answers 400 listing every problem at once with indexed paths', async () => {
@@ -75,7 +145,7 @@ describe('POST /api/v1/queues', () => {
       .send({
         ...body,
         projectId: '9'.repeat(24),
-        lines: [{ partId: PART_C, quantity: 1 }],
+        lines: [{ partId: PART_C, filamentId: SPOOL_1, quantity: 1 }],
       });
 
     expect(expectProblem(response, 400, 'validation_failed').issues?.map((i) => i.path)).toEqual([
@@ -228,6 +298,107 @@ describe('PATCH /api/v1/queues/:projectId', () => {
   });
 });
 
+describe('PATCH lines and spools', () => {
+  const seeded = {
+    goal: 'fastest',
+    mode: 'single',
+    printerIds: [PRINTER_1],
+    lines: [line(PART_A, 4, 2, SPOOL_1)],
+  } as const;
+  const wire = (
+    partId: string,
+    filamentId: string | null,
+    quantity: number,
+    completed: number,
+  ) => ({
+    partId,
+    filamentId,
+    quantity,
+    completed,
+  });
+
+  it('splits a printed line through the same PATCH', async () => {
+    const { app, repository } = setup();
+    repository.seed(PROJECT_ID, seeded);
+
+    const response = await request(app)
+      .patch(ONE)
+      .send({ version: 1, lines: [wire(PART_A, SPOOL_1, 2, 2), wire(PART_A, SPOOL_2, 2, 0)] });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      version: 2,
+      lines: [
+        { filamentId: SPOOL_1, quantity: 2, completed: 2, pendingUnits: 0 },
+        { filamentId: SPOOL_2, quantity: 2, completed: 0, pendingUnits: 2 },
+      ],
+    });
+  });
+
+  it('answers 400 on lines when a printed line changes its spool', async () => {
+    const { app, repository } = setup();
+    repository.seed(PROJECT_ID, seeded);
+
+    const response = await request(app)
+      .patch(ONE)
+      .send({ version: 1, lines: [wire(PART_A, SPOOL_2, 4, 2)] });
+
+    expect(expectProblem(response, 400, 'validation_failed').issues?.[0]?.path).toBe('lines');
+  });
+
+  it('answers 400 on lines.0.filamentId for a null spool and for a deleted spool', async () => {
+    const { app, repository, ports } = setup();
+    repository.seed(PROJECT_ID, { ...seeded, lines: [line(PART_A, 4, 0)] });
+
+    const missing = await request(app)
+      .patch(ONE)
+      .send({ version: 1, lines: [wire(PART_A, null, 4, 0)] });
+    ports.filaments.delete(SPOOL_2);
+    const gone = await request(app)
+      .patch(ONE)
+      .send({ version: 1, lines: [wire(PART_A, SPOOL_2, 4, 0)] });
+
+    expect(expectProblem(missing, 400, 'validation_failed').issues?.[0]?.path).toBe(
+      'lines.0.filamentId',
+    );
+    expect(expectProblem(gone, 400, 'validation_failed').issues).toEqual([
+      { path: 'lines.0.filamentId', message: 'The spool does not exist.' },
+    ]);
+  });
+
+  it('answers 503 when the spool lookup fails', async () => {
+    const { app, repository, ports } = setup();
+    repository.seed(PROJECT_ID, { ...seeded, lines: [line(PART_A, 4, 0)] });
+    ports.failing = 'filaments';
+
+    expectProblem(
+      await request(app)
+        .patch(ONE)
+        .send({ version: 1, lines: [wire(PART_A, SPOOL_1, 4, 0)] }),
+      503,
+      'service_unavailable',
+    );
+  });
+
+  it('shows a line whose spool is gone with filament null and filamentDeleted, and a legacy line without', async () => {
+    const { app, repository, ports } = setup();
+    repository.seed(PROJECT_ID, {
+      ...seeded,
+      lines: [line(PART_A, 4, 0, SPOOL_1), line(PART_B, 1, 0, null)],
+    });
+    ports.filaments.delete(SPOOL_1);
+
+    const response = await request(app).get(ONE);
+
+    expect(response.body).toMatchObject({
+      lines: [
+        { filamentId: SPOOL_1, filament: null, filamentDeleted: true },
+        { filamentId: null, filament: null, filamentDeleted: false },
+      ],
+    });
+  });
+});
+
 describe('PATCH with a deleted part', () => {
   it('accepts completed and quantity changes on it, rejects a new missing part and a line without completed', async () => {
     const { app, repository } = setup();
@@ -240,14 +411,17 @@ describe('PATCH with a deleted part', () => {
 
     const ok = await request(app)
       .patch(ONE)
-      .send({ version: 1, lines: [{ partId: PART_C, quantity: 6, completed: 4 }] });
+      .send({
+        version: 1,
+        lines: [{ partId: PART_C, filamentId: SPOOL_1, quantity: 6, completed: 4 }],
+      });
     const added = await request(app)
       .patch(ONE)
       .send({
         version: 2,
         lines: [
-          { partId: PART_C, quantity: 6, completed: 4 },
-          { partId: '9'.repeat(24), quantity: 1, completed: 0 },
+          { partId: PART_C, filamentId: SPOOL_1, quantity: 6, completed: 4 },
+          { partId: '9'.repeat(24), filamentId: SPOOL_1, quantity: 1, completed: 0 },
         ],
       });
     const noCompleted = await request(app)

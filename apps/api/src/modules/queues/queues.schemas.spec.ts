@@ -7,7 +7,15 @@ import {
   queueParamsSchema,
   updateQueueSchema,
 } from './queues.schemas.js';
-import { PART_A, PART_B, PRINTER_1, PRINTER_2, PROJECT_ID } from './testing/fakes.js';
+import {
+  PART_A,
+  PART_B,
+  PRINTER_1,
+  PRINTER_2,
+  PROJECT_ID,
+  SPOOL_1,
+  SPOOL_2,
+} from './testing/fakes.js';
 
 const valid = { projectId: PROJECT_ID, goal: 'fastest', mode: 'single', printerIds: [PRINTER_1] };
 
@@ -35,10 +43,12 @@ describe('createQueueSchema', () => {
   it('defaults completed to 0', () => {
     const parsed = parseInput(createQueueSchema, {
       ...valid,
-      lines: [{ partId: PART_A, quantity: 2 }],
+      lines: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 2 }],
     });
 
-    expect(parsed.lines).toEqual([{ partId: PART_A, quantity: 2, completed: 0 }]);
+    expect(parsed.lines).toEqual([
+      { partId: PART_A, filamentId: SPOOL_1, quantity: 2, completed: 0 },
+    ]);
   });
 
   it.each([
@@ -59,28 +69,32 @@ describe('createQueueSchema', () => {
       { ...valid, mode: 'multi', printerIds: [PRINTER_1, PRINTER_1] },
       ['printerIds.1'],
     ],
-    ['quantity 0', { ...valid, lines: [{ partId: PART_A, quantity: 0 }] }, ['lines.0.quantity']],
     [
-      'quantity 1001',
-      { ...valid, lines: [{ partId: PART_A, quantity: 1001 }] },
+      'quantity 0',
+      { ...valid, lines: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 0 }] },
       ['lines.0.quantity'],
     ],
     [
-      'completed above quantity',
-      { ...valid, lines: [{ partId: PART_A, quantity: 2, completed: 3 }] },
+      'quantity 1001',
+      { ...valid, lines: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 1001 }] },
+      ['lines.0.quantity'],
+    ],
+    [
+      'printed pieces on a new queue',
+      { ...valid, lines: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 2, completed: 3 }] },
       ['lines.0.completed'],
     ],
     [
-      'a repeated part',
+      'a repeated part and spool',
       {
         ...valid,
         lines: [
-          { partId: PART_A, quantity: 1 },
-          { partId: PART_B, quantity: 1 },
-          { partId: PART_A, quantity: 1 },
+          { partId: PART_A, filamentId: SPOOL_1, quantity: 1 },
+          { partId: PART_B, filamentId: SPOOL_1, quantity: 1 },
+          { partId: PART_A, filamentId: SPOOL_1, quantity: 1 },
         ],
       },
-      ['lines.2.partId'],
+      ['lines.2.filamentId'],
     ],
     [
       '101 lines',
@@ -88,18 +102,46 @@ describe('createQueueSchema', () => {
         ...valid,
         lines: Array.from({ length: 101 }, (_, i) => ({
           partId: i.toString(16).padStart(24, '0'),
+          filamentId: SPOOL_1,
           quantity: 1,
         })),
       },
       ['lines'],
     ],
     [
+      'a line without a spool',
+      { ...valid, lines: [{ partId: PART_A, quantity: 1 }] },
+      ['lines.0.filamentId'],
+    ],
+    [
+      'a null spool',
+      { ...valid, lines: [{ partId: PART_A, filamentId: null, quantity: 1 }] },
+      ['lines.0.filamentId'],
+    ],
+    [
+      'a malformed spool id',
+      { ...valid, lines: [{ partId: PART_A, filamentId: 'x', quantity: 1 }] },
+      ['lines.0.filamentId'],
+    ],
+    [
       'an unknown key inside a line',
-      { ...valid, lines: [{ partId: PART_A, quantity: 1, price: 1 }] },
+      { ...valid, lines: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 1, price: 1 }] },
       ['lines.0'],
     ],
   ])('rejects %s', (_label, body, expected) => {
     expect(paths(createQueueSchema, body)).toEqual(expected);
+  });
+
+  it('accepts the same part with two different spools', () => {
+    const parsed = parseInput(createQueueSchema, {
+      ...valid,
+      lines: [
+        { partId: PART_A, filamentId: SPOOL_1, quantity: 1 },
+        { partId: PART_A, filamentId: SPOOL_2, quantity: 1 },
+      ],
+    });
+
+    expect(parsed.lines).toHaveLength(2);
   });
 
   it('accepts 100 lines and a multi selection of 10 printers', () => {
@@ -109,8 +151,9 @@ describe('createQueueSchema', () => {
       printerIds: Array.from({ length: 10 }, (_, i) => i.toString(16).padStart(24, '0')),
       lines: Array.from({ length: 100 }, (_, i) => ({
         partId: i.toString(16).padStart(24, '0'),
+        filamentId: SPOOL_1,
         quantity: 1000,
-        completed: 1000,
+        completed: 0,
       })),
     });
 
@@ -126,9 +169,21 @@ describe('updateQueueSchema', () => {
     });
   });
 
+  it('requires a spool in every replaced line', () => {
+    expect(
+      paths(updateQueueSchema, {
+        version: 1,
+        lines: [{ partId: PART_A, filamentId: null, quantity: 2, completed: 0 }],
+      }),
+    ).toEqual(['lines.0.filamentId']);
+  });
+
   it('requires completed in every replaced line', () => {
     expect(
-      paths(updateQueueSchema, { version: 1, lines: [{ partId: PART_A, quantity: 2 }] }),
+      paths(updateQueueSchema, {
+        version: 1,
+        lines: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 2 }],
+      }),
     ).toEqual(['lines.0.completed']);
   });
 

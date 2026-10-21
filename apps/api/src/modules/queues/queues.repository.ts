@@ -20,7 +20,8 @@ interface StoredQueue {
   goal: Goal;
   mode: Mode;
   printerIds: string[];
-  lines: QueueLine[];
+  // A line stored before ADR 0036 has no `filamentId` at all.
+  lines: (Omit<QueueLine, 'filamentId'> & { filamentId?: string | null })[];
   version: number;
   createdAt: Date;
   updatedAt: Date;
@@ -34,9 +35,11 @@ interface StoredQueue {
 // is off so a call fails at once when the database is down. The validators repeat the API limits
 // as defence in depth.
 const wholeNumber = { validator: Number.isInteger, message: '{PATH} must be a whole number.' };
-const lineSchema = new Schema<QueueLine>(
+const lineSchema = new Schema<StoredQueue['lines'][number]>(
   {
     partId: { type: String, required: true },
+    // Optional in the database only for lines saved before ADR 0036 (read as null, expand-only).
+    filamentId: { type: String, required: false, match: /^[0-9a-f]{24}$/ },
     quantity: { type: Number, required: true, min: 1, max: MAX_QUANTITY, validate: wholeNumber },
     completed: { type: Number, required: true, min: 0, max: MAX_QUANTITY, validate: wholeNumber },
   },
@@ -67,8 +70,14 @@ queueSchema.index({ printerIds: 1 }, { name: 'queues_printer_ids' });
 
 const QueueModel = mongoose.model<StoredQueue>('Queue', queueSchema);
 
-const toLines = (lines: readonly QueueLine[]): QueueLine[] =>
-  lines.map(({ partId, quantity, completed }) => ({ partId, quantity, completed }));
+// A stored line without a spool reads as null.
+const toLines = (lines: StoredQueue['lines'] | readonly QueueLine[]): QueueLine[] =>
+  lines.map(({ partId, filamentId, quantity, completed }) => ({
+    partId,
+    filamentId: filamentId ?? null,
+    quantity,
+    completed,
+  }));
 
 function toQueue(stored: StoredQueue): Queue {
   return {

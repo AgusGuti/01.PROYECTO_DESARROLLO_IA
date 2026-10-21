@@ -197,6 +197,7 @@ export function createApp({
       clock,
       projectReader: createQueueProjectReader(projects.repository),
       partLookup: createQueuePartLookup(parts.repository),
+      filamentLookup: createFilamentSummaryLookup(filaments.repository),
       printerLookup: createSelectablePrinterLookup(printers.repository),
       ...queues,
     }).router,
