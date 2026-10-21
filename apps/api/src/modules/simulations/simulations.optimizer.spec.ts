@@ -234,9 +234,10 @@ describe('best_fit against the naive baseline', () => {
       'longest_first',
       'shortest_first',
       'best_fit',
+      'group_by_spool',
     ]);
     expect(result.candidates.map((entry) => entry.metrics.totalIdleMinutes)).toEqual([
-      840, 840, 480, 840, 420,
+      840, 840, 480, 840, 420, 480,
     ]);
   });
 
@@ -252,6 +253,8 @@ describe('goal keys', () => {
   const metrics = (over: Partial<PlanMetrics>): PlanMetrics => ({
     finishAt: 1000,
     totalIdleMinutes: 100,
+    totalSetupMinutes: 0,
+    filamentChanges: 0,
     placedUnits: 5,
     unplacedUnits: 0,
     deadlineMet: null,

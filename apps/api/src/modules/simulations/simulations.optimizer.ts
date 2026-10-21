@@ -9,8 +9,11 @@ import {
   HORIZON_DAYS,
   MINUTES_PER_DAY,
   minutesOf,
+  NO_SETUP,
+  setupBetween,
   simulateNaive,
   type Goal,
+  type SetupConfig,
   type SimulatedPrinter,
   type Simulation,
   type SimulationLine,
@@ -23,6 +26,7 @@ export const STRATEGIES = [
   'longest_first',
   'shortest_first',
   'best_fit',
+  'group_by_spool',
 ] as const;
 export type Strategy = (typeof STRATEGIES)[number];
 
@@ -73,6 +77,8 @@ export interface OptimizerLine {
   readonly partId: string;
   /** Units still to print. */
   readonly units: number;
+  /** Spool of the line; absent or null means unknown. Lines are per (part, spool). */
+  readonly filamentId?: string | null;
   readonly seconds: number;
   readonly size: Box;
 }
@@ -94,6 +100,9 @@ export interface Plate {
   readonly end: number;
   readonly handoff: number;
   readonly unattended: boolean;
+  readonly filamentId: string | null;
+  readonly setupMinutes: number;
+  readonly filamentChanged: boolean;
 }
 
 export interface Plan {
@@ -106,6 +115,8 @@ export interface Plan {
 export interface PlanMetrics {
   readonly finishAt: number | null;
   readonly totalIdleMinutes: number;
+  readonly totalSetupMinutes: number;
+  readonly filamentChanges: number;
   readonly placedUnits: number;
   readonly unplacedUnits: number;
   /** null without a deadline or with nothing to place. */
@@ -121,6 +132,8 @@ export interface OptimizerInput {
   readonly goal: Goal;
   /** `YYYY-MM-DD` or null. */
   readonly deadline: string | null;
+  /** Defaults to no setup time. */
+  readonly setup?: SetupConfig;
 }
 
 export interface Candidate {
@@ -141,6 +154,8 @@ export function metricsOf(plan: Plan, deadline: string | null): PlanMetrics {
   return {
     finishAt: plan.finishAt,
     totalIdleMinutes: plan.printers.reduce((sum, printer) => sum + printer.idleMinutes, 0),
+    totalSetupMinutes: plan.printers.reduce((sum, printer) => sum + printer.setupMinutes, 0),
+    filamentChanges: plan.printers.reduce((sum, printer) => sum + printer.filamentChanges, 0),
     placedUnits: plan.jobs.reduce((sum, job) => sum + job.units, 0),
     unplacedUnits,
     deadlineMet: deadlineMet(deadline, plan.finishAt, unplacedUnits),
@@ -161,6 +176,9 @@ function planOfNaive(simulation: Simulation): Plan {
       end: job.end,
       handoff: job.handoff,
       unattended: job.unattended,
+      filamentId: job.filamentId,
+      setupMinutes: job.setupMinutes,
+      filamentChanged: job.filamentChanged,
     })),
     printers: simulation.printers,
     unplaced: simulation.unplaced,
@@ -178,22 +196,32 @@ interface Option {
   readonly state: LineState;
   readonly pieces: number;
   readonly minutes: number;
+  /** Setup this plate needs on the printer that would receive it, and whether it changes spool. */
+  readonly setup: number;
+  readonly change: boolean;
+  readonly start: number;
+  readonly end: number;
 }
 
 /** Score of an option under a strategy: lexicographic, lower is better. */
-type Score = (option: Option, start: number, timeline: Timeline) => readonly number[];
+type Score = (option: Option, timeline: Timeline) => readonly number[];
 
+// Every score ends with "no spool change" as a tie-break (ADR 0036).
 const SCORES: Record<Exclude<Strategy, 'naive'>, Score> = {
-  queue_order: () => [0],
-  longest_first: (option) => [-option.minutes],
-  shortest_first: (option) => [option.minutes],
-  // Minimise the wait between the end of the plate and its collection; a longer plate wins a tie.
-  // A plate that could never be collected is the worst choice.
-  best_fit: (option, start, timeline) => {
-    const end = start + option.minutes;
-    const handoff = timeline.handoffFor(end);
-    return [handoff === null ? Number.MAX_SAFE_INTEGER : handoff - end, -option.minutes];
+  queue_order: (option) => [0, option.change ? 1 : 0],
+  longest_first: (option) => [-option.minutes, option.change ? 1 : 0],
+  shortest_first: (option) => [option.minutes, option.change ? 1 : 0],
+  // Minimise the wait between the real end of the plate (after its setup) and its collection; a
+  // longer plate wins a tie. A plate that could never be collected is the worst choice.
+  best_fit: (option, timeline) => {
+    const handoff = timeline.handoffFor(option.end);
+    return [
+      handoff === null ? Number.MAX_SAFE_INTEGER : handoff - option.end,
+      -option.minutes,
+      option.change ? 1 : 0,
+    ];
   },
+  group_by_spool: (option) => [option.change ? 1 : 0, -option.minutes],
 };
 
 /** The best-scoring option; a tie keeps the earlier one, which is the earlier queue line. */
@@ -227,7 +255,11 @@ function schedulePlates(
     jobs: 0,
     busy: 0,
     idle: 0,
+    setup: 0,
+    changes: 0,
+    lastFilamentId: null as string | null,
   }));
+  const config = input.setup ?? NO_SETUP;
   const placed: (Omit<Plate, 'platesInLine'> & { lineIndex: number })[] = [];
   const unplaced = new Map<string, number>();
 
@@ -238,8 +270,8 @@ function schedulePlates(
     const printer = printers.reduce((best, candidate) =>
       candidate.free < best.free ? candidate : best,
     );
-    const start = timeline.nextIntervention(printer.free, limit);
-    if (start === null) {
+    const setupStart = timeline.nextIntervention(printer.free, limit);
+    if (setupStart === null) {
       // Nothing more can start in the horizon: everything left is unplaced.
       for (const state of open) {
         unplaced.set(state.line.partId, (unplaced.get(state.line.partId) ?? 0) + state.remaining);
@@ -249,17 +281,20 @@ function schedulePlates(
     }
     const options = open.map((state): Option => {
       const pieces = Math.min(state.remaining, plateCapacity(state.line.size, printer.bed));
-      return {
-        state,
-        pieces,
-        minutes: plateMinutes(state.line.seconds, pieces, input.batchSavingBasisPoints),
-      };
+      const minutes = plateMinutes(state.line.seconds, pieces, input.batchSavingBasisPoints);
+      const { setup, change } = setupBetween(
+        printer.jobs === 0,
+        printer.lastFilamentId,
+        state.line.filamentId ?? null,
+        config,
+      );
+      const start = setupStart + setup;
+      return { state, pieces, minutes, setup, change, start, end: start + minutes };
     });
     const score = SCORES[strategy];
-    const chosen = choose(options, (option) => score(option, start, timeline));
-    const { state, pieces, minutes } = chosen;
+    const chosen = choose(options, (option) => score(option, timeline));
+    const { state, pieces, setup, change, start, end } = chosen;
     state.remaining -= pieces;
-    const end = start + minutes;
     const handoff = timeline.handoffFor(end);
     if (handoff === null) {
       unplaced.set(state.line.partId, (unplaced.get(state.line.partId) ?? 0) + pieces);
@@ -267,8 +302,11 @@ function schedulePlates(
     }
     printer.busy += end - start;
     printer.idle += handoff - end;
+    printer.setup += setup;
+    printer.changes += change ? 1 : 0;
     printer.jobs += 1;
     printer.free = handoff;
+    printer.lastFilamentId = state.line.filamentId ?? null;
     state.plates += 1;
     placed.push({
       order: placed.length + 1,
@@ -280,7 +318,10 @@ function schedulePlates(
       start,
       end,
       handoff,
-      unattended: timeline.interventionMinutes(start, end) < end - start,
+      unattended: timeline.interventionMinutes(setupStart, end) < end - setupStart,
+      filamentId: state.line.filamentId ?? null,
+      setupMinutes: setup,
+      filamentChanged: change,
     });
   }
 
@@ -289,11 +330,13 @@ function schedulePlates(
       ...plate,
       platesInLine: states[lineIndex]?.plates ?? plate.plateIndex,
     })),
-    printers: printers.map(({ printerId, jobs, busy, idle }) => ({
+    printers: printers.map(({ printerId, jobs, busy, idle, setup, changes }) => ({
       printerId,
       jobs,
       busyMinutes: busy,
       idleMinutes: idle,
+      setupMinutes: setup,
+      filamentChanges: changes,
     })),
     unplaced: [...unplaced].map(([partId, units]) => ({ partId, units })),
     finishAt: placed.reduce<number | null>((last, job) => Math.max(last ?? 0, job.handoff), null),
@@ -306,11 +349,17 @@ export function goalKey(goal: Goal, metrics: PlanMetrics): readonly number[] {
   const missed = metrics.deadlineMet === false ? 1 : 0;
   switch (goal) {
     case 'fastest':
-      return [metrics.unplacedUnits, finish, metrics.totalIdleMinutes];
+      return [metrics.unplacedUnits, finish, metrics.totalIdleMinutes, metrics.filamentChanges];
     case 'minimal_idle':
-      return [metrics.unplacedUnits, metrics.totalIdleMinutes, finish];
+      return [metrics.unplacedUnits, metrics.totalIdleMinutes, finish, metrics.filamentChanges];
     case 'deadline':
-      return [missed, metrics.unplacedUnits, finish, metrics.totalIdleMinutes];
+      return [
+        missed,
+        metrics.unplacedUnits,
+        finish,
+        metrics.totalIdleMinutes,
+        metrics.filamentChanges,
+      ];
   }
 }
 
@@ -334,8 +383,10 @@ export function optimize(input: OptimizerInput): Optimization {
         partId: line.partId,
         units: line.units,
         minutes: minutesOf(line.seconds),
+        filamentId: line.filamentId ?? null,
       })),
       printerIds: input.printers.map((printer) => printer.printerId),
+      setup: input.setup ?? NO_SETUP,
     }),
   );
   const candidates: Candidate[] = STRATEGIES.map((strategy) => {

@@ -270,6 +270,7 @@ describe('POST /api/v1/simulations/optimizations', () => {
       'longest_first',
       'shortest_first',
       'best_fit',
+      'group_by_spool',
     ]);
     expect(dto.warnings).toEqual([{ code: 'batching_applied' }]);
   });

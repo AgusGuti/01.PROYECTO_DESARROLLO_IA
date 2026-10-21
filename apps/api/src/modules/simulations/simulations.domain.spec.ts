@@ -90,7 +90,14 @@ describe('simulateNaive, one printer', () => {
     expect(result.jobs.some((job) => job.unattended)).toBe(false);
     expect(text(result.finishAt ?? 0)).toBe('2026-03-02T14:00');
     expect(result.printers).toEqual([
-      { printerId: 'A', jobs: 3, busyMinutes: 360, idleMinutes: 0 },
+      {
+        printerId: 'A',
+        jobs: 3,
+        busyMinutes: 360,
+        idleMinutes: 0,
+        setupMinutes: 0,
+        filamentChanges: 0,
+      },
     ]);
     expect(result.unplaced).toEqual([]);
   });
@@ -374,7 +381,14 @@ describe('simulateNaive, several printers', () => {
   it('keeps a printer that never gets a job with zero minutes', () => {
     const result = run('2026-03-02T08:00', 1, 60, { printerIds: ['A', 'B'] });
 
-    expect(result.printers[1]).toEqual({ printerId: 'B', jobs: 0, busyMinutes: 0, idleMinutes: 0 });
+    expect(result.printers[1]).toEqual({
+      printerId: 'B',
+      jobs: 0,
+      busyMinutes: 0,
+      idleMinutes: 0,
+      setupMinutes: 0,
+      filamentChanges: 0,
+    });
   });
 });
 
