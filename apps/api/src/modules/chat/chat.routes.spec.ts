@@ -90,19 +90,20 @@ describe('POST /api/v1/chat', () => {
 
   it('returns a valid update_queue_progress proposal and drops one with completed over quantity', async () => {
     const partId = 'b'.repeat(24);
+    const filamentId = 'd'.repeat(24);
     const proposal = {
       kind: 'update_queue_progress',
       payload: {
         projectId: 'a'.repeat(24),
         version: 2,
-        lines: [{ partId, quantity: 4, completed: 4 }],
+        lines: [{ partId, filamentId, quantity: 4, completed: 4 }],
       },
       projectName: 'Soportes',
-      lineNames: [{ partId, name: 'Soporte' }],
+      lineNames: [{ partId, filamentId, name: 'Soporte', filamentName: 'PLA negro' }],
     };
     const bad = {
       ...proposal,
-      payload: { ...proposal.payload, lines: [{ partId, quantity: 4, completed: 5 }] },
+      payload: { ...proposal.payload, lines: [{ partId, filamentId, quantity: 4, completed: 5 }] },
     };
     const good = await request(appWith({ ask: () => Promise.resolve({ reply: 'ok', proposal }) }))
       .post(URL)

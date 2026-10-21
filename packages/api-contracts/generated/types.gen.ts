@@ -1249,7 +1249,9 @@ export type ProposalCreateProject = {
     payload: ProposalCreateProjectPayload;
     itemNames: Array<{
         partId: string;
+        filamentId: string;
         name: string;
+        filamentName: string;
     }>;
 };
 
@@ -1260,6 +1262,7 @@ export type ProposalCreateProjectPayload = {
     deadline?: string;
     items?: Array<{
         partId: string;
+        filamentId: string;
         quantity: number;
     }>;
 };
@@ -1287,7 +1290,9 @@ export type ProposalUpdateQueueProgress = {
     projectName: string;
     lineNames: Array<{
         partId: string;
+        filamentId: string;
         name: string;
+        filamentName: string;
     }>;
 };
 
@@ -1296,6 +1301,7 @@ export type ProposalUpdateQueueProgressPayload = {
     version: number;
     lines: Array<{
         partId: string;
+        filamentId: string;
         quantity: number;
         completed: number;
     }>;

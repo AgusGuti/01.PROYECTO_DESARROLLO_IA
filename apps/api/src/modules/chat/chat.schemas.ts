@@ -41,6 +41,23 @@ const proposalPartId = z
   .toLowerCase()
   .openapi({ type: 'string', example: '66f0c0ffee0123456789abcd' });
 
+// A line is keyed by the PAIR (partId, filamentId) (ADR 0036): one part may use several spools.
+const proposalFilamentId = z
+  .string()
+  .regex(/^[0-9a-f]{24}$/i, 'Must be a 24-character hexadecimal id.')
+  .toLowerCase()
+  .openapi({ type: 'string', example: '66f0c0ffee0123456789abce' });
+
+const pairKey = (entry: { partId: string; filamentId: string }): string =>
+  `${entry.partId}:${entry.filamentId}`;
+
+const lineNameSchema = z.strictObject({
+  partId: proposalPartId,
+  filamentId: proposalFilamentId,
+  name: proposalText(100, 'Soporte de estante'),
+  filamentName: proposalText(100, 'PLA negro'),
+});
+
 const proposalPayloadSchema = z
   .strictObject({
     name: proposalText(100, 'Soportes para el taller'),
@@ -58,6 +75,7 @@ const proposalPayloadSchema = z
       .array(
         z.strictObject({
           partId: proposalPartId,
+          filamentId: proposalFilamentId,
           quantity: z.number().int().min(1).max(1000),
         }),
       )
@@ -70,29 +88,22 @@ const createProjectProposalSchema = z
   .strictObject({
     kind: z.literal('create_project'),
     payload: proposalPayloadSchema,
-    itemNames: z
-      .array(
-        z.strictObject({
-          partId: proposalPartId,
-          name: proposalText(100, 'Soporte de estante'),
-        }),
-      )
-      .max(PROPOSAL_MAX_ITEMS),
+    itemNames: z.array(lineNameSchema).max(PROPOSAL_MAX_ITEMS),
   })
   .superRefine((proposal, ctx) => {
-    const ids = (proposal.payload.items ?? []).map((item) => item.partId);
+    const ids = (proposal.payload.items ?? []).map(pairKey);
     if (new Set(ids).size !== ids.length) {
       ctx.addIssue({
         code: 'custom',
-        message: 'A part appears twice.',
+        message: 'A part with the same spool appears twice.',
         path: ['payload', 'items'],
       });
     }
-    const named = proposal.itemNames.map((entry) => entry.partId);
+    const named = proposal.itemNames.map(pairKey);
     if (new Set(named).size !== named.length || named.some((id) => !ids.includes(id))) {
       ctx.addIssue({
         code: 'custom',
-        message: 'itemNames must be unique and only for parts in payload.items.',
+        message: 'itemNames must be unique and only for lines in payload.items.',
         path: ['itemNames'],
       });
     }
@@ -160,6 +171,7 @@ const updateQueueProgressPayloadSchema = z
       .array(
         z.strictObject({
           partId: proposalPartId,
+          filamentId: proposalFilamentId,
           quantity: z.number().int().min(1).max(1000),
           completed: z.number().int().min(0).max(1000),
         }),
@@ -174,19 +186,15 @@ const updateQueueProgressProposalSchema = z
     kind: z.literal('update_queue_progress'),
     payload: updateQueueProgressPayloadSchema,
     projectName: proposalText(100, 'Soportes para el taller'),
-    lineNames: z
-      .array(
-        z.strictObject({ partId: proposalPartId, name: proposalText(100, 'Soporte de estante') }),
-      )
-      .max(PROPOSAL_MAX_ITEMS),
+    lineNames: z.array(lineNameSchema).max(PROPOSAL_MAX_ITEMS),
   })
   .superRefine((proposal, ctx) => {
     const { lines } = proposal.payload;
-    const ids = lines.map((line) => line.partId);
+    const ids = lines.map(pairKey);
     if (new Set(ids).size !== ids.length) {
       ctx.addIssue({
         code: 'custom',
-        message: 'A part appears twice.',
+        message: 'A part with the same spool appears twice.',
         path: ['payload', 'lines'],
       });
     }
@@ -197,11 +205,11 @@ const updateQueueProgressProposalSchema = z
         path: ['payload', 'lines'],
       });
     }
-    const named = proposal.lineNames.map((entry) => entry.partId);
+    const named = proposal.lineNames.map(pairKey);
     if (new Set(named).size !== named.length || named.some((id) => !ids.includes(id))) {
       ctx.addIssue({
         code: 'custom',
-        message: 'lineNames must be unique and only for parts in payload.lines.',
+        message: 'lineNames must be unique and only for lines in payload.lines.',
         path: ['lineNames'],
       });
     }

@@ -55,8 +55,18 @@ describe('chat against a fake assistant over HTTP', () => {
   it('passes a valid proposal through and drops an invalid one', async () => {
     const proposal = {
       kind: 'create_project',
-      payload: { name: 'Soportes', items: [{ partId: 'a'.repeat(24), quantity: 3 }] },
-      itemNames: [{ partId: 'a'.repeat(24), name: 'Soporte' }],
+      payload: {
+        name: 'Soportes',
+        items: [{ partId: 'a'.repeat(24), filamentId: 'd'.repeat(24), quantity: 3 }],
+      },
+      itemNames: [
+        {
+          partId: 'a'.repeat(24),
+          filamentId: 'd'.repeat(24),
+          name: 'Soporte',
+          filamentName: 'PLA negro',
+        },
+      ],
     };
     handler = (_req, res) => {
       json(res, 200, JSON.stringify({ reply: 'Propuesta', proposal }));
@@ -103,15 +113,16 @@ describe('chat against a fake assistant over HTTP', () => {
 
   it('passes an update_queue_progress proposal through and drops one with completed over quantity', async () => {
     const partId = 'b'.repeat(24);
+    const filamentId = 'd'.repeat(24);
     const proposal = {
       kind: 'update_queue_progress',
       payload: {
         projectId: 'a'.repeat(24),
         version: 3,
-        lines: [{ partId, quantity: 4, completed: 1 }],
+        lines: [{ partId, filamentId, quantity: 4, completed: 1 }],
       },
       projectName: 'Soportes',
-      lineNames: [{ partId, name: 'Soporte' }],
+      lineNames: [{ partId, filamentId, name: 'Soporte', filamentName: 'PLA negro' }],
     };
     handler = (_req, res) => {
       json(res, 200, JSON.stringify({ reply: 'Reanudo', proposal }));
@@ -121,7 +132,10 @@ describe('chat against a fake assistant over HTTP', () => {
     handler = (_req, res) => {
       const wrong = {
         ...proposal,
-        payload: { ...proposal.payload, lines: [{ partId, quantity: 4, completed: 9 }] },
+        payload: {
+          ...proposal.payload,
+          lines: [{ partId, filamentId, quantity: 4, completed: 9 }],
+        },
       };
       json(res, 200, JSON.stringify({ reply: 'Reanudo', proposal: wrong }));
     };

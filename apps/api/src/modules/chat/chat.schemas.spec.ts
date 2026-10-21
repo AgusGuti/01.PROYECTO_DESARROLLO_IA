@@ -7,12 +7,24 @@ import {
 } from './chat.schemas.js';
 
 const ID = 'a'.repeat(24);
+const F1 = 'e'.repeat(24);
+const F2 = 'f'.repeat(24);
+const nm = (partId: string, filamentId: string, name = 'Pieza') => ({
+  partId,
+  filamentId,
+  name,
+  filamentName: 'PLA negro',
+});
 const proposal = (payload: object = { name: 'Soportes' }, itemNames: unknown[] = []) => ({
   kind: 'create_project',
   payload,
   itemNames,
 });
-const line = (partId: string, quantity: number) => ({ partId, quantity });
+const line = (partId: string, quantity: number, filamentId = F1) => ({
+  partId,
+  filamentId,
+  quantity,
+});
 
 describe('proposalSchema', () => {
   it.each([
@@ -27,8 +39,12 @@ describe('proposalSchema', () => {
           deadline: '2026-11-30',
           items: [line(ID, 1000)],
         },
-        [{ partId: ID, name: 'Pieza' }],
+        [nm(ID, F1)],
       ),
+    ],
+    [
+      'the same part with two spools',
+      proposal({ name: 'N', items: [line(ID, 1, F1), line(ID, 1, F2)] }, [nm(ID, F1), nm(ID, F2)]),
     ],
     [
       '100 items',
@@ -43,9 +59,9 @@ describe('proposalSchema', () => {
     expect(proposalSchema.safeParse(input).success).toBe(true);
   });
 
-  it('lower-cases part ids', () => {
+  it('lower-cases part and filament ids', () => {
     const parsed = proposalSchema.parse(
-      proposal({ name: 'N', items: [line(ID.toUpperCase(), 1)] }),
+      proposal({ name: 'N', items: [line(ID.toUpperCase(), 1, F1.toUpperCase())] }),
     );
 
     expect(parsed.kind === 'create_project' && parsed.payload.items).toEqual([line(ID, 1)]);
@@ -64,6 +80,8 @@ describe('proposalSchema', () => {
     ['a non-date deadline', proposal({ name: 'N', deadline: '2026-02-30' })],
     ['a deadline out of range', proposal({ name: 'N', deadline: '2100-01-01' })],
     ['a bad part id', proposal({ name: 'N', items: [line('xyz', 1)] })],
+    ['a bad filament id', proposal({ name: 'N', items: [line(ID, 1, 'xyz')] })],
+    ['a missing filament id', proposal({ name: 'N', items: [{ partId: ID, quantity: 1 }] })],
     ['quantity 0', proposal({ name: 'N', items: [line(ID, 0)] })],
     ['quantity 1001', proposal({ name: 'N', items: [line(ID, 1001)] })],
     ['a fractional quantity', proposal({ name: 'N', items: [line(ID, 1.5)] })],
@@ -75,15 +93,33 @@ describe('proposalSchema', () => {
         items: Array.from({ length: 101 }, (_v, i) => line(i.toString(16).padStart(24, '0'), 1)),
       }),
     ],
-    ['a repeated part', proposal({ name: 'N', items: [line(ID, 1), line(ID, 2)] })],
-    ['a name for a part not in the items', proposal({ name: 'N' }, [{ partId: ID, name: 'x' }])],
+    ['a repeated part and spool', proposal({ name: 'N', items: [line(ID, 1), line(ID, 2)] })],
+    ['a name for a part not in the items', proposal({ name: 'N' }, [nm(ID, F1)])],
+    [
+      'a name for the part with another spool',
+      proposal({ name: 'N', items: [line(ID, 1, F1)] }, [nm(ID, F2)]),
+    ],
+    [
+      'a repeated pair in itemNames',
+      proposal({ name: 'N', items: [line(ID, 1)] }, [nm(ID, F1), nm(ID, F1, 'otra')]),
+    ],
+    [
+      'an item name without filamentName',
+      proposal({ name: 'N', items: [line(ID, 1)] }, [{ partId: ID, filamentId: F1, name: 'x' }]),
+    ],
+    [
+      'a 101-character filamentName',
+      proposal({ name: 'N', items: [line(ID, 1)] }, [
+        { ...nm(ID, F1), filamentName: 'a'.repeat(101) },
+      ]),
+    ],
     [
       'a 101-character item name',
-      proposal({ name: 'N', items: [line(ID, 1)] }, [{ partId: ID, name: 'a'.repeat(101) }]),
+      proposal({ name: 'N', items: [line(ID, 1)] }, [nm(ID, F1, 'a'.repeat(101))]),
     ],
     [
       'an item name with an unknown key',
-      proposal({ name: 'N', items: [line(ID, 1)] }, [{ partId: ID, name: 'x', id: 1 }]),
+      proposal({ name: 'N', items: [line(ID, 1)] }, [{ ...nm(ID, F1), id: 1 }]),
     ],
   ])('rejects %s', (_name, input) => {
     expect(proposalSchema.safeParse(input).success).toBe(false);
@@ -170,15 +206,16 @@ const progress = (payload: object = {}, extra: object = {}) => ({
   payload: {
     projectId: ID,
     version: 1,
-    lines: [{ partId: P1, quantity: 5, completed: 2 }],
+    lines: [{ partId: P1, filamentId: F1, quantity: 5, completed: 2 }],
     ...payload,
   },
   projectName: 'Soportes',
-  lineNames: [{ partId: P1, name: 'Soporte' }],
+  lineNames: [nm(P1, F1, 'Soporte')],
   ...extra,
 });
-const pline = (partId: string, quantity: number, completed: number) => ({
+const pline = (partId: string, quantity: number, completed: number, filamentId = F1) => ({
   partId,
+  filamentId,
   quantity,
   completed,
 });
@@ -190,6 +227,13 @@ describe('proposalSchema update_queue_progress', () => {
     ['completed 0', progress({ lines: [pline(P1, 5, 0)] })],
     ['quantity 1000', progress({ lines: [pline(P1, 1000, 1000)] })],
     ['no line names', progress({}, { lineNames: [] })],
+    [
+      'the same part with two spools',
+      progress(
+        { lines: [pline(P1, 5, 1, F1), pline(P1, 5, 2, F2)] },
+        { lineNames: [nm(P1, F1), nm(P1, F2)] },
+      ),
+    ],
     ['100 lines', progress({ lines: ids(100).map((id) => pline(id, 1, 0)) }, { lineNames: [] })],
   ])('accepts %s', (_name, input) => {
     expect(proposalSchema.safeParse(input).success).toBe(true);
@@ -213,35 +257,54 @@ describe('proposalSchema update_queue_progress', () => {
     ['negative completed', progress({ lines: [pline(P1, 5, -1)] })],
     ['quantity 0', progress({ lines: [pline(P1, 0, 0)] })],
     ['quantity 1001', progress({ lines: [pline(P1, 1001, 0)] })],
-    ['a repeated part', progress({ lines: [pline(P1, 5, 1), pline(P1, 5, 2)] })],
+    ['a repeated part and spool', progress({ lines: [pline(P1, 5, 1), pline(P1, 5, 2)] })],
+    ['a bad filament id', progress({ lines: [pline(P1, 5, 1, 'xyz')] }, { lineNames: [] })],
+    [
+      'a missing filament id',
+      progress({ lines: [{ partId: P1, quantity: 5, completed: 1 }] }, { lineNames: [] }),
+    ],
     ['101 lines', progress({ lines: ids(101).map((id) => pline(id, 1, 0)) }, { lineNames: [] })],
     ['a line with an unknown key', progress({ lines: [{ ...pline(P1, 5, 1), price: 1 }] })],
-    [
-      'a name for a part not in the lines',
-      progress({}, { lineNames: [{ partId: P2, name: 'x' }] }),
-    ],
+    ['a name for a part not in the lines', progress({}, { lineNames: [nm(P2, F1, 'x')] })],
+    ['a name for the part with another spool', progress({}, { lineNames: [nm(P1, F2, 'x')] })],
     [
       'a repeated line name',
       progress(
         {},
         {
-          lineNames: [
-            { partId: P1, name: 'x' },
-            { partId: P1, name: 'y' },
-          ],
+          lineNames: [nm(P1, F1, 'x'), nm(P1, F1, 'y')],
         },
       ),
     ],
-    [
-      'a 101-character line name',
-      progress({}, { lineNames: [{ partId: P1, name: 'a'.repeat(101) }] }),
-    ],
+    ['a 101-character line name', progress({}, { lineNames: [nm(P1, F1, 'a'.repeat(101))] })],
     ['an empty project name', progress({}, { projectName: ' ' })],
     ['a control character in the project name', progress({}, { projectName: 'a\nb' })],
     ['a 101-character project name', progress({}, { projectName: 'a'.repeat(101) })],
     ['no lineNames', progress({}, { lineNames: undefined })],
   ])('rejects %s', (_name, input) => {
     expect(proposalSchema.safeParse(input).success).toBe(false);
+  });
+});
+
+describe('proposalSchema filamentId paths', () => {
+  it('reports a bad filament id on the item it belongs to', () => {
+    const result = proposalSchema.safeParse(
+      proposal({ name: 'N', items: [line(ID, 1), line(P1, 1, 'xyz')] }),
+    );
+
+    expect(result.error?.issues.map((issue) => issue.path)).toEqual([
+      ['payload', 'items', 1, 'filamentId'],
+    ]);
+  });
+
+  it('reports a missing filament id on the progress line', () => {
+    const result = proposalSchema.safeParse(
+      progress({ lines: [{ partId: P1, quantity: 5, completed: 1 }] }, { lineNames: [] }),
+    );
+
+    expect(result.error?.issues.map((issue) => issue.path)).toEqual([
+      ['payload', 'lines', 0, 'filamentId'],
+    ]);
   });
 });
 

@@ -72,10 +72,17 @@ describe('chat service', () => {
 
   describe('proposal', () => {
     const partId = 'aaaaaaaaaaaaaaaaaaaaaaaa';
+    const filamentId = 'dddddddddddddddddddddddd';
+    const names = [{ partId, filamentId, name: 'Soporte', filamentName: 'PLA negro' }];
     const valid = {
       kind: 'create_project',
-      payload: { name: 'Soportes', items: [{ partId: partId.toUpperCase(), quantity: 2 }] },
-      itemNames: [{ partId, name: 'Soporte' }],
+      payload: {
+        name: 'Soportes',
+        items: [
+          { partId: partId.toUpperCase(), filamentId: filamentId.toUpperCase(), quantity: 2 },
+        ],
+      },
+      itemNames: names,
     };
 
     it('passes a valid proposal through, ids lower-cased', async () => {
@@ -87,7 +94,7 @@ describe('chat service', () => {
 
       expect(result.proposal).toEqual({
         ...valid,
-        payload: { name: 'Soportes', items: [{ partId, quantity: 2 }] },
+        payload: { name: 'Soportes', items: [{ partId, filamentId, quantity: 2 }] },
       });
       expect(lines.join('')).toContain('"proposal":"valid"');
     });
@@ -98,7 +105,7 @@ describe('chat service', () => {
       ['another kind', { ...valid, kind: 'delete_project' }],
       [
         'a name for a part not in the items',
-        { ...valid, itemNames: [{ partId: 'b'.repeat(24), name: 'x' }] },
+        { ...valid, itemNames: [{ ...names[0], partId: 'b'.repeat(24) }] },
       ],
       ['not an object', 'create a project'],
     ])('drops %s but keeps the reply and logs no content', async (_name, proposal) => {
@@ -162,10 +169,10 @@ describe('chat service', () => {
         payload: {
           projectId: partId.toUpperCase(),
           version: 3,
-          lines: [{ partId: partId.toUpperCase(), quantity: 5, completed: 5 }],
+          lines: [{ partId: partId.toUpperCase(), filamentId, quantity: 5, completed: 5 }],
         },
         projectName: 'Soportes',
-        lineNames: [{ partId, name: 'Soporte' }],
+        lineNames: names,
       };
 
       it('passes a valid progress proposal through, ids lower-cased', async () => {
@@ -180,7 +187,7 @@ describe('chat service', () => {
           payload: {
             projectId: partId,
             version: 3,
-            lines: [{ partId, quantity: 5, completed: 5 }],
+            lines: [{ partId, filamentId, quantity: 5, completed: 5 }],
           },
         });
         expect(lines.join('')).toContain('"proposal":"valid"');
@@ -191,7 +198,10 @@ describe('chat service', () => {
           'completed over quantity',
           {
             ...progress,
-            payload: { ...progress.payload, lines: [{ partId, quantity: 5, completed: 6 }] },
+            payload: {
+              ...progress.payload,
+              lines: [{ partId, filamentId, quantity: 5, completed: 6 }],
+            },
           },
         ],
         ['version 0', { ...progress, payload: { ...progress.payload, version: 0 } }],

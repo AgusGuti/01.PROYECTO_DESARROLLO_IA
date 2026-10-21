@@ -2676,14 +2676,24 @@ components:
               partId:
                 type: string
                 example: 66f0c0ffee0123456789abcd
+              filamentId:
+                type: string
+                example: 66f0c0ffee0123456789abce
               name:
                 type: string
                 minLength: 1
                 maxLength: 100
                 example: Soporte de estante
+              filamentName:
+                type: string
+                minLength: 1
+                maxLength: 100
+                example: PLA negro
             required:
               - partId
+              - filamentId
               - name
+              - filamentName
             additionalProperties: false
           maxItems: 100
       required:
@@ -2723,12 +2733,16 @@ components:
               partId:
                 type: string
                 example: 66f0c0ffee0123456789abcd
+              filamentId:
+                type: string
+                example: 66f0c0ffee0123456789abce
               quantity:
                 type: integer
                 minimum: 1
                 maximum: 1000
             required:
               - partId
+              - filamentId
               - quantity
             additionalProperties: false
           maxItems: 100
@@ -2825,14 +2839,24 @@ components:
               partId:
                 type: string
                 example: 66f0c0ffee0123456789abcd
+              filamentId:
+                type: string
+                example: 66f0c0ffee0123456789abce
               name:
                 type: string
                 minLength: 1
                 maxLength: 100
                 example: Soporte de estante
+              filamentName:
+                type: string
+                minLength: 1
+                maxLength: 100
+                example: PLA negro
             required:
               - partId
+              - filamentId
               - name
+              - filamentName
             additionalProperties: false
           maxItems: 100
       required:
@@ -2858,6 +2882,9 @@ components:
               partId:
                 type: string
                 example: 66f0c0ffee0123456789abcd
+              filamentId:
+                type: string
+                example: 66f0c0ffee0123456789abce
               quantity:
                 type: integer
                 minimum: 1
@@ -2868,6 +2895,7 @@ components:
                 maximum: 1000
             required:
               - partId
+              - filamentId
               - quantity
               - completed
             additionalProperties: false
