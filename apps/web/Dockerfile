@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Build context: the repository root (see docker-compose.yml).
 
-FROM node:22-alpine AS build
+FROM node:25-alpine AS build
 WORKDIR /repo
 COPY package.json package-lock.json .npmrc ./
 COPY apps/api/package.json apps/api/
