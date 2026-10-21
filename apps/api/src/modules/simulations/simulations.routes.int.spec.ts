@@ -26,10 +26,20 @@ const printerBody = (name: string) => ({
   compatibleMaterials: ['PLA', 'PETG'],
 });
 
+const spoolBody = {
+  brand: 'Grilon3',
+  material: 'PLA',
+  colorName: 'Negro',
+  initialGrams: 1000,
+  purchaseCostMinor: 1_950_000,
+  purchaseDate: '2026-02-01',
+};
+
 describe('simulations API on a real MongoDB with the real wiring', () => {
   let mongo: MongoMemoryReplSet;
   let database: Database;
   let app: Express;
+  let spool: string;
 
   const idOf = (response: request.Response): string => (response.body as { id: string }).id;
   const makePart = async (name: string, seconds: number) =>
@@ -66,15 +76,20 @@ describe('simulations API on a real MongoDB with the real wiring', () => {
       'parts',
       'printers',
       'planningSettings',
+      'filaments',
     ]) {
       await mongoose.connection.collection(name).deleteMany({});
     }
+    spool = idOf(await request(app).post('/api/v1/filaments').send(spoolBody));
   });
 
   it('simulates a real queue with the default schedule and the project deadline', async () => {
     const part = await makePart('Soporte', 7200);
     const printer = await makePrinter('Ender 3');
-    const project = await makeProject([{ partId: part, quantity: 3 }], '2026-03-02');
+    const project = await makeProject(
+      [{ partId: part, filamentId: spool, quantity: 3 }],
+      '2026-03-02',
+    );
     await request(app)
       .post('/api/v1/queues')
       .send({ projectId: project, goal: 'deadline', mode: 'single', printerIds: [printer] })
@@ -106,7 +121,7 @@ describe('simulations API on a real MongoDB with the real wiring', () => {
     const part = await makePart('Soporte', 3600);
     const first = await makePrinter('Ender 3');
     const second = await makePrinter('Prusa');
-    const project = await makeProject([{ partId: part, quantity: 2 }]);
+    const project = await makeProject([{ partId: part, filamentId: spool, quantity: 2 }]);
     await request(app)
       .post('/api/v1/queues')
       .send({ projectId: project, goal: 'fastest', mode: 'multi', printerIds: [first, second] })
@@ -144,14 +159,19 @@ describe('simulations API on a real MongoDB with the real wiring', () => {
     // 60 x 40 mm pieces on a 220 x 220 bed: 12 fit on a plate, so 4 share one.
     const part = await makePart('Soporte', 3600);
     const printer = await makePrinter('Ender 3');
-    const project = await makeProject([{ partId: part, quantity: 4 }]);
+    const project = await makeProject([{ partId: part, filamentId: spool, quantity: 4 }]);
     await request(app)
       .post('/api/v1/queues')
       .send({ projectId: project, goal: 'fastest', mode: 'single', printerIds: [printer] })
       .expect(201);
     await request(app)
       .put('/api/v1/planning/settings')
-      .send({ batchSavingBasisPoints: 2500, version: 0 })
+      .send({
+        batchSavingBasisPoints: 2500,
+        printerTurnaroundMinutes: 0,
+        filamentChangeMinutes: 0,
+        version: 0,
+      })
       .expect(200);
 
     const response = await request(app)
@@ -177,7 +197,7 @@ describe('simulations API on a real MongoDB with the real wiring', () => {
   it('optimises with the default saving of zero when the settings were never saved', async () => {
     const part = await makePart('Soporte', 3600);
     const printer = await makePrinter('Ender 3');
-    const project = await makeProject([{ partId: part, quantity: 2 }]);
+    const project = await makeProject([{ partId: part, filamentId: spool, quantity: 2 }]);
     await request(app)
       .post('/api/v1/queues')
       .send({ projectId: project, goal: 'fastest', mode: 'single', printerIds: [printer] })
@@ -197,7 +217,7 @@ describe('simulations API on a real MongoDB with the real wiring', () => {
   it('optimises from a start date inside a saved absence: nothing starts before it ends', async () => {
     const part = await makePart('Soporte', 3600);
     const printer = await makePrinter('Ender 3');
-    const project = await makeProject([{ partId: part, quantity: 2 }]);
+    const project = await makeProject([{ partId: part, filamentId: spool, quantity: 2 }]);
     await request(app)
       .post('/api/v1/queues')
       .send({ projectId: project, goal: 'fastest', mode: 'single', printerIds: [printer] })
@@ -231,7 +251,7 @@ describe('simulations API on a real MongoDB with the real wiring', () => {
 
   it('answers 400 when the project has no queue', async () => {
     const part = await makePart('Soporte', 3600);
-    const project = await makeProject([{ partId: part, quantity: 1 }]);
+    const project = await makeProject([{ partId: part, filamentId: spool, quantity: 1 }]);
 
     const response = await request(app)
       .post('/api/v1/simulations')

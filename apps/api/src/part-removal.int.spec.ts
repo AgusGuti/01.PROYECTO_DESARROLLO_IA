@@ -22,10 +22,20 @@ const partBody = (name: string) => ({
   layerHeightUm: 200,
 });
 
+const spoolBody = {
+  brand: 'Grilon3',
+  material: 'PLA',
+  colorName: 'Negro',
+  initialGrams: 1000,
+  purchaseCostMinor: 1_950_000,
+  purchaseDate: '2026-02-01',
+};
+
 describe('removing a part that projects use, on a real MongoDB', () => {
   let mongo: MongoMemoryReplSet;
   let database: Database;
   let app: Express;
+  let spool: string;
   let current = new Date('2026-03-01T10:00:00.000Z');
   const clock: Clock = { now: () => new Date(current) };
   // Wraps the real parts repository so a test can make the soft delete fail once.
@@ -79,6 +89,9 @@ describe('removing a part that projects use, on a real MongoDB', () => {
   beforeEach(async () => {
     await projects().deleteMany({});
     await parts().deleteMany({});
+    await mongoose.connection.collection('filaments').deleteMany({});
+    spool = ((await request(app).post('/api/v1/filaments').send(spoolBody)).body as { id: string })
+      .id;
     failSoftDelete = false;
     current = new Date('2026-03-01T10:00:00.000Z');
   });
@@ -88,11 +101,11 @@ describe('removing a part that projects use, on a real MongoDB', () => {
     const part = await createPart('Soporte de estante en L');
     const other = await createPart('Florero espiral');
     const alpha = await createProject('Alfa', [
-      { partId: part, quantity: 6 },
-      { partId: other, quantity: 1 },
+      { partId: part, filamentId: spool, quantity: 6 },
+      { partId: other, filamentId: spool, quantity: 1 },
     ]);
-    const beta = await createProject('Beta', [{ partId: part, quantity: 2 }]);
-    const gone = await createProject('Borrado', [{ partId: part, quantity: 9 }]);
+    const beta = await createProject('Beta', [{ partId: part, filamentId: spool, quantity: 2 }]);
+    const gone = await createProject('Borrado', [{ partId: part, filamentId: spool, quantity: 9 }]);
     await request(app).delete(`/api/v1/projects/${gone}`);
     current = new Date('2026-03-01T12:00:00.000Z');
     return { part, other, alpha, beta, gone };
@@ -201,7 +214,9 @@ describe('removing a part that projects use, on a real MongoDB', () => {
 
   it('shows part null for a line that points to a part deleted by a racing request', async () => {
     const part = await createPart('Carrera');
-    const project = await createProject('Con carrera', [{ partId: part, quantity: 3 }]);
+    const project = await createProject('Con carrera', [
+      { partId: part, filamentId: spool, quantity: 3 },
+    ]);
     // The residual race of ADR 0018: the part is gone, the line is still there.
     await parts().updateOne(
       { _id: new mongoose.Types.ObjectId(part) },

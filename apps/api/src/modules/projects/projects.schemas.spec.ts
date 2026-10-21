@@ -7,6 +7,7 @@ import {
 } from './projects.schemas.js';
 
 const A = 'a'.repeat(24);
+const S = '1'.repeat(24);
 const valid = { name: 'Soportes para el taller' };
 
 const accepts = (body: unknown): boolean => createProjectSchema.safeParse(body).success;
@@ -16,7 +17,11 @@ const withField = (field: string, value: unknown): Record<string, unknown> => ({
 });
 const updateAccepts = (body: unknown): boolean => updateProjectSchema.safeParse(body).success;
 const listAccepts = (query: unknown): boolean => listProjectsQuerySchema.safeParse(query).success;
-const line = (index: number) => ({ partId: index.toString(16).padStart(24, '0'), quantity: 1 });
+const line = (index: number) => ({
+  partId: index.toString(16).padStart(24, '0'),
+  filamentId: S,
+  quantity: 1,
+});
 
 describe.each([
   ['name', 100, false],
@@ -110,7 +115,7 @@ describe('create project: items', () => {
     ['quantity 1', 1],
     ['quantity 1000', 1000],
   ])('accepts %s', (_label, quantity) => {
-    expect(accepts(withField('items', [{ partId: A, quantity }]))).toBe(true);
+    expect(accepts(withField('items', [{ partId: A, filamentId: S, quantity }]))).toBe(true);
   });
 
   it.each([
@@ -122,7 +127,7 @@ describe('create project: items', () => {
     ['null', null],
     ['NaN as text', 'NaN'],
   ])('rejects %s', (_label, quantity) => {
-    expect(accepts(withField('items', [{ partId: A, quantity }]))).toBe(false);
+    expect(accepts(withField('items', [{ partId: A, filamentId: S, quantity }]))).toBe(false);
   });
 
   it('accepts 100 lines and an empty list, and rejects 101', () => {
@@ -151,21 +156,46 @@ describe('create project: items', () => {
     ['an object', { $ne: '' }],
     ['a number', 12],
   ])('rejects %s as partId', (_label, partId) => {
-    expect(accepts(withField('items', [{ partId, quantity: 1 }]))).toBe(false);
+    expect(accepts(withField('items', [{ partId, filamentId: S, quantity: 1 }]))).toBe(false);
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['null', null],
+    ['a short id', 'abc'],
+    ['a non-hexadecimal id', 'z'.repeat(24)],
+    ['an object', { $ne: '' }],
+    ['a number', 12],
+    ['an empty string', ''],
+  ])('rejects a spool that is %s, on create and on edit', (_label, filamentId) => {
+    const lines = [{ partId: A, ...(filamentId === undefined ? {} : { filamentId }), quantity: 1 }];
+
+    expect(accepts(withField('items', lines))).toBe(false);
+    expect(updateAccepts({ version: 1, items: lines })).toBe(false);
+  });
+
+  it('writes the spool id in lower case, so the same id written two ways is one id', () => {
+    const parsed = createProjectSchema.parse(
+      withField('items', [{ partId: A, filamentId: 'AB'.repeat(12), quantity: 1 }]),
+    );
+
+    expect(parsed.items[0]?.filamentId).toBe('ab'.repeat(12));
   });
 
   it('rejects an unknown key inside a line and a missing field', () => {
-    expect(accepts(withField('items', [{ partId: A, quantity: 1, price: 3 }]))).toBe(false);
-    expect(accepts(withField('items', [{ partId: A }]))).toBe(false);
-    expect(accepts(withField('items', [{ quantity: 1 }]))).toBe(false);
+    expect(accepts(withField('items', [{ partId: A, filamentId: S, quantity: 1, price: 3 }]))).toBe(
+      false,
+    );
+    expect(accepts(withField('items', [{ partId: A, filamentId: S }]))).toBe(false);
+    expect(accepts(withField('items', [{ filamentId: S, quantity: 1 }]))).toBe(false);
   });
 
-  it('leaves the duplicate check to the domain: the schema alone accepts a repeated part', () => {
+  it('leaves the duplicate check to the domain: the schema alone accepts a repeated part and spool', () => {
     expect(
       accepts(
         withField('items', [
-          { partId: A, quantity: 1 },
-          { partId: A, quantity: 2 },
+          { partId: A, filamentId: S, quantity: 1 },
+          { partId: A, filamentId: S, quantity: 2 },
         ]),
       ),
     ).toBe(true);

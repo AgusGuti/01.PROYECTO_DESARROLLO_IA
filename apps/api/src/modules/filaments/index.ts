@@ -35,6 +35,31 @@ export function createFilamentCostReader(
   };
 }
 
+/**
+ * Builds the projects module's `FilamentLookup` (ADR 0036): which of these spools are live, with
+ * what a project line shows. One query for all ids; an id that is missing is unknown or deleted.
+ */
+export function createFilamentSummaryLookup(
+  repository: Pick<FilamentRepository, 'findLiveByIds'> = createMongoFilamentRepository(),
+): (
+  ids: string[],
+) => Promise<
+  ReadonlyMap<
+    string,
+    { brand: string; material: Material; colorName: string; availableGrams: number }
+  >
+> {
+  return async (ids) => {
+    const found = await repository.findLiveByIds(ids);
+    return new Map(
+      found.map(({ id, brand, material, colorName, availableGrams }) => [
+        id,
+        { brand, material, colorName, availableGrams },
+      ]),
+    );
+  };
+}
+
 export function createFilamentsModule(deps: {
   clock: Clock;
   /** Tests inject a fake; production uses MongoDB. */

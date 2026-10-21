@@ -157,6 +157,19 @@ describe('filaments repository on a real MongoDB', () => {
     });
   });
 
+  describe('findLiveByIds', () => {
+    it('returns only the live spools among the ids, and nothing for an empty list', async () => {
+      const live = await make();
+      const gone = await make();
+      await repository.softDelete(gone.id, T1);
+
+      const found = await repository.findLiveByIds([live.id, gone.id, '0'.repeat(24)]);
+
+      expect(found).toEqual([live]);
+      expect(await repository.findLiveByIds([])).toEqual([]);
+    });
+  });
+
   describe('softDelete', () => {
     it('keeps the document, sets deletedAt and bumps the version', async () => {
       const spool = await make();

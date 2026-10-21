@@ -22,7 +22,8 @@ interface StoredProject {
   description: string | null;
   priority: Priority;
   deadline: Date | null;
-  items: { partId: Types.ObjectId; quantity: number }[];
+  // `filamentId` is absent in documents stored before ADR 0036.
+  items: { partId: Types.ObjectId; filamentId?: Types.ObjectId | null; quantity: number }[];
   version: number;
   deletedAt: Date | null;
   createdAt: Date;
@@ -41,6 +42,8 @@ interface StoredProject {
 const itemSchema = new Schema(
   {
     partId: { type: Schema.Types.ObjectId, required: true },
+    // Expand-only (ADR 0036): old lines have no spool and read back as null; the API requires one.
+    filamentId: { type: Schema.Types.ObjectId, default: null },
     quantity: {
       type: Number,
       required: true,
@@ -83,6 +86,7 @@ function toProject(stored: StoredProject): Project {
     deadline: stored.deadline ?? null,
     items: stored.items.map((item) => ({
       partId: item.partId.toString(),
+      filamentId: item.filamentId?.toString() ?? null,
       quantity: item.quantity,
     })),
     version: stored.version,
@@ -95,6 +99,7 @@ function toProject(stored: StoredProject): Project {
 const storedItems = (items: Project['items']) =>
   items.map((item) => ({
     partId: new mongoose.Types.ObjectId(item.partId),
+    filamentId: item.filamentId === null ? null : new mongoose.Types.ObjectId(item.filamentId),
     quantity: item.quantity,
   }));
 
@@ -232,7 +237,10 @@ export function createMongoProjectRepository(): ProjectRepository {
           projects: found.map((stored) => ({
             id: stored._id.toString(),
             name: stored.name,
-            quantity: stored.items.find((item) => item.partId.equals(wanted))?.quantity ?? 0,
+            // A part may sit on several lines (one per spool): the project uses their sum.
+            quantity: stored.items
+              .filter((item) => item.partId.equals(wanted))
+              .reduce((sum, item) => sum + item.quantity, 0),
           })),
         };
       });

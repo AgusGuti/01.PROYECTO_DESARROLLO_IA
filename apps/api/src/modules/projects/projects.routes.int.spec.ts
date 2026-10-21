@@ -12,6 +12,14 @@ import { createTestApp, testConfig } from '../../testing/test-app.js';
 import { createTestClock } from './testing/fakes.js';
 
 const BASE = '/api/v1/projects';
+const filamentBody = {
+  brand: 'Grilon3',
+  material: 'PETG',
+  colorName: 'Negro',
+  initialGrams: 1000,
+  purchaseCostMinor: 1_950_000,
+  purchaseDate: '2026-02-01',
+};
 const partBody = {
   name: 'Soporte de estante en L',
   material: 'PETG',
@@ -25,7 +33,13 @@ interface ProjectBody {
   id: string;
   name: string;
   version: number;
-  items: { partId: string; quantity: number; part: { name: string } | null }[];
+  items: {
+    partId: string;
+    filamentId: string | null;
+    quantity: number;
+    part: { name: string } | null;
+    filament: { brand: string; colorName: string } | null;
+  }[];
 }
 
 describe('projects API on a real MongoDB', () => {
@@ -33,9 +47,11 @@ describe('projects API on a real MongoDB', () => {
   let database: Database;
   let app: Express;
   let partId: string;
+  let spoolId: string;
   const clock = createTestClock();
   const projects = () => mongoose.connection.collection('projects');
   const parts = () => mongoose.connection.collection('parts');
+  const filaments = () => mongoose.connection.collection('filaments');
   const rawOf = (id: string) => projects().findOne({ _id: new mongoose.Types.ObjectId(id) });
 
   const create = (overrides: Record<string, unknown> = {}) =>
@@ -62,17 +78,27 @@ describe('projects API on a real MongoDB', () => {
   beforeEach(async () => {
     await projects().deleteMany({});
     await parts().deleteMany({});
+    await filaments().deleteMany({});
     const part = await request(app).post('/api/v1/parts').send(partBody);
     partId = (part.body as { id: string }).id;
+    const spool = await request(app).post('/api/v1/filaments').send(filamentBody);
+    spoolId = (spool.body as { id: string }).id;
   });
 
   describe('create and read', () => {
     it('stores the part id as an ObjectId and reads the part data back live', async () => {
-      const created = await create({ items: [{ partId, quantity: 6 }], deadline: '2026-12-24' });
+      const created = await create({
+        items: [{ partId, filamentId: spoolId, quantity: 6 }],
+        deadline: '2026-12-24',
+      });
 
       expect(created.status).toBe(201);
       expect((await rawOf(idOf(created)))?.['items']).toEqual([
-        { partId: new mongoose.Types.ObjectId(partId), quantity: 6 },
+        {
+          partId: new mongoose.Types.ObjectId(partId),
+          filamentId: new mongoose.Types.ObjectId(spoolId),
+          quantity: 6,
+        },
       ]);
       expect((await rawOf(idOf(created)))?.['deadline']).toEqual(
         new Date('2026-12-24T00:00:00.000Z'),
@@ -81,7 +107,18 @@ describe('projects API on a real MongoDB', () => {
       expect(read.body).toMatchObject({
         deadline: '2026-12-24',
         items: [
-          { partId, quantity: 6, part: { name: 'Soporte de estante en L', material: 'PETG' } },
+          {
+            partId,
+            filamentId: spoolId,
+            quantity: 6,
+            part: { name: 'Soporte de estante en L', material: 'PETG' },
+            filament: {
+              brand: 'Grilon3',
+              material: 'PETG',
+              colorName: 'Negro',
+              availableGrams: 1000,
+            },
+          },
         ],
       });
     });
@@ -89,8 +126,10 @@ describe('projects API on a real MongoDB', () => {
     it('rejects a part that does not exist and a part that was deleted', async () => {
       await request(app).delete(`/api/v1/parts/${partId}`);
 
-      const deleted = await create({ items: [{ partId, quantity: 1 }] });
-      const unknown = await create({ items: [{ partId: 'f'.repeat(24), quantity: 1 }] });
+      const deleted = await create({ items: [{ partId, filamentId: spoolId, quantity: 1 }] });
+      const unknown = await create({
+        items: [{ partId: 'f'.repeat(24), filamentId: spoolId, quantity: 1 }],
+      });
 
       for (const response of [deleted, unknown]) {
         expect(response.status).toBe(400);
@@ -101,8 +140,24 @@ describe('projects API on a real MongoDB', () => {
       expect(await projects().countDocuments({})).toBe(0);
     });
 
+    it('rejects a spool that was deleted, and shows filament null on a project that already had it', async () => {
+      const created = await create({ items: [{ partId, filamentId: spoolId, quantity: 1 }] });
+      await request(app).delete(`/api/v1/filaments/${spoolId}`);
+
+      const gone = await create({ items: [{ partId, filamentId: spoolId, quantity: 1 }] });
+      const read = await request(app).get(`${BASE}/${idOf(created)}`);
+
+      expect(gone.status).toBe(400);
+      expect(problemSchema.parse(gone.body).issues).toEqual([
+        { path: 'items.0.filamentId', message: 'The spool does not exist.' },
+      ]);
+      expect((read.body as ProjectBody).items).toMatchObject([
+        { filamentId: spoolId, filament: null },
+      ]);
+    });
+
     it('shows part null in the detail when a line points to a part deleted afterwards', async () => {
-      const created = await create({ items: [{ partId, quantity: 1 }] });
+      const created = await create({ items: [{ partId, filamentId: spoolId, quantity: 1 }] });
       await parts().updateOne(
         { _id: new mongoose.Types.ObjectId(partId) },
         { $set: { deletedAt: new Date() } },
@@ -111,7 +166,9 @@ describe('projects API on a real MongoDB', () => {
       const read = await request(app).get(`${BASE}/${idOf(created)}`);
 
       expect(read.status).toBe(200);
-      expect((read.body as ProjectBody).items).toEqual([{ partId, quantity: 1, part: null }]);
+      expect((read.body as ProjectBody).items).toMatchObject([
+        { partId, filamentId: spoolId, part: null },
+      ]);
     });
   });
 
@@ -182,7 +239,7 @@ describe('projects API on a real MongoDB', () => {
     });
 
     it('answers summaries with itemCount and unitCount', async () => {
-      await create({ items: [{ partId, quantity: 6 }] });
+      await create({ items: [{ partId, filamentId: spoolId, quantity: 6 }] });
 
       const response = await request(app).get(BASE);
 

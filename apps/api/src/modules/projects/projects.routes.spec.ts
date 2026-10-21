@@ -6,11 +6,14 @@ import { problemSchema } from '../../shared/http/problem.js';
 import { createTestApp } from '../../testing/test-app.js';
 import { projectListSchema, projectSchema } from './projects.schemas.js';
 import {
+  createFakeFilamentLookup,
   createFakePartLookup,
   createFakeProjectRepository,
   createTestClock,
   PART_A,
   PART_B,
+  SPOOL_1,
+  SPOOL_2,
 } from './testing/fakes.js';
 
 const BASE = '/api/v1/projects';
@@ -42,13 +45,14 @@ const SUMMARY_KEYS = [
 function setup() {
   const repository = createFakeProjectRepository();
   const parts = createFakePartLookup();
+  const spools = createFakeFilamentLookup();
   const clock = createTestClock();
   const app = createTestApp({
     clock,
     env: { RATE_LIMIT_MAX: '100000' },
-    projects: { repository, partLookup: parts.lookup },
+    projects: { repository, partLookup: parts.lookup, filamentLookup: spools.lookup },
   });
-  return { app, repository, parts, clock };
+  return { app, repository, parts, spools, clock };
 }
 
 function expectProblem(
@@ -100,8 +104,8 @@ describe('POST /api/v1/projects', () => {
         deadline: '2026-12-24',
         description: ' Para regalo ',
         items: [
-          { partId: PART_A, quantity: 6 },
-          { partId: PART_B, quantity: 1 },
+          { partId: PART_A, filamentId: SPOOL_1, quantity: 6 },
+          { partId: PART_B, filamentId: SPOOL_1, quantity: 1 },
         ],
       });
 
@@ -115,8 +119,14 @@ describe('POST /api/v1/projects', () => {
           partId: PART_A,
           quantity: 6,
           part: { name: 'Soporte de estante en L', material: 'PETG' },
+          filament: { brand: 'Grilon3', material: 'PETG', colorName: 'Negro', availableGrams: 800 },
         },
-        { partId: PART_B, quantity: 1, part: { name: 'Florero espiral', material: 'PLA' } },
+        {
+          partId: PART_B,
+          filamentId: SPOOL_1,
+          quantity: 1,
+          part: { name: 'Florero espiral', material: 'PLA' },
+        },
       ],
     });
   });
@@ -181,14 +191,16 @@ describe('POST /api/v1/projects', () => {
       .send({
         name: 'x',
         items: [
-          { partId: PART_A, quantity: 1 },
-          { partId: PART_B, quantity: 1 },
-          { partId: PART_A, quantity: 1 },
+          { partId: PART_A, filamentId: SPOOL_1, quantity: 1 },
+          { partId: PART_B, filamentId: SPOOL_1, quantity: 1 },
+          { partId: PART_A, filamentId: SPOOL_1, quantity: 1 },
         ],
       });
 
     const problem = expectProblem(response, 400, 'validation_failed');
-    expect(problem.issues).toEqual([{ path: 'items.2.partId', message: 'Duplicated part.' }]);
+    expect(problem.issues).toEqual([
+      { path: 'items.2.filamentId', message: 'Duplicated part and spool.' },
+    ]);
     expect(repository.stored.size).toBe(0);
   });
 
@@ -201,9 +213,9 @@ describe('POST /api/v1/projects', () => {
       .send({
         name: 'x',
         items: [
-          { partId: PART_A, quantity: 1 },
-          { partId: PART_B, quantity: 1 },
-          { partId: 'c'.repeat(24), quantity: 1 },
+          { partId: PART_A, filamentId: SPOOL_1, quantity: 1 },
+          { partId: PART_B, filamentId: SPOOL_1, quantity: 1 },
+          { partId: 'c'.repeat(24), filamentId: SPOOL_1, quantity: 1 },
         ],
       });
 
@@ -227,8 +239,8 @@ describe('GET /api/v1/projects/:id', () => {
     const { app, repository, parts } = setup();
     const project = repository.seed({
       items: [
-        { partId: PART_A, quantity: 2 },
-        { partId: PART_B, quantity: 3 },
+        { partId: PART_A, filamentId: SPOOL_1, quantity: 2 },
+        { partId: PART_B, filamentId: SPOOL_1, quantity: 3 },
       ],
     });
 
@@ -239,8 +251,13 @@ describe('GET /api/v1/projects/:id', () => {
     expect(parts.calls).toHaveLength(1);
     expect(response.body).toMatchObject({
       items: [
-        { partId: PART_A, quantity: 2, part: { name: 'Soporte de estante en L' } },
-        { partId: PART_B, quantity: 3, part: { name: 'Florero espiral' } },
+        {
+          partId: PART_A,
+          filamentId: SPOOL_1,
+          quantity: 2,
+          part: { name: 'Soporte de estante en L' },
+        },
+        { partId: PART_B, filamentId: SPOOL_1, quantity: 3, part: { name: 'Florero espiral' } },
       ],
     });
   });
@@ -248,13 +265,21 @@ describe('GET /api/v1/projects/:id', () => {
   it('shows part null for a line whose part was deleted, with exactly the line keys', async () => {
     const { app, repository, parts } = setup();
     parts.live.delete(PART_A);
-    const project = repository.seed({ items: [{ partId: PART_A, quantity: 2 }] });
+    const project = repository.seed({
+      items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 2 }],
+    });
 
     const response = await request(app).get(`${BASE}/${project.id}`);
 
     expect(response.status).toBe(200);
     expect((response.body as { items: unknown[] }).items).toEqual([
-      { partId: PART_A, quantity: 2, part: null },
+      {
+        partId: PART_A,
+        filamentId: SPOOL_1,
+        quantity: 2,
+        part: null,
+        filament: { brand: 'Grilon3', material: 'PETG', colorName: 'Negro', availableGrams: 800 },
+      },
     ]);
   });
 
@@ -288,7 +313,9 @@ describe('GET /api/v1/projects/:id', () => {
 
   it('answers 503 when the part data is unavailable', async () => {
     const { app, repository, parts } = setup();
-    const project = repository.seed({ items: [{ partId: PART_A, quantity: 1 }] });
+    const project = repository.seed({
+      items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 1 }],
+    });
     parts.failWith = new AppError(
       'service_unavailable',
       'The part data is temporarily unavailable.',
@@ -306,8 +333,8 @@ describe('GET /api/v1/projects', () => {
       deadline: new Date('2026-12-01T00:00:00.000Z'),
       createdAt: new Date('2026-01-02T00:00:00.000Z'),
       items: [
-        { partId: PART_A, quantity: 6 },
-        { partId: PART_B, quantity: 2 },
+        { partId: PART_A, filamentId: SPOOL_1, quantity: 6 },
+        { partId: PART_B, filamentId: SPOOL_1, quantity: 2 },
       ],
     });
     repository.seed({
@@ -418,7 +445,9 @@ describe('GET /api/v1/projects', () => {
 describe('PATCH /api/v1/projects/:id', () => {
   it('edits the fields, keeps the lines and bumps the version', async () => {
     const { app, repository, clock } = setup();
-    const project = repository.seed({ items: [{ partId: PART_A, quantity: 4 }] });
+    const project = repository.seed({
+      items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 4 }],
+    });
     clock.advanceSeconds(60);
 
     const response = await request(app)
@@ -432,7 +461,14 @@ describe('PATCH /api/v1/projects/:id', () => {
       deadline: '2027-01-31',
       version: 2,
       updatedAt: clock.now().toISOString(),
-      items: [{ partId: PART_A, quantity: 4, part: { name: 'Soporte de estante en L' } }],
+      items: [
+        {
+          partId: PART_A,
+          filamentId: SPOOL_1,
+          quantity: 4,
+          part: { name: 'Soporte de estante en L' },
+        },
+      ],
     });
     expect(Object.keys(response.body as object).sort()).toEqual(DTO_KEYS);
   });
@@ -442,17 +478,20 @@ describe('PATCH /api/v1/projects/:id', () => {
     const project = repository.seed({
       description: 'x',
       deadline: new Date('2026-12-01T00:00:00.000Z'),
-      items: [{ partId: PART_A, quantity: 4 }],
+      items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 4 }],
     });
 
     const replaced = await request(app)
       .patch(`${BASE}/${project.id}`)
-      .send({ version: 1, items: [{ partId: PART_B, quantity: 9 }] });
+      .send({ version: 1, items: [{ partId: PART_B, filamentId: SPOOL_1, quantity: 9 }] });
     const emptied = await request(app)
       .patch(`${BASE}/${project.id}`)
       .send({ version: 2, items: [], description: null, deadline: null });
 
-    expect(replaced.body).toMatchObject({ items: [{ partId: PART_B, quantity: 9 }], version: 2 });
+    expect(replaced.body).toMatchObject({
+      items: [{ partId: PART_B, filamentId: SPOOL_1, quantity: 9 }],
+      version: 2,
+    });
     expect(emptied.body).toMatchObject({
       items: [],
       description: null,
@@ -501,7 +540,7 @@ describe('PATCH /api/v1/projects/:id', () => {
 
     const response = await request(app)
       .patch(`${BASE}/${project.id}`)
-      .send({ version: 3, items: [{ partId: PART_A, quantity: 1 }] });
+      .send({ version: 3, items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 1 }] });
 
     const problem = expectProblem(response, 409, 'conflict');
     expect(problem.issues).toEqual([
@@ -519,17 +558,17 @@ describe('PATCH /api/v1/projects/:id', () => {
       .send({
         version: 1,
         items: [
-          { partId: PART_A, quantity: 1 },
-          { partId: PART_A, quantity: 1 },
+          { partId: PART_A, filamentId: SPOOL_1, quantity: 1 },
+          { partId: PART_A, filamentId: SPOOL_1, quantity: 1 },
         ],
       });
     parts.live.clear();
     const missing = await request(app)
       .patch(`${BASE}/${project.id}`)
-      .send({ version: 1, items: [{ partId: PART_A, quantity: 1 }] });
+      .send({ version: 1, items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 1 }] });
 
     expect(expectProblem(duplicated, 400, 'validation_failed').issues).toEqual([
-      { path: 'items.1.partId', message: 'Duplicated part.' },
+      { path: 'items.1.filamentId', message: 'Duplicated part and spool.' },
     ]);
     expect(expectProblem(missing, 400, 'validation_failed').issues).toEqual([
       { path: 'items.0.partId', message: 'The part does not exist.' },
@@ -543,10 +582,16 @@ describe('PATCH /api/v1/projects/:id', () => {
 
     const created = await request(app)
       .post(BASE)
-      .send({ name: 'Mayúsculas', items: [{ partId: PART_A.toUpperCase(), quantity: 2 }] });
+      .send({
+        name: 'Mayúsculas',
+        items: [{ partId: PART_A.toUpperCase(), filamentId: SPOOL_1, quantity: 2 }],
+      });
     const edited = await request(app)
       .patch(`${BASE}/${project.id}`)
-      .send({ version: 1, items: [{ partId: PART_A.toUpperCase(), quantity: 3 }] });
+      .send({
+        version: 1,
+        items: [{ partId: PART_A.toUpperCase(), filamentId: SPOOL_1, quantity: 3 }],
+      });
 
     expect(created.status).toBe(201);
     expect((created.body as { items: { partId: string }[] }).items[0]?.partId).toBe(PART_A);
@@ -562,13 +607,13 @@ describe('PATCH /api/v1/projects/:id', () => {
       .send({
         name: 'Repetida',
         items: [
-          { partId: PART_A, quantity: 1 },
-          { partId: PART_A.toUpperCase(), quantity: 1 },
+          { partId: PART_A, filamentId: SPOOL_1, quantity: 1 },
+          { partId: PART_A.toUpperCase(), filamentId: SPOOL_1, quantity: 1 },
         ],
       });
 
     expect(expectProblem(response, 400, 'validation_failed').issues).toEqual([
-      { path: 'items.1.partId', message: 'Duplicated part.' },
+      { path: 'items.1.filamentId', message: 'Duplicated part and spool.' },
     ]);
   });
 
@@ -579,7 +624,7 @@ describe('PATCH /api/v1/projects/:id', () => {
 
     const response = await request(app)
       .patch(`${BASE}/${project.id}`)
-      .send({ version: 1, items: [{ partId: PART_A, quantity: 1 }] });
+      .send({ version: 1, items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 1 }] });
 
     expectProblem(response, 503, 'service_unavailable');
     expect(JSON.stringify(response.body)).not.toMatch(/Mongo|ECONNREFUSED|10\.1\.2\.3/);
@@ -638,5 +683,158 @@ describe('dependency failure', () => {
 
     expectProblem(response, 500, 'internal');
     expect(JSON.stringify(response.body)).not.toMatch(/E11000|duplicate key|print3d\.projects/);
+  });
+});
+
+describe('spools on the lines (ADR 0036)', () => {
+  const line = <T>(partId: string, filamentId: T, quantity = 1) => ({
+    partId,
+    filamentId,
+    quantity,
+  });
+
+  it('creates a project with one part on two lines with two spools: 201 and both summaries', async () => {
+    const { app } = setup();
+
+    const response = await request(app)
+      .post(BASE)
+      .send({ name: 'Dos colores', items: [line(PART_A, SPOOL_1, 2), line(PART_A, SPOOL_2, 3)] });
+
+    expect(response.status).toBe(201);
+    const body = projectSchema.parse(response.body);
+    expect(body.items.map((item) => [item.filamentId, item.filament?.colorName])).toEqual([
+      [SPOOL_1, 'Negro'],
+      [SPOOL_2, 'Rojo'],
+    ]);
+    expect(Object.keys(body.items[0] ?? {}).sort()).toEqual([
+      'filament',
+      'filamentId',
+      'part',
+      'partId',
+      'quantity',
+    ]);
+    expect(Object.keys(body.items[0]?.filament ?? {}).sort()).toEqual([
+      'availableGrams',
+      'brand',
+      'colorName',
+      'material',
+    ]);
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['null', null],
+    ['not an id', 'abc'],
+    ['an operator object', { $ne: '' }],
+  ])(
+    'rejects a spool that is %s with an issue on items.0.filamentId',
+    async (_label, filamentId) => {
+      const { app, repository, spools } = setup();
+      const item =
+        filamentId === undefined ? { partId: PART_A, quantity: 1 } : line(PART_A, filamentId);
+
+      const response = await request(app)
+        .post(BASE)
+        .send({ name: 'x', items: [item] });
+
+      const problem = expectProblem(response, 400, 'validation_failed');
+      expect(problem.issues?.map((issue) => issue.path)).toContain('items.0.filamentId');
+      expect([repository.calls, spools.calls]).toEqual([[], []]);
+    },
+  );
+
+  it('rejects an unknown key on a line', async () => {
+    const { app } = setup();
+
+    const response = await request(app)
+      .post(BASE)
+      .send({ name: 'x', items: [{ ...line(PART_A, SPOOL_1), price: 1 }] });
+
+    expectProblem(response, 400, 'validation_failed');
+  });
+
+  it('reports the same part and spool twice on the later line, even with the id in upper case', async () => {
+    const { app, repository } = setup();
+
+    const response = await request(app)
+      .post(BASE)
+      .send({
+        name: 'x',
+        items: [line(PART_A, SPOOL_1), line(PART_A, SPOOL_2), line(PART_A, SPOOL_1.toUpperCase())],
+      });
+
+    const problem = expectProblem(response, 400, 'validation_failed');
+    expect(problem.issues).toEqual([
+      { path: 'items.2.filamentId', message: 'Duplicated part and spool.' },
+    ]);
+    expect(repository.stored.size).toBe(0);
+  });
+
+  it('reports a spool that does not exist or was deleted with the same text', async () => {
+    const { app, spools, repository } = setup();
+    spools.live.delete(SPOOL_2);
+
+    const response = await request(app)
+      .post(BASE)
+      .send({
+        name: 'x',
+        items: [line(PART_A, SPOOL_1), line(PART_A, SPOOL_2), line(PART_B, 'f'.repeat(24))],
+      });
+
+    const problem = expectProblem(response, 400, 'validation_failed');
+    expect(problem.issues).toEqual([
+      { path: 'items.1.filamentId', message: 'The spool does not exist.' },
+      { path: 'items.2.filamentId', message: 'The spool does not exist.' },
+    ]);
+    expect(repository.stored.size).toBe(0);
+  });
+
+  it('answers 503 as a problem without internals when the spool data is unavailable', async () => {
+    const { app, spools, repository } = setup();
+    spools.failWith = new Error('mongodb://10.1.2.3 refused');
+
+    const response = await request(app)
+      .post(BASE)
+      .send({ name: 'x', items: [line(PART_A, SPOOL_1)] });
+
+    expectProblem(response, 503, 'service_unavailable');
+    expect(JSON.stringify(response.body)).not.toContain('10.1.2.3');
+    expect(repository.stored.size).toBe(0);
+  });
+
+  it('shows filament null for a line whose spool was deleted', async () => {
+    const { app, repository, spools } = setup();
+    spools.live.delete(SPOOL_1);
+    const project = repository.seed({ items: [line(PART_A, SPOOL_1)] });
+
+    const response = await request(app).get(`${BASE}/${project.id}`);
+
+    expect(response.status).toBe(200);
+    expect((response.body as { items: unknown[] }).items).toMatchObject([
+      { filamentId: SPOOL_1, filament: null },
+    ]);
+  });
+
+  it('opens a legacy line with a null spool, rejects saving it with null, then accepts a spool', async () => {
+    const { app, repository } = setup();
+    const project = repository.seed({ items: [line(PART_A, null, 2)] });
+
+    const read = await request(app).get(`${BASE}/${project.id}`);
+    const withNull = await request(app)
+      .patch(`${BASE}/${project.id}`)
+      .send({ version: 1, items: [line(PART_A, null, 2)] });
+    const withSpool = await request(app)
+      .patch(`${BASE}/${project.id}`)
+      .send({ version: 1, items: [line(PART_A, SPOOL_1, 2)] });
+
+    expect(read.status).toBe(200);
+    expect(read.body).toMatchObject({ items: [{ filamentId: null, filament: null }] });
+    const problem = expectProblem(withNull, 400, 'validation_failed');
+    expect(problem.issues?.map((issue) => issue.path)).toContain('items.0.filamentId');
+    expect(withSpool.status).toBe(200);
+    expect(withSpool.body).toMatchObject({
+      version: 2,
+      items: [{ filamentId: SPOOL_1, filament: { colorName: 'Negro' } }],
+    });
   });
 });

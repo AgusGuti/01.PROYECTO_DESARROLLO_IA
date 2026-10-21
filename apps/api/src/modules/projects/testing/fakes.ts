@@ -3,12 +3,13 @@
 import type { Clock } from '../../health/index.js';
 import {
   PRIORITIES,
+  type FilamentSummary,
   type PartSummary,
   type Project,
   type ProjectFields,
   type ProjectPatch,
 } from '../projects.domain.js';
-import type { PartLookup, ProjectRepository } from '../projects.service.js';
+import type { FilamentLookup, PartLookup, ProjectRepository } from '../projects.service.js';
 
 export function createTestClock(start = '2026-03-01T10:00:00.000Z'): Clock & {
   advanceSeconds(seconds: number): void;
@@ -34,6 +35,45 @@ export const validFields: ProjectFields = {
 export const PART_A = 'a'.repeat(24);
 export const PART_B = 'b'.repeat(24);
 export const PART_C = 'c'.repeat(24);
+
+/** Spool ids used in tests: 24 hex characters. */
+export const SPOOL_1 = '1'.repeat(24);
+export const SPOOL_2 = '2'.repeat(24);
+export const SPOOL_3 = '3'.repeat(24);
+
+export interface FakeFilamentLookup {
+  readonly lookup: FilamentLookup;
+  /** The ids asked on every call, in order. */
+  readonly calls: string[][];
+  /** The live spools. Anything else is unknown or deleted. */
+  readonly live: Map<string, FilamentSummary>;
+  /** When set, the lookup rejects with this error (a dependency failure). */
+  failWith: Error | undefined;
+}
+
+export function createFakeFilamentLookup(
+  spools: Record<string, FilamentSummary> = {
+    [SPOOL_1]: { brand: 'Grilon3', material: 'PETG', colorName: 'Negro', availableGrams: 800 },
+    [SPOOL_2]: { brand: 'Printalot', material: 'PLA', colorName: 'Rojo', availableGrams: 450 },
+  },
+): FakeFilamentLookup {
+  const fake: FakeFilamentLookup = {
+    calls: [],
+    live: new Map(Object.entries(spools)),
+    failWith: undefined,
+    lookup(ids) {
+      fake.calls.push([...ids]);
+      if (fake.failWith !== undefined) return Promise.reject(fake.failWith);
+      const found = new Map<string, FilamentSummary>();
+      for (const id of ids) {
+        const spool = fake.live.get(id);
+        if (spool !== undefined) found.set(id, spool);
+      }
+      return Promise.resolve(found);
+    },
+  };
+  return fake;
+}
 
 export interface FakePartLookup {
   readonly lookup: PartLookup;
@@ -223,7 +263,9 @@ export function createFakeProjectRepository(): FakeProjectRepository {
         projects: using.slice(0, limit).map((p) => ({
           id: p.id,
           name: p.name,
-          quantity: p.items.find((item) => item.partId === partId)?.quantity ?? 0,
+          quantity: p.items
+            .filter((item) => item.partId === partId)
+            .reduce((sum, item) => sum + item.quantity, 0),
         })),
       });
     },

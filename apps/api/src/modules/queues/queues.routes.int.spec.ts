@@ -26,10 +26,20 @@ const printerBody = (name: string) => ({
   compatibleMaterials: ['PLA', 'PETG'],
 });
 
+const spoolBody = {
+  brand: 'Grilon3',
+  material: 'PLA',
+  colorName: 'Negro',
+  initialGrams: 1000,
+  purchaseCostMinor: 1_950_000,
+  purchaseDate: '2026-02-01',
+};
+
 describe('queues API on a real MongoDB with the real wiring', () => {
   let mongo: MongoMemoryReplSet;
   let database: Database;
   let app: Express;
+  let spool: string;
 
   const idOf = (response: request.Response): string => (response.body as { id: string }).id;
   const makePart = async (name: string, seconds: number) =>
@@ -55,15 +65,16 @@ describe('queues API on a real MongoDB with the real wiring', () => {
   });
 
   beforeEach(async () => {
-    for (const name of ['queues', 'projects', 'parts', 'printers']) {
+    for (const name of ['queues', 'projects', 'parts', 'printers', 'filaments']) {
       await mongoose.connection.collection(name).deleteMany({});
     }
+    spool = idOf(await request(app).post('/api/v1/filaments').send(spoolBody));
   });
 
   it('creates from the project items, enriches with the real part data and edits and deletes', async () => {
     const part = await makePart('Soporte', 3600);
     const printer = await makePrinter('Ender 3');
-    const project = await makeProject([{ partId: part, quantity: 3 }]);
+    const project = await makeProject([{ partId: part, filamentId: spool, quantity: 3 }]);
 
     const created = await request(app)
       .post('/api/v1/queues')
@@ -89,14 +100,14 @@ describe('queues API on a real MongoDB with the real wiring', () => {
   it('keeps its own lines when the project is edited afterwards', async () => {
     const part = await makePart('Soporte', 600);
     const printer = await makePrinter('Ender 3');
-    const project = await makeProject([{ partId: part, quantity: 3 }]);
+    const project = await makeProject([{ partId: part, filamentId: spool, quantity: 3 }]);
     await request(app)
       .post('/api/v1/queues')
       .send({ projectId: project, goal: 'deadline', mode: 'single', printerIds: [printer] });
 
     await request(app)
       .patch(`/api/v1/projects/${project}`)
-      .send({ version: 1, items: [{ partId: part, quantity: 9 }] });
+      .send({ version: 1, items: [{ partId: part, filamentId: spool, quantity: 9 }] });
 
     const queue = await request(app).get(`/api/v1/queues/${project}`);
     expect(queue.body).toMatchObject({ lines: [{ quantity: 3 }] });
@@ -121,7 +132,7 @@ describe('queues API on a real MongoDB with the real wiring', () => {
     const part = await makePart('Soporte', 600);
     const used = await makePrinter('En uso');
     const idle = await makePrinter('Libre');
-    const project = await makeProject([{ partId: part, quantity: 2 }]);
+    const project = await makeProject([{ partId: part, filamentId: spool, quantity: 2 }]);
     await request(app)
       .post('/api/v1/queues')
       .send({ projectId: project, goal: 'fastest', mode: 'single', printerIds: [used] });
@@ -152,7 +163,7 @@ describe('queues API on a real MongoDB with the real wiring', () => {
   it('flags a part deleted after the queue was created', async () => {
     const part = await makePart('Soporte', 600);
     const printer = await makePrinter('Ender 3');
-    const project = await makeProject([{ partId: part, quantity: 2 }]);
+    const project = await makeProject([{ partId: part, filamentId: spool, quantity: 2 }]);
     await request(app)
       .post('/api/v1/queues')
       .send({ projectId: project, goal: 'fastest', mode: 'single', printerIds: [printer] });

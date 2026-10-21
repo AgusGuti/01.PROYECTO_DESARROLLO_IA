@@ -12,7 +12,7 @@ import type { ProjectDto, ProjectListDto, ProjectSummaryDto } from './projects.s
 const toDay = (deadline: Date | null): string | null =>
   deadline === null ? null : deadline.toISOString().slice(0, 10);
 
-export function toProjectDto({ project, parts }: ProjectDetail): ProjectDto {
+export function toProjectDto({ project, parts, filaments }: ProjectDetail): ProjectDto {
   return {
     id: project.id,
     name: project.name,
@@ -21,10 +21,21 @@ export function toProjectDto({ project, parts }: ProjectDetail): ProjectDto {
     deadline: toDay(project.deadline),
     items: project.items.map((item) => {
       const part = parts.get(item.partId);
+      const filament = item.filamentId === null ? undefined : filaments.get(item.filamentId);
       return {
         partId: item.partId,
+        filamentId: item.filamentId,
         quantity: item.quantity,
         part: part === undefined ? null : { name: part.name, material: part.material },
+        filament:
+          filament === undefined
+            ? null
+            : {
+                brand: filament.brand,
+                material: filament.material,
+                colorName: filament.colorName,
+                availableGrams: filament.availableGrams,
+              },
       };
     }),
     version: project.version,

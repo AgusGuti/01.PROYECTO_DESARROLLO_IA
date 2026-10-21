@@ -7,9 +7,14 @@ export type Priority = (typeof PRIORITIES)[number];
 
 export const MAX_ITEMS = 100;
 
-/** A line: it references a part by id and never copies its values. */
+/**
+ * A line: it references a part and a spool by id and never copies their values. `filamentId` is
+ * null only for a line stored before ADR 0036: it reads back, but cannot be saved (the input
+ * schema requires a spool).
+ */
 export interface ProjectItem {
   readonly partId: string;
+  readonly filamentId: string | null;
   readonly quantity: number;
 }
 
@@ -64,10 +69,19 @@ export interface PartSummary {
   readonly material: Material;
 }
 
-/** A project plus the current data of the parts its lines reference (absent: not live). */
+/** What a project shows about a spool it uses. */
+export interface FilamentSummary {
+  readonly brand: string;
+  readonly material: Material;
+  readonly colorName: string;
+  readonly availableGrams: number;
+}
+
+/** A project plus the current data of the parts and spools its lines reference (absent: not live). */
 export interface ProjectDetail {
   readonly project: Project;
   readonly parts: ReadonlyMap<string, PartSummary>;
+  readonly filaments: ReadonlyMap<string, FilamentSummary>;
 }
 
 /** One live project that uses a part, seen from the part's side. */
@@ -87,15 +101,36 @@ export interface ItemIssue {
   readonly message: string;
 }
 
-/** A part may appear once. The issue goes on the second occurrence. */
+/** A part may repeat with different spools; the pair (part, spool) is unique (ADR 0036). */
 export function duplicatedItemIssues(items: readonly ProjectItem[]): ItemIssue[] {
   const seen = new Set<string>();
   const issues: ItemIssue[] = [];
   items.forEach((item, index) => {
-    if (seen.has(item.partId)) {
-      issues.push({ path: `items.${String(index)}.partId`, message: 'Duplicated part.' });
+    const key = `${item.partId}:${item.filamentId ?? ''}`;
+    if (seen.has(key)) {
+      issues.push({
+        path: `items.${String(index)}.filamentId`,
+        message: 'Duplicated part and spool.',
+      });
     }
-    seen.add(item.partId);
+    seen.add(key);
+  });
+  return issues;
+}
+
+/** Lines whose spool is not in the live set. A legacy line without a spool is not judged here. */
+export function missingFilamentIssues(
+  items: readonly ProjectItem[],
+  liveIds: ReadonlySet<string>,
+): ItemIssue[] {
+  const issues: ItemIssue[] = [];
+  items.forEach((item, index) => {
+    if (item.filamentId !== null && !liveIds.has(item.filamentId)) {
+      issues.push({
+        path: `items.${String(index)}.filamentId`,
+        message: 'The spool does not exist.',
+      });
+    }
   });
   return issues;
 }

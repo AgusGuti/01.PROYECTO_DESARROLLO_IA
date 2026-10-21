@@ -8,7 +8,7 @@ import { createMongoDatabase, type Database } from '../../infrastructure/databas
 import { testConfig } from '../../testing/test-app.js';
 import type { Project, ProjectFields, ProjectListQuery } from './projects.domain.js';
 import { createMongoProjectRepository } from './projects.repository.js';
-import { PART_A, PART_B, PART_C, validFields } from './testing/fakes.js';
+import { PART_A, PART_B, PART_C, SPOOL_1, SPOOL_2, validFields } from './testing/fakes.js';
 
 const T0 = new Date('2026-03-01T10:00:00.000Z');
 const T1 = new Date('2026-03-01T11:00:00.000Z');
@@ -58,7 +58,7 @@ describe('projects repository on a real MongoDB', () => {
         description: 'Para el taller',
         priority: 'high',
         deadline: day('2026-12-24'),
-        items: [{ partId: PART_A, quantity: 6 }],
+        items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 6 }],
       });
 
       expect(created).toEqual({
@@ -67,7 +67,7 @@ describe('projects repository on a real MongoDB', () => {
         description: 'Para el taller',
         priority: 'high',
         deadline: day('2026-12-24'),
-        items: [{ partId: PART_A, quantity: 6 }],
+        items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 6 }],
         version: 1,
         deletedAt: null,
         createdAt: T0,
@@ -77,12 +77,16 @@ describe('projects repository on a real MongoDB', () => {
     });
 
     it('stores the part ids as ObjectId and the optionals as explicit nulls', async () => {
-      const created = await make({ items: [{ partId: PART_A, quantity: 2 }] });
+      const created = await make({ items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 2 }] });
 
       const raw = await rawOf(created.id);
 
       expect(raw?.['items']).toEqual([
-        { partId: new mongoose.Types.ObjectId(PART_A), quantity: 2 },
+        {
+          partId: new mongoose.Types.ObjectId(PART_A),
+          filamentId: new mongoose.Types.ObjectId(SPOOL_1),
+          quantity: 2,
+        },
       ]);
       expect(raw).toMatchObject({ description: null, deadline: null, deletedAt: null });
     });
@@ -115,7 +119,10 @@ describe('projects repository on a real MongoDB', () => {
 
   describe('update', () => {
     it('changes only the given fields, bumps the version and moves updatedAt', async () => {
-      const created = await make({ description: 'x', items: [{ partId: PART_A, quantity: 1 }] });
+      const created = await make({
+        description: 'x',
+        items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 1 }],
+      });
 
       const updated = await repository.update(created.id, 1, { name: 'Nuevo' }, T1);
 
@@ -126,13 +133,13 @@ describe('projects repository on a real MongoDB', () => {
       const created = await make({
         description: 'x',
         deadline: day('2026-12-24'),
-        items: [{ partId: PART_A, quantity: 1 }],
+        items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 1 }],
       });
 
       const replaced = await repository.update(
         created.id,
         1,
-        { items: [{ partId: PART_B, quantity: 3 }] },
+        { items: [{ partId: PART_B, filamentId: SPOOL_1, quantity: 3 }] },
         T1,
       );
       const emptied = await repository.update(
@@ -142,7 +149,7 @@ describe('projects repository on a real MongoDB', () => {
         T1,
       );
 
-      expect(replaced?.items).toEqual([{ partId: PART_B, quantity: 3 }]);
+      expect(replaced?.items).toEqual([{ partId: PART_B, filamentId: SPOOL_1, quantity: 3 }]);
       expect(emptied).toMatchObject({ items: [], description: null, deadline: null, version: 3 });
       expect((await rawOf(created.id))?.['items']).toEqual([]);
     });
@@ -368,18 +375,82 @@ describe('projects repository on a real MongoDB', () => {
     });
   });
 
+  describe('lines stored before ADR 0036 (no spool)', () => {
+    it('reads a raw line without filamentId back as null, in findLiveById and in list', async () => {
+      const _id = new mongoose.Types.ObjectId();
+      await collection().insertOne({
+        _id,
+        name: 'Antiguo',
+        description: null,
+        priority: 'normal',
+        deadline: null,
+        items: [{ partId: new mongoose.Types.ObjectId(PART_A), quantity: 3 }],
+        version: 1,
+        deletedAt: null,
+        createdAt: T0,
+        updatedAt: T0,
+      });
+
+      const read = await repository.findLiveById(_id.toString());
+      const listed = await repository.list(query());
+
+      expect(read?.items).toEqual([{ partId: PART_A, filamentId: null, quantity: 3 }]);
+      expect(listed.items[0]?.items).toEqual([{ partId: PART_A, filamentId: null, quantity: 3 }]);
+    });
+  });
+
   describe('usageOfPart', () => {
+    it('sums the quantities of every line of the part, whatever the spool', async () => {
+      const _id = new mongoose.Types.ObjectId();
+      await collection().insertOne({
+        _id,
+        name: 'Mixto',
+        description: null,
+        priority: 'normal',
+        deadline: null,
+        items: [
+          { partId: new mongoose.Types.ObjectId(PART_A), quantity: 1 },
+          { partId: new mongoose.Types.ObjectId(PART_B), filamentId: null, quantity: 9 },
+        ],
+        version: 1,
+        deletedAt: null,
+        createdAt: T0,
+        updatedAt: T0,
+      });
+      const multi = await make({
+        name: 'Dos colores',
+        items: [
+          { partId: PART_A, filamentId: SPOOL_1, quantity: 4 },
+          { partId: PART_B, filamentId: SPOOL_1, quantity: 1 },
+          { partId: PART_A, filamentId: SPOOL_2, quantity: 6 },
+        ],
+      });
+
+      const usage = await repository.usageOfPart(PART_A, 50);
+
+      expect(usage).toEqual({
+        total: 2,
+        projects: [
+          { id: multi.id, name: 'Dos colores', quantity: 10 },
+          { id: _id.toString(), name: 'Mixto', quantity: 1 },
+        ],
+      });
+    });
+
     it('lists live projects that use the part, sorted by name then id, with the true total', async () => {
-      await make({ name: 'Zeta', items: [{ partId: PART_A, quantity: 2 }] });
+      await make({ name: 'Zeta', items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 2 }] });
       const alfa = await make({
         name: 'alfa',
         items: [
-          { partId: PART_B, quantity: 1 },
-          { partId: PART_A, quantity: 7 },
+          { partId: PART_B, filamentId: SPOOL_1, quantity: 1 },
+          { partId: PART_A, filamentId: SPOOL_1, quantity: 7 },
         ],
       });
-      await make({ name: 'Otro', items: [{ partId: PART_B, quantity: 1 }] });
-      const gone = await make({ name: 'Borrado', items: [{ partId: PART_A, quantity: 1 }] });
+      await make({ name: 'Otro', items: [{ partId: PART_B, filamentId: SPOOL_1, quantity: 1 }] });
+      const gone = await make({
+        name: 'Borrado',
+        items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 1 }],
+      });
       await repository.softDelete(gone.id, T1);
 
       const all = await repository.usageOfPart(PART_A, 50);
@@ -403,20 +474,29 @@ describe('projects repository on a real MongoDB', () => {
       const one = await make({
         name: 'Uno',
         items: [
-          { partId: PART_A, quantity: 2 },
-          { partId: PART_B, quantity: 1 },
+          { partId: PART_A, filamentId: SPOOL_1, quantity: 2 },
+          { partId: PART_B, filamentId: SPOOL_1, quantity: 1 },
         ],
       });
-      const two = await make({ name: 'Dos', items: [{ partId: PART_A, quantity: 5 }] });
-      const untouched = await make({ name: 'Tres', items: [{ partId: PART_B, quantity: 1 }] });
-      const gone = await make({ name: 'Borrado', items: [{ partId: PART_A, quantity: 1 }] });
+      const two = await make({
+        name: 'Dos',
+        items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 5 }],
+      });
+      const untouched = await make({
+        name: 'Tres',
+        items: [{ partId: PART_B, filamentId: SPOOL_1, quantity: 1 }],
+      });
+      const gone = await make({
+        name: 'Borrado',
+        items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 1 }],
+      });
       await repository.softDelete(gone.id, T0);
 
       const changed = await repository.pullPart(PART_A, T1);
 
       expect(changed).toBe(2);
       expect(await repository.findLiveById(one.id)).toMatchObject({
-        items: [{ partId: PART_B, quantity: 1 }],
+        items: [{ partId: PART_B, filamentId: SPOOL_1, quantity: 1 }],
         version: 2,
         updatedAt: T1,
       });
@@ -428,12 +508,18 @@ describe('projects repository on a real MongoDB', () => {
       expect(await repository.findLiveById(untouched.id)).toMatchObject({ version: 1 });
       expect(await rawOf(gone.id)).toMatchObject({
         version: 2,
-        items: [{ partId: new mongoose.Types.ObjectId(PART_A), quantity: 1 }],
+        items: [
+          {
+            partId: new mongoose.Types.ObjectId(PART_A),
+            filamentId: new mongoose.Types.ObjectId(SPOOL_1),
+            quantity: 1,
+          },
+        ],
       });
     });
 
     it('is idempotent: repeating it changes nothing', async () => {
-      await make({ items: [{ partId: PART_A, quantity: 2 }] });
+      await make({ items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 2 }] });
 
       const first = await repository.pullPart(PART_A, T1);
       const second = await repository.pullPart(PART_A, T1);

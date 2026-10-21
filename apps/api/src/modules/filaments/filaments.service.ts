@@ -20,6 +20,8 @@ export interface FilamentRepository {
   create(fields: FilamentFields, now: Date): Promise<Filament>;
   /** A filament that exists and is not deleted. */
   findLiveById(id: string): Promise<Filament | null>;
+  /** The live ones among `ids`, in one query (ADR 0036). Unknown and deleted ids are absent. */
+  findLiveByIds(ids: readonly string[]): Promise<Filament[]>;
   list(query: FilamentListQuery): Promise<FilamentPage>;
   /** One atomic write guarded by `{ id, version, not deleted }`; bumps the version. */
   update(id: string, version: number, patch: FilamentPatch, now: Date): Promise<Filament | null>;

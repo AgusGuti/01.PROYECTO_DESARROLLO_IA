@@ -2,20 +2,30 @@ import { describe, expect, it } from 'vitest';
 import { AppError } from '../../shared/errors/app-error.js';
 import { createProjectsService, type NewProject } from './projects.service.js';
 import {
+  createFakeFilamentLookup,
   createFakePartLookup,
   createFakeProjectRepository,
   createTestClock,
   PART_A,
   PART_B,
   PART_C,
+  SPOOL_1,
+  SPOOL_2,
+  SPOOL_3,
 } from './testing/fakes.js';
 
 function setup() {
   const repository = createFakeProjectRepository();
   const parts = createFakePartLookup();
+  const spools = createFakeFilamentLookup();
   const clock = createTestClock();
-  const service = createProjectsService({ repository, partLookup: parts.lookup, clock });
-  return { repository, parts, clock, service };
+  const service = createProjectsService({
+    repository,
+    partLookup: parts.lookup,
+    filamentLookup: spools.lookup,
+    clock,
+  });
+  return { repository, parts, spools, clock, service };
 }
 
 const newProject: NewProject = { name: 'Soportes para el taller', priority: 'normal', items: [] };
@@ -62,8 +72,8 @@ describe('create', () => {
     const detail = await service.create({
       ...newProject,
       items: [
-        { partId: PART_A, quantity: 6 },
-        { partId: PART_B, quantity: 2 },
+        { partId: PART_A, filamentId: SPOOL_1, quantity: 6 },
+        { partId: PART_B, filamentId: SPOOL_1, quantity: 2 },
       ],
     });
 
@@ -78,14 +88,16 @@ describe('create', () => {
       service.create({
         ...newProject,
         items: [
-          { partId: PART_A, quantity: 1 },
-          { partId: PART_A, quantity: 2 },
+          { partId: PART_A, filamentId: SPOOL_1, quantity: 1 },
+          { partId: PART_A, filamentId: SPOOL_1, quantity: 2 },
         ],
       }),
     );
 
     expect(error.code).toBe('validation_failed');
-    expect(error.issues).toEqual([{ path: 'items.1.partId', message: 'Duplicated part.' }]);
+    expect(error.issues).toEqual([
+      { path: 'items.1.filamentId', message: 'Duplicated part and spool.' },
+    ]);
     expect(parts.calls).toEqual([]);
     expect(repository.calls).toEqual([]);
   });
@@ -98,9 +110,9 @@ describe('create', () => {
       service.create({
         ...newProject,
         items: [
-          { partId: PART_A, quantity: 1 },
-          { partId: PART_B, quantity: 1 },
-          { partId: PART_C, quantity: 1 },
+          { partId: PART_A, filamentId: SPOOL_1, quantity: 1 },
+          { partId: PART_B, filamentId: SPOOL_1, quantity: 1 },
+          { partId: PART_C, filamentId: SPOOL_1, quantity: 1 },
         ],
       }),
     );
@@ -117,7 +129,10 @@ describe('create', () => {
     parts.failWith = new Error('connection refused 10.1.2.3');
 
     const error = await failureOf(
-      service.create({ ...newProject, items: [{ partId: PART_A, quantity: 1 }] }),
+      service.create({
+        ...newProject,
+        items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 1 }],
+      }),
     );
 
     expect(error.code).toBe('service_unavailable');
@@ -126,13 +141,143 @@ describe('create', () => {
   });
 });
 
+describe('create: spools (ADR 0036)', () => {
+  const [first, second] = [
+    { partId: PART_A, filamentId: SPOOL_1, quantity: 1 },
+    { partId: PART_A, filamentId: SPOOL_2, quantity: 1 },
+  ];
+  const twoSpools = [first, second];
+
+  it('accepts one part on two lines with different spools and returns the spools', async () => {
+    const { service, spools } = setup();
+
+    const detail = await service.create({ ...newProject, items: twoSpools });
+
+    expect(spools.calls).toEqual([[SPOOL_1, SPOOL_2]]);
+    expect(detail.project.items).toEqual(twoSpools);
+    expect(detail.filaments.get(SPOOL_2)).toMatchObject({ brand: 'Printalot', colorName: 'Rojo' });
+  });
+
+  it('rejects the same part and spool twice on the later line, before any lookup', async () => {
+    const { service, parts, spools, repository } = setup();
+
+    const error = await failureOf(service.create({ ...newProject, items: [first, second, first] }));
+
+    expect(error.issues).toEqual([
+      { path: 'items.2.filamentId', message: 'Duplicated part and spool.' },
+    ]);
+    expect([parts.calls, spools.calls, repository.calls]).toEqual([[], [], []]);
+  });
+
+  it('gives the same issue to an unknown spool and to a deleted spool, and stores nothing', async () => {
+    const { service, spools, repository } = setup();
+    spools.live.delete(SPOOL_2);
+
+    const error = await failureOf(
+      service.create({
+        ...newProject,
+        items: [
+          { partId: PART_A, filamentId: SPOOL_1, quantity: 1 },
+          { partId: PART_A, filamentId: SPOOL_2, quantity: 1 },
+          { partId: PART_B, filamentId: SPOOL_3, quantity: 1 },
+        ],
+      }),
+    );
+
+    expect(error.code).toBe('validation_failed');
+    expect(error.issues).toEqual([
+      { path: 'items.1.filamentId', message: 'The spool does not exist.' },
+      { path: 'items.2.filamentId', message: 'The spool does not exist.' },
+    ]);
+    expect(repository.calls).toEqual([]);
+  });
+
+  it('collects the part and the spool issues of every line together', async () => {
+    const { service, parts, spools } = setup();
+    parts.live.delete(PART_B);
+    spools.live.delete(SPOOL_1);
+
+    const error = await failureOf(
+      service.create({
+        ...newProject,
+        items: [
+          { partId: PART_A, filamentId: SPOOL_1, quantity: 1 },
+          { partId: PART_B, filamentId: SPOOL_2, quantity: 1 },
+        ],
+      }),
+    );
+
+    expect(error.issues).toEqual([
+      { path: 'items.0.filamentId', message: 'The spool does not exist.' },
+      { path: 'items.1.partId', message: 'The part does not exist.' },
+    ]);
+  });
+
+  it('checks the parts before the spools: a failing part lookup never reaches the spools', async () => {
+    const { service, parts, spools } = setup();
+    parts.failWith = new Error('boom');
+
+    const error = await failureOf(service.create({ ...newProject, items: twoSpools }));
+
+    expect(error.code).toBe('service_unavailable');
+    expect(spools.calls).toEqual([]);
+  });
+
+  it('answers 503 and stores nothing when the spool lookup fails', async () => {
+    const { service, spools, repository } = setup();
+    spools.failWith = new Error('connection refused 10.1.2.3');
+
+    const error = await failureOf(service.create({ ...newProject, items: twoSpools }));
+
+    expect(error.code).toBe('service_unavailable');
+    expect(error.message).not.toMatch(/10\.1\.2\.3/);
+    expect(repository.calls).toEqual([]);
+  });
+
+  it('rejects a spool that is gone when the lines are replaced, without writing', async () => {
+    const { service, repository, spools } = setup();
+    const seeded = repository.seed();
+    spools.live.clear();
+
+    const error = await failureOf(service.update(seeded.id, { version: 1, items: twoSpools }));
+
+    expect(error.issues[0]).toEqual({
+      path: 'items.0.filamentId',
+      message: 'The spool does not exist.',
+    });
+    expect(repository.calls).not.toContain('update');
+  });
+});
+
+describe('get: spools and legacy lines', () => {
+  it('reads a line with a null spool without asking the spool lookup', async () => {
+    const { service, repository, spools } = setup();
+    const seeded = repository.seed({ items: [{ partId: PART_A, filamentId: null, quantity: 1 }] });
+
+    const detail = await service.get(seeded.id);
+
+    expect(detail.project.items[0]?.filamentId).toBeNull();
+    expect(spools.calls).toEqual([]);
+  });
+
+  it('answers 503 when the spool lookup fails on a read', async () => {
+    const { service, repository, spools } = setup();
+    const seeded = repository.seed({
+      items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 1 }],
+    });
+    spools.failWith = new Error('boom');
+
+    expect((await failureOf(service.get(seeded.id))).code).toBe('service_unavailable');
+  });
+});
+
 describe('get', () => {
   it('asks the lookup once for the parts of all the lines', async () => {
     const { service, repository, parts } = setup();
     const seeded = repository.seed({
       items: [
-        { partId: PART_A, quantity: 1 },
-        { partId: PART_B, quantity: 1 },
+        { partId: PART_A, filamentId: SPOOL_1, quantity: 1 },
+        { partId: PART_B, filamentId: SPOOL_1, quantity: 1 },
       ],
     });
 
@@ -145,7 +290,9 @@ describe('get', () => {
   it('leaves out a part that is no longer live', async () => {
     const { service, repository, parts } = setup();
     parts.live.delete(PART_A);
-    const seeded = repository.seed({ items: [{ partId: PART_A, quantity: 1 }] });
+    const seeded = repository.seed({
+      items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 1 }],
+    });
 
     const detail = await service.get(seeded.id);
 
@@ -163,7 +310,9 @@ describe('get', () => {
 
   it('answers 503 when the lookup fails', async () => {
     const { service, repository, parts } = setup();
-    const seeded = repository.seed({ items: [{ partId: PART_A, quantity: 1 }] });
+    const seeded = repository.seed({
+      items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 1 }],
+    });
     parts.failWith = new AppError(
       'service_unavailable',
       'The part data is temporarily unavailable.',
@@ -174,7 +323,7 @@ describe('get', () => {
 });
 
 describe('update', () => {
-  const lines = [{ partId: PART_A, quantity: 4 }];
+  const lines = [{ partId: PART_A, filamentId: SPOOL_1, quantity: 4 }];
 
   it('keeps the lines when the patch does not carry them', async () => {
     const { service, repository } = setup();
@@ -191,11 +340,11 @@ describe('update', () => {
 
     const replaced = await service.update(seeded.id, {
       version: 1,
-      items: [{ partId: PART_B, quantity: 1 }],
+      items: [{ partId: PART_B, filamentId: SPOOL_1, quantity: 1 }],
     });
     const emptied = await service.update(seeded.id, { version: 2, items: [] });
 
-    expect(replaced.project.items).toEqual([{ partId: PART_B, quantity: 1 }]);
+    expect(replaced.project.items).toEqual([{ partId: PART_B, filamentId: SPOOL_1, quantity: 1 }]);
     expect(emptied.project).toMatchObject({ items: [], version: 3 });
   });
 
@@ -264,7 +413,10 @@ describe('update', () => {
     parts.live.clear();
     const missing = await failureOf(service.update(seeded.id, { version: 1, items: lines }));
 
-    expect(duplicated.issues[0]).toEqual({ path: 'items.1.partId', message: 'Duplicated part.' });
+    expect(duplicated.issues[0]).toEqual({
+      path: 'items.1.filamentId',
+      message: 'Duplicated part and spool.',
+    });
     expect(missing.issues[0]).toEqual({
       path: 'items.0.partId',
       message: 'The part does not exist.',
@@ -335,13 +487,22 @@ describe('remove', () => {
 describe('the usage port for the parts module', () => {
   it('lists the live projects that use a part, sorted by name, with the true total', async () => {
     const { service, repository } = setup();
-    repository.seed({ name: 'Zeta', items: [{ partId: PART_A, quantity: 2 }] });
-    repository.seed({ name: 'alfa', items: [{ partId: PART_A, quantity: 7 }] });
-    repository.seed({ name: 'Otro', items: [{ partId: PART_B, quantity: 1 }] });
+    repository.seed({
+      name: 'Zeta',
+      items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 2 }],
+    });
+    repository.seed({
+      name: 'alfa',
+      items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 7 }],
+    });
+    repository.seed({
+      name: 'Otro',
+      items: [{ partId: PART_B, filamentId: SPOOL_1, quantity: 1 }],
+    });
     repository.seed({
       name: 'Borrado',
       deletedAt: new Date(),
-      items: [{ partId: PART_A, quantity: 1 }],
+      items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 1 }],
     });
 
     const usage = await service.usageOfPart(PART_A, 1);
@@ -354,13 +515,13 @@ describe('the usage port for the parts module', () => {
     const { service, repository, clock } = setup();
     const live = repository.seed({
       items: [
-        { partId: PART_A, quantity: 2 },
-        { partId: PART_B, quantity: 1 },
+        { partId: PART_A, filamentId: SPOOL_1, quantity: 2 },
+        { partId: PART_B, filamentId: SPOOL_1, quantity: 1 },
       ],
     });
     const gone = repository.seed({
       deletedAt: new Date(),
-      items: [{ partId: PART_A, quantity: 1 }],
+      items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 1 }],
     });
     clock.advanceSeconds(30);
 
@@ -369,12 +530,12 @@ describe('the usage port for the parts module', () => {
 
     expect([first, second]).toEqual([1, 0]);
     expect(repository.stored.get(live.id)).toMatchObject({
-      items: [{ partId: PART_B, quantity: 1 }],
+      items: [{ partId: PART_B, filamentId: SPOOL_1, quantity: 1 }],
       version: 2,
       updatedAt: clock.now(),
     });
     expect(repository.stored.get(gone.id)).toMatchObject({
-      items: [{ partId: PART_A, quantity: 1 }],
+      items: [{ partId: PART_A, filamentId: SPOOL_1, quantity: 1 }],
       version: 1,
     });
   });

@@ -8,7 +8,11 @@ import type { Logger } from 'pino';
 import { pinoHttp } from 'pino-http';
 import type { Config } from './config/env.js';
 import { createHealthModule, type Clock, type DependencyProbe } from './modules/health/index.js';
-import { createFilamentCostReader, createFilamentsModule } from './modules/filaments/index.js';
+import {
+  createFilamentCostReader,
+  createFilamentsModule,
+  createFilamentSummaryLookup,
+} from './modules/filaments/index.js';
 import { createAvailabilityModule, createScheduleReader } from './modules/availability/index.js';
 import {
   createChatModule,
@@ -163,7 +167,12 @@ export function createApp({
   // The only place that knows both modules (ADR 0017): projects read parts through a lookup, and
   // parts ask projects whether a part is used. Neither module imports the other.
   const partLookup = createPartLookup(parts.repository);
-  const projectsModule = createProjectsModule({ clock, partLookup, ...projects });
+  const projectsModule = createProjectsModule({
+    clock,
+    partLookup,
+    filamentLookup: createFilamentSummaryLookup(filaments.repository),
+    ...projects,
+  });
   v1.use('/projects', projectsModule.router);
   v1.use(
     '/parts',

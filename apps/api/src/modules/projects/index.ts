@@ -6,14 +6,15 @@ import { createMongoProjectRepository } from './projects.repository.js';
 import { createProjectsRouter } from './projects.routes.js';
 import {
   createProjectsService,
+  type FilamentLookup,
   type PartLookup,
   type ProjectRepository,
   type ProjectsService,
 } from './projects.service.js';
 
 export { registerProjectsPaths } from './projects.openapi.js';
-export type { PartSummary } from './projects.domain.js';
-export type { PartLookup } from './projects.service.js';
+export type { FilamentSummary, PartSummary } from './projects.domain.js';
+export type { FilamentLookup, PartLookup } from './projects.service.js';
 
 // There is no `ensureIndexes`: the module has no secondary index (ADR 0016).
 
@@ -50,6 +51,8 @@ export function createProjectsModule(deps: {
   clock: Clock;
   /** Which parts are live, with their name and material. Built in app.ts (ADR 0017). */
   partLookup: PartLookup;
+  /** Which spools are live, with what a line shows. Built in app.ts (ADR 0036). */
+  filamentLookup: FilamentLookup;
   /** Tests inject a fake; production uses MongoDB. */
   repository?: ProjectRepository;
 }): {
@@ -66,6 +69,7 @@ export function createProjectsModule(deps: {
   const service = createProjectsService({
     repository: deps.repository ?? createMongoProjectRepository(),
     partLookup: deps.partLookup,
+    filamentLookup: deps.filamentLookup,
     clock: deps.clock,
   });
   return {

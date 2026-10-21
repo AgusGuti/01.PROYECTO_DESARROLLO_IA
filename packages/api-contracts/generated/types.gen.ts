@@ -347,6 +347,10 @@ export type Project = {
 
 export type ProjectItem = {
     partId: string;
+    /**
+     * The spool of the line; null only for a line saved before ADR 0036.
+     */
+    filamentId: string | null;
     quantity: number;
     /**
      * The part as it is now, or null when it is no longer live ("deleted").
@@ -354,6 +358,15 @@ export type ProjectItem = {
     part: {
         name: string;
         material: Material;
+    } | null;
+    /**
+     * The spool as it is now, or null when it has no spool or it is not live.
+     */
+    filament: {
+        brand: string;
+        material: Material;
+        colorName: string;
+        availableGrams: number;
     } | null;
 };
 
@@ -369,13 +382,14 @@ export type CreateProjectRequest = {
      */
     deadline?: string;
     /**
-     * Up to 100 lines, each part at most once, every part must exist. Replaced whole on edit.
+     * Up to 100 lines. A part may repeat with different spools, but each (part, spool) pair at most once. Every part and spool must exist. Replaced whole on edit.
      */
     items?: Array<ProjectItemInput>;
 };
 
 export type ProjectItemInput = {
     partId: string;
+    filamentId: string;
     quantity: number;
 };
 
@@ -423,7 +437,7 @@ export type UpdateProjectRequest = {
      */
     deadline?: string | null;
     /**
-     * Up to 100 lines, each part at most once, every part must exist. Replaced whole on edit.
+     * Up to 100 lines. A part may repeat with different spools, but each (part, spool) pair at most once. Every part and spool must exist. Replaced whole on edit.
      */
     items?: Array<ProjectItemInput>;
 };

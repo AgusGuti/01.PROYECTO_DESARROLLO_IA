@@ -61,17 +61,29 @@ const partIdSchema = z
   .toLowerCase()
   .openapi({ example: '66f0c0ffee0123456789abcd' });
 
+// Required on every saved line (ADR 0036): null, missing or malformed is a 400.
+const filamentIdSchema = z
+  .string()
+  .regex(/^[0-9a-f]{24}$/i, 'Must be a 24-character hexadecimal id.')
+  .toLowerCase()
+  .openapi({ example: '66f0c0ffee0123456789abce' });
+
 const itemInputSchema = z
   .strictObject({
     partId: partIdSchema,
+    filamentId: filamentIdSchema,
     quantity: z.number().int().min(1).max(1000),
   })
   .openapi('ProjectItemInput');
 
-const itemsInputSchema = z.array(itemInputSchema).max(MAX_ITEMS).openapi({
-  description:
-    'Up to 100 lines, each part at most once, every part must exist. Replaced whole on edit.',
-});
+const itemsInputSchema = z
+  .array(itemInputSchema)
+  .max(MAX_ITEMS)
+  .openapi({
+    description:
+      'Up to 100 lines. A part may repeat with different spools, but each (part, spool) pair ' +
+      'at most once. Every part and spool must exist. Replaced whole on edit.',
+  });
 
 export const createProjectSchema = z
   .strictObject({
@@ -143,10 +155,25 @@ const deadlineOutput = z
 export const projectItemSchema = z
   .object({
     partId: id,
+    filamentId: id.nullable().openapi({
+      type: ['string', 'null'],
+      description: 'The spool of the line; null only for a line saved before ADR 0036.',
+    }),
     quantity: z.number().int(),
     part: z.object({ name: z.string(), material: materialSchema }).nullable().openapi({
       description: 'The part as it is now, or null when it is no longer live ("deleted").',
     }),
+    filament: z
+      .object({
+        brand: z.string(),
+        material: materialSchema,
+        colorName: z.string(),
+        availableGrams: z.number().int(),
+      })
+      .nullable()
+      .openapi({
+        description: 'The spool as it is now, or null when it has no spool or it is not live.',
+      }),
   })
   .openapi('ProjectItem');
 

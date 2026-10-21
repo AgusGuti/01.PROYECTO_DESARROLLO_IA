@@ -841,6 +841,12 @@ components:
         partId:
           type: string
           example: 66f0c0ffee0123456789abcd
+        filamentId:
+          type:
+            - string
+            - "null"
+          example: 66f0c0ffee0123456789abcd
+          description: The spool of the line; null only for a line saved before ADR 0036.
         quantity:
           type: integer
         part:
@@ -856,10 +862,31 @@ components:
             - name
             - material
           description: The part as it is now, or null when it is no longer live ("deleted").
+        filament:
+          type:
+            - object
+            - "null"
+          properties:
+            brand:
+              type: string
+            material:
+              $ref: "#/components/schemas/Material"
+            colorName:
+              type: string
+            availableGrams:
+              type: integer
+          required:
+            - brand
+            - material
+            - colorName
+            - availableGrams
+          description: The spool as it is now, or null when it has no spool or it is not live.
       required:
         - partId
+        - filamentId
         - quantity
         - part
+        - filament
     CreateProjectRequest:
       type: object
       properties:
@@ -893,7 +920,8 @@ components:
             $ref: "#/components/schemas/ProjectItemInput"
           maxItems: 100
           default: []
-          description: Up to 100 lines, each part at most once, every part must exist. Replaced whole on edit.
+          description: Up to 100 lines. A part may repeat with different spools, but each (part, spool) pair
+            at most once. Every part and spool must exist. Replaced whole on edit.
       required:
         - name
       additionalProperties: false
@@ -904,12 +932,17 @@ components:
           type: string
           pattern: ^[0-9a-f]{24}$/i
           example: 66f0c0ffee0123456789abcd
+        filamentId:
+          type: string
+          pattern: ^[0-9a-f]{24}$/i
+          example: 66f0c0ffee0123456789abce
         quantity:
           type: integer
           minimum: 1
           maximum: 1000
       required:
         - partId
+        - filamentId
         - quantity
       additionalProperties: false
     ProjectList:
@@ -1018,7 +1051,8 @@ components:
           items:
             $ref: "#/components/schemas/ProjectItemInput"
           maxItems: 100
-          description: Up to 100 lines, each part at most once, every part must exist. Replaced whole on edit.
+          description: Up to 100 lines. A part may repeat with different spools, but each (part, spool) pair
+            at most once. Every part and spool must exist. Replaced whole on edit.
       required:
         - version
       additionalProperties: false

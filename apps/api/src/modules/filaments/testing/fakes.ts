@@ -102,6 +102,11 @@ export function createFakeFilamentRepository(): FakeFilamentRepository {
       return Promise.resolve(live(id) ?? null);
     },
 
+    findLiveByIds(ids) {
+      guard('findLiveByIds');
+      return Promise.resolve(ids.flatMap((id) => live(id) ?? []));
+    },
+
     list(query: FilamentListQuery) {
       guard('list');
       const keyOf = (f: Filament): number | string => {

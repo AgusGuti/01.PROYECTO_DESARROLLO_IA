@@ -130,6 +130,17 @@ export function createMongoFilamentRepository(): FilamentRepository {
       });
     },
 
+    findLiveByIds(ids) {
+      return guarded(async () => {
+        if (ids.length === 0) return [];
+        const found = await FilamentModel.find({
+          _id: { $in: [...ids] },
+          deletedAt: null,
+        }).lean<StoredFilament[]>();
+        return found.map(toFilament);
+      });
+    },
+
     list(query: FilamentListQuery): Promise<FilamentPage> {
       return guarded(async () => {
         const filter = {

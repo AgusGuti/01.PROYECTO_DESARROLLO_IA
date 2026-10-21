@@ -4,7 +4,9 @@ import { AppError } from '../../shared/errors/app-error.js';
 import type { Clock } from '../health/index.js';
 import {
   duplicatedItemIssues,
+  missingFilamentIssues,
   missingPartIssues,
+  type FilamentSummary,
   type PartSummary,
   type Project,
   type ProjectDetail,
@@ -40,6 +42,12 @@ export interface ProjectRepository {
  * material. An id missing from the answer is unknown or deleted. One call, never one per line.
  */
 export type PartLookup = (ids: string[]) => Promise<ReadonlyMap<string, PartSummary>>;
+
+/**
+ * Port owned by this module (ADR 0036): which of these spools are live, with what a line shows.
+ * An id missing from the answer is unknown or deleted. One call, never one per line.
+ */
+export type FilamentLookup = (ids: string[]) => Promise<ReadonlyMap<string, FilamentSummary>>;
 
 export interface NewProject {
   readonly name: string;
@@ -77,6 +85,7 @@ function staleVersion(): AppError {
 export function createProjectsService(deps: {
   repository: ProjectRepository;
   partLookup: PartLookup;
+  filamentLookup: FilamentLookup;
   clock: Clock;
 }): ProjectsService {
   const { repository, clock } = deps;
@@ -94,25 +103,56 @@ export function createProjectsService(deps: {
     }
   }
 
-  /** Duplicates first, then the lookup. Returns the parts for the response. */
-  async function validateItems(
+  /** Same fail-closed rule for the spools. A legacy line without a spool is not looked up. */
+  async function lookupFilaments(
     items: readonly ProjectItem[],
-  ): Promise<ReadonlyMap<string, PartSummary>> {
+  ): Promise<ReadonlyMap<string, FilamentSummary>> {
+    const ids = [
+      ...new Set(items.flatMap((item) => (item.filamentId === null ? [] : [item.filamentId]))),
+    ];
+    if (ids.length === 0) return new Map();
+    try {
+      return await deps.filamentLookup(ids);
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError('service_unavailable', 'The spool data is temporarily unavailable.', {
+        cause: error,
+      });
+    }
+  }
+
+  /** Duplicates, then the part lookup, then the spool lookup; part and spool issues together. */
+  async function validateItems(items: readonly ProjectItem[]): Promise<{
+    parts: ReadonlyMap<string, PartSummary>;
+    filaments: ReadonlyMap<string, FilamentSummary>;
+  }> {
     const duplicates = duplicatedItemIssues(items);
     if (duplicates.length > 0) {
       throw new AppError('validation_failed', 'The request is not valid.', { issues: duplicates });
     }
     const parts = await lookup(items);
-    const missing = missingPartIssues(items, new Set(parts.keys()));
-    if (missing.length > 0) {
-      throw new AppError('validation_failed', 'The request is not valid.', { issues: missing });
+    const filaments = await lookupFilaments(items);
+    const issues = [
+      ...missingPartIssues(items, new Set(parts.keys())),
+      ...missingFilamentIssues(items, new Set(filaments.keys())),
+    ].sort((a, b) => a.path.localeCompare(b.path, 'en', { numeric: true }));
+    if (issues.length > 0) {
+      throw new AppError('validation_failed', 'The request is not valid.', { issues });
     }
-    return parts;
+    return { parts, filaments };
+  }
+
+  async function detail(project: Project): Promise<ProjectDetail> {
+    return {
+      project,
+      parts: await lookup(project.items),
+      filaments: await lookupFilaments(project.items),
+    };
   }
 
   return {
     async create(input) {
-      const parts = await validateItems(input.items);
+      const { parts, filaments } = await validateItems(input.items);
       const now = clock.now();
       const project = await repository.create(
         {
@@ -120,17 +160,21 @@ export function createProjectsService(deps: {
           description: input.description ?? null,
           priority: input.priority,
           deadline: input.deadline ?? null,
-          items: input.items.map((item) => ({ partId: item.partId, quantity: item.quantity })),
+          items: input.items.map(({ partId, filamentId, quantity }) => ({
+            partId,
+            filamentId,
+            quantity,
+          })),
         },
         now,
       );
-      return { project, parts };
+      return { project, parts, filaments };
     },
 
     async get(id) {
       const project = await repository.findLiveById(id);
       if (project === null) throw notFound();
-      return { project, parts: await lookup(project.items) };
+      return await detail(project);
     },
 
     list(query) {
@@ -151,7 +195,9 @@ export function createProjectsService(deps: {
         if ((await repository.findLiveById(id)) === null) throw notFound();
         throw staleVersion();
       }
-      return { project: updated, parts: checked ?? (await lookup(updated.items)) };
+      return checked === undefined
+        ? await detail(updated)
+        : { project: updated, parts: checked.parts, filaments: checked.filaments };
     },
 
     async remove(id) {
