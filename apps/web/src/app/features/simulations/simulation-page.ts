@@ -25,6 +25,9 @@ import {
   idleDeltaText,
   parseDate,
   parseTime,
+  setupText,
+  shortfallText,
+  STRATEGY_HINTS,
   STRATEGY_LABELS,
   wallMinutes,
   WARNING_MESSAGES,
@@ -34,6 +37,8 @@ import { SimulationsApi } from './simulations-api';
 interface JobRow {
   readonly order: number;
   readonly part: string;
+  readonly filament: string;
+  readonly setup: string;
   readonly start: string;
   readonly end: string;
   readonly handoff: string;
@@ -84,6 +89,9 @@ const clamp = (value: number, min: number, max: number): number =>
 interface TimedJob {
   readonly order: number;
   readonly printerId: string;
+  readonly filamentName: string | null;
+  readonly setupMinutes: number;
+  readonly filamentChanged: boolean;
   readonly startAt: string;
   readonly endAt: string;
   readonly handoffAt: string;
@@ -99,6 +107,8 @@ function buildPrinters<J extends TimedJob>(
     jobs: number;
     busyMinutes: number;
     idleMinutes: number;
+    setupMinutes: number;
+    filamentChanges: number;
   }[],
   jobs: readonly J[],
   describe: (job: J) => string,
@@ -107,7 +117,7 @@ function buildPrinters<J extends TimedJob>(
   return printers.map((printer) => ({
     id: printer.printerId,
     name: printer.name,
-    summary: `${String(printer.jobs)} trabajo(s) · ocupada ${formatMinutes(printer.busyMinutes)} · tiempo muerto ${formatMinutes(printer.idleMinutes)}`,
+    summary: `${String(printer.jobs)} trabajo(s) · ocupada ${formatMinutes(printer.busyMinutes)} · tiempo muerto ${formatMinutes(printer.idleMinutes)} · preparación ${formatMinutes(printer.setupMinutes)} · ${String(printer.filamentChanges)} cambio(s) de bobina`,
     jobs: jobs
       .filter((job) => job.printerId === printer.printerId)
       .map((job) => {
@@ -118,6 +128,8 @@ function buildPrinters<J extends TimedJob>(
         return {
           order: job.order,
           part,
+          filament: job.filamentName ?? 'Sin bobina asignada',
+          setup: setupText(job.setupMinutes, job.filamentChanged),
           start: formatDateTime(job.startAt),
           end: formatDateTime(job.endAt),
           handoff: formatDateTime(job.handoffAt),
@@ -278,6 +290,13 @@ export class SimulationPage {
   protected formatDateTime = formatDateTime;
   protected deadlineText = deadlineText;
   protected strategyLabel = STRATEGY_LABELS;
+  protected strategyHint = STRATEGY_HINTS;
+  protected shortfallText = shortfallText;
+
+  /** `filament_insufficient` is told by the urgent shortfall block, not by this list. */
+  protected listedWarnings(warnings: readonly { code: SimulationWarningCode }[]) {
+    return warnings.filter((warning) => warning.code !== 'filament_insufficient');
+  }
 
   protected explanation(optimization: Optimization): string {
     return `Probamos ${String(optimization.candidates.length)} estrategias y elegimos la mejor según el objetivo: ${GOAL_LABELS[optimization.goal]}.`;
@@ -318,6 +337,8 @@ export class SimulationPage {
       both('Hora de fin', (plan) => this.finishText(plan.totals.finishAt)),
       both('Tiempo ocupado', (plan) => formatMinutes(plan.totals.totalBusyMinutes)),
       both('Tiempo muerto', (plan) => formatMinutes(plan.totals.totalIdleMinutes)),
+      both('Preparación total', (plan) => formatMinutes(plan.totals.totalSetupMinutes)),
+      both('Cambios de bobina', (plan) => String(plan.totals.filamentChanges)),
       both('Piezas ubicadas', (plan) => String(plan.totals.placedUnits)),
       both('Piezas no ubicadas', (plan) => String(plan.totals.unplacedUnits)),
       both('Placas impresas', (plan) => String(plan.totals.placedPlates)),

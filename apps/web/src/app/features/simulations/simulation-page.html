@@ -78,13 +78,33 @@
 
   <p class="visually-hidden" id="sim-status" aria-live="polite">{{ statusText(state) }}</p>
 
-  <ng-template #warningList let-warnings>
-    @if (warnings.length > 0) {
+  <ng-template #warningList let-warnings let-shortfalls="shortfalls">
+    @let listed = listedWarnings(warnings);
+    @if (listed.length > 0) {
       <ul class="warnings" id="warnings">
-        @for (warning of warnings; track warning.code) {
-          <li><span aria-hidden="true">⚠</span> {{ warningText(warning.code) }}</li>
+        @for (warning of listed; track warning.code) {
+          <li>
+            <span aria-hidden="true">⚠</span> {{ warningText(warning.code) }}
+            @if (warning.code === 'filament_deleted') {
+              <a [routerLink]="['/proyectos', projectId, 'cola']">Ir a la cola</a>
+            }
+          </li>
         }
       </ul>
+    }
+    @if (shortfalls.length > 0) {
+      <div class="shortfalls" id="shortfalls" role="alert">
+        <ul>
+          @for (shortfall of shortfalls; track shortfall.filamentId) {
+            <li>
+              <strong>Falta filamento.</strong> {{ shortfallText(shortfall) }}
+              <a [routerLink]="['/proyectos', projectId, 'cola']"
+                >Ir a la cola para dividir la línea</a
+              >
+            </li>
+          }
+        </ul>
+      </div>
     }
   </ng-template>
 
@@ -119,6 +139,8 @@
                 <tr>
                   <th scope="col">Orden</th>
                   <th scope="col">Pieza</th>
+                  <th scope="col">Bobina</th>
+                  <th scope="col">Preparación</th>
                   <th scope="col">Inicio</th>
                   <th scope="col">Fin</th>
                   <th scope="col">Retiro</th>
@@ -130,6 +152,8 @@
                   <tr>
                     <td>{{ job.order }}</td>
                     <th scope="row">{{ job.part }}</th>
+                    <td>{{ job.filament }}</td>
+                    <td>{{ job.setup }}</td>
                     <td>{{ job.start }}</td>
                     <td>{{ job.end }}</td>
                     <td>{{ job.handoff }}</td>
@@ -176,7 +200,10 @@
 
         <ng-container
           [ngTemplateOutlet]="warningList"
-          [ngTemplateOutletContext]="{ $implicit: sim.warnings }"
+          [ngTemplateOutletContext]="{
+            $implicit: sim.warnings,
+            shortfalls: sim.filamentShortfalls,
+          }"
         />
 
         <dl class="totals" id="summary">
@@ -191,6 +218,14 @@
           <div>
             <dt>Tiempo muerto</dt>
             <dd>{{ formatMinutes(sim.totals.totalIdleMinutes) }}</dd>
+          </div>
+          <div>
+            <dt>Preparación total</dt>
+            <dd>{{ formatMinutes(sim.totals.totalSetupMinutes) }}</dd>
+          </div>
+          <div>
+            <dt>Cambios de bobina</dt>
+            <dd>{{ sim.totals.filamentChanges }}</dd>
           </div>
           <div>
             <dt>Trabajos ubicados</dt>
@@ -226,12 +261,18 @@
 
         <ng-container
           [ngTemplateOutlet]="warningList"
-          [ngTemplateOutletContext]="{ $implicit: opt.warnings }"
+          [ngTemplateOutletContext]="{
+            $implicit: opt.warnings,
+            shortfalls: opt.filamentShortfalls,
+          }"
         />
 
         <p id="explanation">{{ explanation(opt) }}</p>
         <p id="chosen">
           Estrategia elegida: <strong>{{ strategyLabel[opt.strategy] }}</strong>
+          @if (strategyHint[opt.strategy]; as hint) {
+            <small class="hint">{{ hint }}</small>
+          }
         </p>
 
         <h3>Orden simple y optimizado, lado a lado</h3>
@@ -276,6 +317,8 @@
                 <th scope="col">Estrategia</th>
                 <th scope="col">Fin</th>
                 <th scope="col">Tiempo muerto</th>
+                <th scope="col">Preparación</th>
+                <th scope="col">Cambios de bobina</th>
                 <th scope="col">Fecha límite</th>
                 <th scope="col">Piezas ubicadas</th>
                 <th scope="col">Piezas no ubicadas</th>
@@ -286,12 +329,17 @@
                 <tr [class.chosen]="candidate.strategy === opt.strategy">
                   <th scope="row">
                     {{ strategyLabel[candidate.strategy] }}
+                    @if (strategyHint[candidate.strategy]; as hint) {
+                      <small class="hint">{{ hint }}</small>
+                    }
                     @if (candidate.strategy === opt.strategy) {
                       <span class="badge badge--ok">Elegida</span>
                     }
                   </th>
                   <td>{{ finishText(candidate.finishAt) }}</td>
                   <td>{{ formatMinutes(candidate.totalIdleMinutes) }}</td>
+                  <td>{{ formatMinutes(candidate.totalSetupMinutes) }}</td>
+                  <td>{{ candidate.filamentChanges }}</td>
                   <td>{{ candidateDeadline(candidate.deadlineMet) }}</td>
                   <td>{{ candidate.placedUnits }}</td>
                   <td>{{ candidate.unplacedUnits }}</td>

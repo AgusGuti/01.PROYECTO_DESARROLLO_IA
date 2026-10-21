@@ -24,19 +24,36 @@ const SIMULATION: Simulation = {
       endAt: '2026-10-16T12:00',
       handoffAt: '2026-10-16T12:30',
       unattended: false,
+      filamentId: 'f1',
+      filamentName: 'PLA negro',
+      setupMinutes: 0,
+      filamentChanged: false,
     },
   ],
-  printers: [{ printerId: 'pr1', name: 'Ender', jobs: 1, busyMinutes: 150, idleMinutes: 0 }],
+  printers: [
+    {
+      printerId: 'pr1',
+      name: 'Ender',
+      jobs: 1,
+      busyMinutes: 150,
+      idleMinutes: 0,
+      setupMinutes: 0,
+      filamentChanges: 0,
+    },
+  ],
   totals: {
     placedJobs: 1,
     unplacedJobs: 0,
     finishAt: '2026-10-16T12:30',
     totalBusyMinutes: 150,
     totalIdleMinutes: 0,
+    totalSetupMinutes: 0,
+    filamentChanges: 0,
   },
   deadline: { date: null, met: null },
   unplaced: [],
   warnings: [],
+  filamentShortfalls: [],
 };
 
 describe('SimulationsApi', () => {
@@ -90,6 +107,32 @@ describe('SimulationsApi', () => {
     ],
     ['missing totals', { ...SIMULATION, totals: null }],
     ['an unknown warning', { ...SIMULATION, warnings: [{ code: 'surprise' }] }],
+    [
+      'a job without setupMinutes',
+      { ...SIMULATION, jobs: [{ ...SIMULATION.jobs[0], setupMinutes: undefined }] },
+    ],
+    [
+      'a job without filamentChanged',
+      { ...SIMULATION, jobs: [{ ...SIMULATION.jobs[0], filamentChanged: undefined }] },
+    ],
+    [
+      'a job without a filament name',
+      { ...SIMULATION, jobs: [{ ...SIMULATION.jobs[0], filamentName: undefined }] },
+    ],
+    [
+      'a printer without filamentChanges',
+      { ...SIMULATION, printers: [{ ...SIMULATION.printers[0], filamentChanges: undefined }] },
+    ],
+    [
+      'totals without totalSetupMinutes',
+      { ...SIMULATION, totals: { ...SIMULATION.totals, totalSetupMinutes: undefined } },
+    ],
+    [
+      'totals without filamentChanges',
+      { ...SIMULATION, totals: { ...SIMULATION.totals, filamentChanges: undefined } },
+    ],
+    ['missing filamentShortfalls', { ...SIMULATION, filamentShortfalls: undefined }],
+    ['a malformed shortfall', { ...SIMULATION, filamentShortfalls: [{ filamentId: 'f1' }] }],
   ])('rejects %s as an unexpected response', async (_name, body) => {
     const result = firstValueFrom(api.simulate({ projectId: 'p1', startAt: '2026-10-16T10:00' }));
 
@@ -108,6 +151,8 @@ describe('SimulationsApi', () => {
       finishAt: '2026-10-16T12:30',
       totalBusyMinutes: 150,
       totalIdleMinutes: 0,
+      totalSetupMinutes: 0,
+      filamentChanges: 0,
     };
     const deadline = { date: null, met: null };
     const OPTIMIZATION: Optimization = {
@@ -130,9 +175,23 @@ describe('SimulationsApi', () => {
             endAt: '2026-10-16T12:00',
             handoffAt: '2026-10-16T12:30',
             unattended: false,
+            filamentId: 'f1',
+            filamentName: 'PLA negro',
+            setupMinutes: 0,
+            filamentChanged: false,
           },
         ],
-        printers: [{ printerId: 'pr1', name: 'Ender', jobs: 1, busyMinutes: 150, idleMinutes: 0 }],
+        printers: [
+          {
+            printerId: 'pr1',
+            name: 'Ender',
+            jobs: 1,
+            busyMinutes: 150,
+            idleMinutes: 0,
+            setupMinutes: 0,
+            filamentChanges: 0,
+          },
+        ],
         totals,
         deadline,
         unplaced: [],
@@ -143,12 +202,15 @@ describe('SimulationsApi', () => {
           strategy: 'naive',
           finishAt: '2026-10-16T12:30',
           totalIdleMinutes: 0,
+          totalSetupMinutes: 0,
+          filamentChanges: 0,
           deadlineMet: null,
           placedUnits: 2,
           unplacedUnits: 0,
         },
       ],
       warnings: [{ code: 'batching_applied' }],
+      filamentShortfalls: [],
     };
     const body = { projectId: 'p1', startAt: '2026-10-16T10:00' };
 
@@ -160,6 +222,29 @@ describe('SimulationsApi', () => {
       request.flush(OPTIMIZATION);
 
       await expect(result).resolves.toEqual(OPTIMIZATION);
+    });
+
+    it('accepts the group_by_spool strategy and the filament warnings', async () => {
+      const full: Optimization = {
+        ...OPTIMIZATION,
+        strategy: 'group_by_spool',
+        warnings: [{ code: 'filament_insufficient' }, { code: 'filament_deleted' }],
+        filamentShortfalls: [
+          {
+            filamentId: 'f1',
+            name: 'PLA negro',
+            availableGrams: 100,
+            neededGrams: 220.5,
+            completablePieces: 3,
+            remainingPieces: 2,
+          },
+        ],
+      };
+      const result = firstValueFrom(api.optimize(body));
+
+      http.expectOne(URL).flush(full);
+
+      await expect(result).resolves.toEqual(full);
     });
 
     it('fails with the safe error on a 503 and does not retry', async () => {
@@ -192,6 +277,44 @@ describe('SimulationsApi', () => {
       ],
       ['a baseline without totals', { ...OPTIMIZATION, baseline: { deadline, unplaced: [] } }],
       ['an unknown warning', { ...OPTIMIZATION, warnings: [{ code: 'surprise' }] }],
+      [
+        'a plate without setupMinutes',
+        {
+          ...OPTIMIZATION,
+          optimized: {
+            ...OPTIMIZATION.optimized,
+            jobs: [{ ...OPTIMIZATION.optimized.jobs[0], setupMinutes: undefined }],
+          },
+        },
+      ],
+      [
+        'baseline totals without totalSetupMinutes',
+        {
+          ...OPTIMIZATION,
+          baseline: {
+            ...OPTIMIZATION.baseline,
+            totals: { ...OPTIMIZATION.baseline.totals, totalSetupMinutes: undefined },
+          },
+        },
+      ],
+      [
+        'optimised totals without filamentChanges',
+        {
+          ...OPTIMIZATION,
+          optimized: {
+            ...OPTIMIZATION.optimized,
+            totals: { ...OPTIMIZATION.optimized.totals, filamentChanges: undefined },
+          },
+        },
+      ],
+      [
+        'a candidate without totalSetupMinutes',
+        {
+          ...OPTIMIZATION,
+          candidates: [{ ...OPTIMIZATION.candidates[0], totalSetupMinutes: undefined }],
+        },
+      ],
+      ['missing filamentShortfalls', { ...OPTIMIZATION, filamentShortfalls: undefined }],
     ])('rejects %s as an unexpected response', async (_name, response) => {
       const result = firstValueFrom(api.optimize(body));
 

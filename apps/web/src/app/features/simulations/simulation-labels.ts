@@ -1,4 +1,5 @@
 import type {
+  FilamentShortfall,
   Optimization,
   OptimizationStrategy,
   SimulationWarningCode,
@@ -17,6 +18,10 @@ export const WARNING_MESSAGES: Readonly<Record<SimulationWarningCode, string>> =
     'Todavía no cargaste tus ventanas de intervención: sin ellas no se puede ubicar ningún trabajo.',
   nothing_to_print: 'La cola no tiene unidades pendientes para imprimir.',
   batching_applied: 'Se agruparon piezas iguales en una misma placa.',
+  // The detail per spool is rendered from `filamentShortfalls`, so the page hides this entry.
+  filament_insufficient: 'Alguna bobina no alcanza para todas sus piezas.',
+  filament_deleted:
+    'Una línea usa una bobina que ya no existe; se trata como bobina desconocida. Elegí otra en la cola.',
 };
 
 /** A `Record` over the contract type: a new strategy fails to compile until it has a label. */
@@ -26,6 +31,12 @@ export const STRATEGY_LABELS: Readonly<Record<OptimizationStrategy, string>> = {
   longest_first: 'Las más largas primero',
   shortest_first: 'Las más cortas primero',
   best_fit: 'Mejor encaje con tus ventanas',
+  group_by_spool: 'Agrupar por bobina',
+};
+
+/** Short explanation for strategies whose name alone does not say what they do. */
+export const STRATEGY_HINTS: Readonly<Partial<Record<OptimizationStrategy, string>>> = {
+  group_by_spool: 'Agrupa trabajos de la misma bobina para evitar cambios',
 };
 
 export function isStrategy(value: unknown): value is OptimizationStrategy {
@@ -139,4 +150,17 @@ export function wallMinutes(value: string): number {
   if (match === null) return Number.NaN;
   const [year, month, day, hour, minute] = match.slice(1).map(Number);
   return Date.UTC(year ?? 0, (month ?? 1) - 1, day, hour, minute) / MINUTE_MS;
+}
+
+/** "PLA negro: faltan 120 g. Alcanza para 3 de 5 piezas; asigná las otras 2 piezas a otra bobina." */
+export function shortfallText(shortfall: FilamentShortfall): string {
+  const missing = Number((shortfall.neededGrams - shortfall.availableGrams).toFixed(1));
+  const total = shortfall.completablePieces + shortfall.remainingPieces;
+  return `${shortfall.name}: faltan ${String(missing)} g. Alcanza para ${String(shortfall.completablePieces)} de ${String(total)} piezas; asigná las otras ${String(shortfall.remainingPieces)} piezas a otra bobina.`;
+}
+
+/** The setup cell of a job: its minutes, plus a note when the spool changed. */
+export function setupText(minutes: number, filamentChanged: boolean): string {
+  const text = formatMinutes(minutes);
+  return filamentChanged ? `${text} (cambio de bobina)` : text;
 }

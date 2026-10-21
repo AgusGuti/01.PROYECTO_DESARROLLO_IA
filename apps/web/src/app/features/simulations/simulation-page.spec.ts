@@ -27,6 +27,10 @@ function makeSimulation(overrides: Partial<Simulation> = {}): Simulation {
         startAt: '2026-10-16T10:15',
         endAt: '2026-10-16T12:15',
         handoffAt: '2026-10-16T12:30',
+        filamentId: 'f1',
+        filamentName: 'PLA negro',
+        setupMinutes: 0,
+        filamentChanged: false,
         unattended: false,
       },
       {
@@ -39,12 +43,32 @@ function makeSimulation(overrides: Partial<Simulation> = {}): Simulation {
         startAt: '2026-10-16T12:30',
         endAt: '2026-10-16T20:30',
         handoffAt: '2026-10-17T08:00',
+        filamentId: 'f2',
+        filamentName: 'PETG rojo',
+        setupMinutes: 40,
+        filamentChanged: true,
         unattended: true,
       },
     ],
     printers: [
-      { printerId: 'pr1', name: 'Ender', jobs: 2, busyMinutes: 1305, idleMinutes: 0 },
-      { printerId: 'pr2', name: 'Prusa', jobs: 0, busyMinutes: 0, idleMinutes: 0 },
+      {
+        printerId: 'pr1',
+        name: 'Ender',
+        jobs: 2,
+        busyMinutes: 1305,
+        idleMinutes: 0,
+        setupMinutes: 40,
+        filamentChanges: 1,
+      },
+      {
+        printerId: 'pr2',
+        name: 'Prusa',
+        jobs: 0,
+        busyMinutes: 0,
+        idleMinutes: 0,
+        setupMinutes: 0,
+        filamentChanges: 0,
+      },
     ],
     totals: {
       placedJobs: 2,
@@ -52,10 +76,13 @@ function makeSimulation(overrides: Partial<Simulation> = {}): Simulation {
       finishAt: '2026-10-17T08:00',
       totalBusyMinutes: 1305,
       totalIdleMinutes: 90,
+      totalSetupMinutes: 40,
+      filamentChanges: 1,
     },
     deadline: { date: '2026-10-20', met: false },
     unplaced: [{ partId: 'b', partName: 'Tapa', units: 3 }],
     warnings: [],
+    filamentShortfalls: [],
     ...overrides,
   };
 }
@@ -74,6 +101,8 @@ function makeOptimization(overrides: Partial<Optimization> = {}): Optimization {
         finishAt: '2026-10-17T08:00',
         totalBusyMinutes: 1305,
         totalIdleMinutes: 90,
+        totalSetupMinutes: 60,
+        filamentChanges: 2,
       },
       deadline: { date: '2026-10-20', met: false },
       unplaced: [{ partId: 'b', partName: 'Tapa', units: 1 }],
@@ -91,6 +120,10 @@ function makeOptimization(overrides: Partial<Optimization> = {}): Optimization {
           startAt: '2026-10-16T10:15',
           endAt: '2026-10-16T12:15',
           handoffAt: '2026-10-16T12:30',
+          filamentId: 'f1',
+          filamentName: 'PLA negro',
+          setupMinutes: 0,
+          filamentChanged: false,
           unattended: false,
         },
         {
@@ -104,12 +137,32 @@ function makeOptimization(overrides: Partial<Optimization> = {}): Optimization {
           startAt: '2026-10-16T12:30',
           endAt: '2026-10-16T20:30',
           handoffAt: '2026-10-17T03:30',
+          filamentId: null,
+          filamentName: null,
+          setupMinutes: 15,
+          filamentChanged: false,
           unattended: true,
         },
       ],
       printers: [
-        { printerId: 'pr1', name: 'Ender', jobs: 2, busyMinutes: 1035, idleMinutes: 0 },
-        { printerId: 'pr2', name: 'Prusa', jobs: 0, busyMinutes: 0, idleMinutes: 0 },
+        {
+          printerId: 'pr1',
+          name: 'Ender',
+          jobs: 2,
+          busyMinutes: 1035,
+          idleMinutes: 0,
+          setupMinutes: 15,
+          filamentChanges: 0,
+        },
+        {
+          printerId: 'pr2',
+          name: 'Prusa',
+          jobs: 0,
+          busyMinutes: 0,
+          idleMinutes: 0,
+          setupMinutes: 0,
+          filamentChanges: 0,
+        },
       ],
       totals: {
         placedPlates: 2,
@@ -118,6 +171,8 @@ function makeOptimization(overrides: Partial<Optimization> = {}): Optimization {
         finishAt: '2026-10-17T03:30',
         totalBusyMinutes: 1035,
         totalIdleMinutes: 0,
+        totalSetupMinutes: 15,
+        filamentChanges: 0,
       },
       deadline: { date: '2026-10-20', met: true },
       unplaced: [],
@@ -128,6 +183,8 @@ function makeOptimization(overrides: Partial<Optimization> = {}): Optimization {
         strategy: 'naive',
         finishAt: '2026-10-17T08:00',
         totalIdleMinutes: 90,
+        totalSetupMinutes: 0,
+        filamentChanges: 0,
         deadlineMet: false,
         placedUnits: 2,
         unplacedUnits: 1,
@@ -136,6 +193,8 @@ function makeOptimization(overrides: Partial<Optimization> = {}): Optimization {
         strategy: 'queue_order',
         finishAt: '2026-10-17T05:00',
         totalIdleMinutes: 30,
+        totalSetupMinutes: 0,
+        filamentChanges: 0,
         deadlineMet: true,
         placedUnits: 3,
         unplacedUnits: 0,
@@ -144,6 +203,8 @@ function makeOptimization(overrides: Partial<Optimization> = {}): Optimization {
         strategy: 'longest_first',
         finishAt: null,
         totalIdleMinutes: 0,
+        totalSetupMinutes: 0,
+        filamentChanges: 0,
         deadlineMet: null,
         placedUnits: 0,
         unplacedUnits: 3,
@@ -152,6 +213,8 @@ function makeOptimization(overrides: Partial<Optimization> = {}): Optimization {
         strategy: 'shortest_first',
         finishAt: '2026-10-17T06:15',
         totalIdleMinutes: 45,
+        totalSetupMinutes: 0,
+        filamentChanges: 0,
         deadlineMet: true,
         placedUnits: 3,
         unplacedUnits: 0,
@@ -160,12 +223,15 @@ function makeOptimization(overrides: Partial<Optimization> = {}): Optimization {
         strategy: 'best_fit',
         finishAt: '2026-10-17T03:30',
         totalIdleMinutes: 0,
+        totalSetupMinutes: 0,
+        filamentChanges: 0,
         deadlineMet: true,
         placedUnits: 3,
         unplacedUnits: 0,
       },
     ],
     warnings: [{ code: 'batching_applied' }],
+    filamentShortfalls: [],
     ...overrides,
   };
 }
@@ -508,6 +574,8 @@ describe('SimulationPage', () => {
         ['Hora de fin', '17-10-2026 08:00'],
         ['Tiempo ocupado', '21 h 45 min'],
         ['Tiempo muerto', '1 h 30 min'],
+        ['Preparación total', '40 min'],
+        ['Cambios de bobina', '1'],
         ['Trabajos ubicados', '2'],
         ['Trabajos no ubicados', '1'],
         ['Fecha límite', '20-10-2026: no cumple'],
@@ -546,10 +614,21 @@ describe('SimulationPage', () => {
         Array.from(row.children).map((cell) => plain(cell.textContent)),
       );
       expect(rows).toEqual([
-        ['1', 'Soporte (1 de 2)', '16-10-2026 10:15', '16-10-2026 12:15', '16-10-2026 12:30', ''],
+        [
+          '1',
+          'Soporte (1 de 2)',
+          'PLA negro',
+          '0 min',
+          '16-10-2026 10:15',
+          '16-10-2026 12:15',
+          '16-10-2026 12:30',
+          '',
+        ],
         [
           '2',
           'Soporte (2 de 2)',
+          'PETG rojo',
+          '40 min (cambio de bobina)',
           '16-10-2026 12:30',
           '16-10-2026 20:30',
           '17-10-2026 08:00',
@@ -596,6 +675,68 @@ describe('SimulationPage', () => {
       expect(page.q('.result')?.textContent).not.toContain(code);
     });
 
+    it('explains a deleted spool in Spanish with a link to the queue', async () => {
+      const page = await render();
+      await page.submit();
+
+      await page.answer(makeSimulation({ warnings: [{ code: 'filament_deleted' }] }));
+
+      const item = page.q('.warnings li');
+      expect(plain(item?.textContent)).toContain('bobina que ya no existe');
+      expect(item?.querySelector('a')?.getAttribute('href')).toBe('/proyectos/p1/cola');
+      expect(page.q('.result')?.textContent).not.toContain('filament_deleted');
+    });
+
+    it('shows an urgent block per short spool with the grams and the pieces to reassign', async () => {
+      const page = await render();
+      await page.submit();
+
+      await page.answer(
+        makeSimulation({
+          warnings: [{ code: 'filament_insufficient' }],
+          filamentShortfalls: [
+            {
+              filamentId: 'f1',
+              name: 'PLA negro',
+              availableGrams: 100,
+              neededGrams: 220,
+              completablePieces: 3,
+              remainingPieces: 2,
+            },
+            {
+              filamentId: 'f2',
+              name: 'PETG rojo',
+              availableGrams: 10,
+              neededGrams: 30,
+              completablePieces: 0,
+              remainingPieces: 4,
+            },
+          ],
+        }),
+      );
+
+      const block = page.q('#shortfalls');
+      expect(block?.getAttribute('role')).toBe('alert');
+      const items = Array.from(block?.querySelectorAll('li') ?? []);
+      expect(items).toHaveLength(2);
+      expect(plain(items[0]?.textContent)).toContain(
+        'PLA negro: faltan 120 g. Alcanza para 3 de 5 piezas; asigná las otras 2 piezas a otra bobina.',
+      );
+      expect(plain(items[1]?.textContent)).toContain('PETG rojo: faltan 20 g. Alcanza para 0 de 4');
+      expect(items[0]?.querySelector('a')?.getAttribute('href')).toBe('/proyectos/p1/cola');
+      // The code alone adds no second, redundant warning line.
+      expect(page.q('.warnings')).toBeNull();
+    });
+
+    it('shows no shortfall block when no spool is short', async () => {
+      const page = await render();
+      await page.submit();
+
+      await page.answer();
+
+      expect(page.q('#shortfalls')).toBeNull();
+    });
+
     it('says there are no placed jobs instead of an end time', async () => {
       const page = await render();
       await page.submit();
@@ -611,6 +752,8 @@ describe('SimulationPage', () => {
             finishAt: null,
             totalBusyMinutes: 0,
             totalIdleMinutes: 0,
+            totalSetupMinutes: 0,
+            filamentChanges: 0,
           },
         }),
       );
@@ -820,6 +963,8 @@ describe('SimulationPage', () => {
         ['Hora de fin', '17-10-2026 08:00', '17-10-2026 03:30'],
         ['Tiempo ocupado', '21 h 45 min', '17 h 15 min'],
         ['Tiempo muerto', '1 h 30 min', '0 min'],
+        ['Preparación total', '1 h', '15 min'],
+        ['Cambios de bobina', '2', '0'],
         ['Piezas ubicadas', '2', '3'],
         ['Piezas no ubicadas', '1', '0'],
         ['Placas impresas', '2', '2'],
@@ -881,11 +1026,38 @@ describe('SimulationPage', () => {
       await page.answerOptimization();
 
       expect(table(page, '#candidates')).toEqual([
-        ['Orden simple', '17-10-2026 08:00', '1 h 30 min', 'No cumple', '2', '1'],
-        ['Orden de la cola agrupando piezas', '17-10-2026 05:00', '30 min', 'Cumple', '3', '0'],
-        ['Las más largas primero', 'Sin trabajos ubicados', '0 min', 'No aplica', '0', '3'],
-        ['Las más cortas primero', '17-10-2026 06:15', '45 min', 'Cumple', '3', '0'],
-        ['Mejor encaje con tus ventanas Elegida', '17-10-2026 03:30', '0 min', 'Cumple', '3', '0'],
+        ['Orden simple', '17-10-2026 08:00', '1 h 30 min', '0 min', '0', 'No cumple', '2', '1'],
+        [
+          'Orden de la cola agrupando piezas',
+          '17-10-2026 05:00',
+          '30 min',
+          '0 min',
+          '0',
+          'Cumple',
+          '3',
+          '0',
+        ],
+        [
+          'Las más largas primero',
+          'Sin trabajos ubicados',
+          '0 min',
+          '0 min',
+          '0',
+          'No aplica',
+          '0',
+          '3',
+        ],
+        ['Las más cortas primero', '17-10-2026 06:15', '45 min', '0 min', '0', 'Cumple', '3', '0'],
+        [
+          'Mejor encaje con tus ventanas Elegida',
+          '17-10-2026 03:30',
+          '0 min',
+          '0 min',
+          '0',
+          'Cumple',
+          '3',
+          '0',
+        ],
       ]);
       const chosen = page.element.querySelectorAll('#candidates tr.chosen');
       expect(chosen).toHaveLength(1);
@@ -903,6 +1075,8 @@ describe('SimulationPage', () => {
         [
           '1',
           'Soporte: 2 piezas por placa (placa 1 de 2)',
+          'PLA negro',
+          '0 min',
           '16-10-2026 10:15',
           '16-10-2026 12:15',
           '16-10-2026 12:30',
@@ -911,6 +1085,8 @@ describe('SimulationPage', () => {
         [
           '2',
           'Soporte: 1 pieza por placa (placa 2 de 2)',
+          'Sin bobina asignada',
+          '15 min',
           '16-10-2026 12:30',
           '16-10-2026 20:30',
           '17-10-2026 03:30',
@@ -936,6 +1112,52 @@ describe('SimulationPage', () => {
         '⚠ Se agruparon piezas iguales en una misma placa.',
       );
       expect(page.q('.result')?.textContent).not.toContain('batching_applied');
+    });
+
+    it('names the group_by_spool strategy and explains it', async () => {
+      const page = await render();
+      await page.optimize();
+      const base = makeOptimization();
+      const last = base.candidates[4];
+      if (last === undefined) throw new Error('fixture needs five candidates');
+
+      await page.answerOptimization(
+        makeOptimization({
+          strategy: 'group_by_spool',
+          candidates: [...base.candidates, { ...last, strategy: 'group_by_spool' }],
+        }),
+      );
+
+      expect(plain(page.q('#chosen strong')?.textContent)).toBe('Agrupar por bobina');
+      expect(plain(page.q('#chosen .hint')?.textContent)).toBe(
+        'Agrupa trabajos de la misma bobina para evitar cambios',
+      );
+      expect(page.q('#candidates tr.chosen')?.textContent).toContain('Agrupar por bobina');
+    });
+
+    it('shows the shortfalls of an optimisation too', async () => {
+      const page = await render();
+      await page.optimize();
+
+      await page.answerOptimization(
+        makeOptimization({
+          warnings: [{ code: 'filament_insufficient' }],
+          filamentShortfalls: [
+            {
+              filamentId: 'f1',
+              name: 'PLA negro',
+              availableGrams: 50,
+              neededGrams: 80.5,
+              completablePieces: 1,
+              remainingPieces: 1,
+            },
+          ],
+        }),
+      );
+
+      expect(plain(page.q('#shortfalls')?.textContent)).toContain(
+        'PLA negro: faltan 30.5 g. Alcanza para 1 de 2 piezas; asigná las otras 1 piezas a otra bobina.',
+      );
     });
 
     it('lists what could not be placed by the optimised plan', async () => {

@@ -14,6 +14,9 @@ function isCount(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0;
 }
 
+const isGrams = (value: unknown): boolean =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0;
+
 const GOALS: readonly unknown[] = ['deadline', 'fastest', 'minimal_idle'];
 const WARNINGS: readonly unknown[] = [
   'part_deleted',
@@ -21,8 +24,14 @@ const WARNINGS: readonly unknown[] = [
   'availability_not_configured',
   'nothing_to_print',
   'batching_applied',
+  'filament_insufficient',
+  'filament_deleted',
 ];
 const DEADLINE_CHANGES: readonly unknown[] = ['gained', 'lost', 'same', 'unknown'];
+
+const isText = (value: unknown): value is string => typeof value === 'string';
+const isTextOrNull = (value: unknown): boolean => value === null || isText(value);
+const isFlagOrNull = (value: unknown): boolean => value === null || typeof value === 'boolean';
 
 function isJob(value: unknown): boolean {
   return (
@@ -36,6 +45,10 @@ function isJob(value: unknown): boolean {
     typeof value['startAt'] === 'string' &&
     typeof value['endAt'] === 'string' &&
     typeof value['handoffAt'] === 'string' &&
+    isTextOrNull(value['filamentId']) &&
+    isTextOrNull(value['filamentName']) &&
+    isCount(value['setupMinutes']) &&
+    typeof value['filamentChanged'] === 'boolean' &&
     typeof value['unattended'] === 'boolean'
   );
 }
@@ -47,7 +60,9 @@ function isPrinter(value: unknown): boolean {
     typeof value['name'] === 'string' &&
     isCount(value['jobs']) &&
     isCount(value['busyMinutes']) &&
-    isCount(value['idleMinutes'])
+    isCount(value['idleMinutes']) &&
+    isCount(value['setupMinutes']) &&
+    isCount(value['filamentChanges'])
   );
 }
 
@@ -59,10 +74,6 @@ function isUnplaced(value: unknown): boolean {
     isCount(value['units'])
   );
 }
-
-const isText = (value: unknown): value is string => typeof value === 'string';
-const isTextOrNull = (value: unknown): boolean => value === null || isText(value);
-const isFlagOrNull = (value: unknown): boolean => value === null || typeof value === 'boolean';
 
 function isPlate(value: unknown): boolean {
   return (
@@ -77,6 +88,10 @@ function isPlate(value: unknown): boolean {
     isText(value['startAt']) &&
     isText(value['endAt']) &&
     isText(value['handoffAt']) &&
+    isTextOrNull(value['filamentId']) &&
+    isTextOrNull(value['filamentName']) &&
+    isCount(value['setupMinutes']) &&
+    typeof value['filamentChanged'] === 'boolean' &&
     typeof value['unattended'] === 'boolean'
   );
 }
@@ -89,7 +104,21 @@ function isPlanTotals(value: unknown): boolean {
     isCount(value['unplacedUnits']) &&
     isTextOrNull(value['finishAt']) &&
     isCount(value['totalBusyMinutes']) &&
-    isCount(value['totalIdleMinutes'])
+    isCount(value['totalIdleMinutes']) &&
+    isCount(value['totalSetupMinutes']) &&
+    isCount(value['filamentChanges'])
+  );
+}
+
+function isShortfall(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isText(value['filamentId']) &&
+    isText(value['name']) &&
+    isGrams(value['availableGrams']) &&
+    isGrams(value['neededGrams']) &&
+    isCount(value['completablePieces']) &&
+    isCount(value['remainingPieces'])
   );
 }
 
@@ -113,6 +142,8 @@ function isCandidate(value: unknown): boolean {
     isStrategy(value['strategy']) &&
     isTextOrNull(value['finishAt']) &&
     isCount(value['totalIdleMinutes']) &&
+    isCount(value['totalSetupMinutes']) &&
+    isCount(value['filamentChanges']) &&
     isFlagOrNull(value['deadlineMet']) &&
     isCount(value['placedUnits']) &&
     isCount(value['unplacedUnits'])
@@ -152,7 +183,9 @@ export function isOptimization(value: unknown): value is Optimization {
     Array.isArray(value['candidates']) &&
     value['candidates'].every(isCandidate) &&
     Array.isArray(value['warnings']) &&
-    value['warnings'].every((one: unknown) => isRecord(one) && WARNINGS.includes(one['code']))
+    value['warnings'].every((one: unknown) => isRecord(one) && WARNINGS.includes(one['code'])) &&
+    Array.isArray(value['filamentShortfalls']) &&
+    value['filamentShortfalls'].every(isShortfall)
   );
 }
 
@@ -175,13 +208,17 @@ export function isSimulation(value: unknown): value is Simulation {
     (totals['finishAt'] === null || typeof totals['finishAt'] === 'string') &&
     isCount(totals['totalBusyMinutes']) &&
     isCount(totals['totalIdleMinutes']) &&
+    isCount(totals['totalSetupMinutes']) &&
+    isCount(totals['filamentChanges']) &&
     isRecord(deadline) &&
     (deadline['date'] === null || typeof deadline['date'] === 'string') &&
     (deadline['met'] === null || typeof deadline['met'] === 'boolean') &&
     Array.isArray(value['unplaced']) &&
     value['unplaced'].every(isUnplaced) &&
     Array.isArray(value['warnings']) &&
-    value['warnings'].every((one: unknown) => isRecord(one) && WARNINGS.includes(one['code']))
+    value['warnings'].every((one: unknown) => isRecord(one) && WARNINGS.includes(one['code'])) &&
+    Array.isArray(value['filamentShortfalls']) &&
+    value['filamentShortfalls'].every(isShortfall)
   );
 }
 

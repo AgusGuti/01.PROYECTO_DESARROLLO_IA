@@ -60,6 +60,23 @@ input[type='text'] {
   }
 }
 
+.shortfalls {
+  border: 0.15rem solid var(--color-warn);
+  margin-block: 1rem;
+  padding: 0.5rem 1rem;
+
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+.hint {
+  display: block;
+  font-weight: normal;
+}
+
 .totals {
   display: flex;
   flex-wrap: wrap;
