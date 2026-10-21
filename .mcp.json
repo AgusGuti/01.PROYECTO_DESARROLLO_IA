@@ -8,6 +8,10 @@
       "command": "node",
       "args": ["node_modules/@upstash/context7-mcp/dist/index.js"]
     },
+    "gcode-import": {
+      "command": "node",
+      "args": ["scripts/mcp/gcode-import-server.mjs", "--root", "D:\\3D_Printings\\00.GCODES"]
+    },
     "github": {
       "type": "http",
       "url": "https://api.githubcopilot.com/mcp/",

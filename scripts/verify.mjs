@@ -15,6 +15,7 @@ const hasPython = existsSync(join(root, 'apps', 'assistant', '.venv'));
 const gates = [
   { name: 'Guard rules', script: 'guard:scan' },
   { name: 'Guard self-tests', script: 'test:guards' },
+  { name: 'Tests: MCP import', script: 'test:mcp' },
   { name: 'Agent files in sync', script: 'ai:check' },
   { name: 'Format', script: 'format:check' },
   { name: 'Lint', script: 'lint' },
