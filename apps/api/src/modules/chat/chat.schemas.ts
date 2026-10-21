@@ -1,5 +1,6 @@
 // Zod schemas for the chat API (ADR 0029). The API enforces its own limit; it does not rely on
 // the assistant's.
+import { materialSchema } from '../../shared/catalog/materials.schemas.js';
 import { z } from '../../shared/http/zod.js';
 
 export const MAX_MESSAGE_CHARACTERS = 2000;
@@ -207,18 +208,61 @@ const updateQueueProgressProposalSchema = z
   })
   .openapi('ProposalUpdateQueueProgress');
 
+// G-code import (ADR 0034, 0035). The folder is a relative sub-folder of the assistant's configured
+// G-code root; the root itself is never part of any request. The assistant and the MCP server check
+// containment again.
+const FOLDER_FORBIDDEN = /[\p{Cc}<>:"|?*]/u;
+
+const gcodeFolderSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .refine(
+    (value) => !FOLDER_FORBIDDEN.test(value),
+    'Must not contain control characters or < > : " | ? *.',
+  )
+  .refine((value) => !/^[/\\]/.test(value), 'Must be a relative path.')
+  .refine((value) => !value.split(/[/\\]/).includes('..'), 'Must stay inside the G-code folder.')
+  .openapi({ type: 'string', minLength: 1, maxLength: 200, example: 'Minis/0.3mm' });
+
+export const gcodeImportRequestSchema = z
+  .strictObject({
+    material: materialSchema.openapi({
+      description: 'One material for every file in the batch: a G-code file does not state it.',
+    }),
+    folder: gcodeFolderSchema.optional(),
+  })
+  .openapi('GcodeImportRequest');
+
+export const gcodeImportResultSchema = z
+  .strictObject({
+    created: z.number().int().min(0),
+    updated: z.number().int().min(0),
+    unchanged: z.number().int().min(0),
+    skipped: z.number().int().min(0),
+    errors: z.number().int().min(0),
+  })
+  .openapi('GcodeImportResult');
+
+const importGcodesProposalSchema = z
+  .strictObject({ kind: z.literal('import_gcodes'), payload: gcodeImportRequestSchema })
+  .openapi('ProposalImportGcodes');
+
 export const proposalSchema = z
   .discriminatedUnion('kind', [
     createProjectProposalSchema,
     createQueueProposalSchema,
     updateQueueProgressProposalSchema,
+    importGcodesProposalSchema,
   ])
   .openapi('AssistantProposal', {
     description:
       'A suggested action. It is NOT executed: the browser shows it, and only after the user ' +
       'confirms does it send the payload to POST /api/v1/projects (create_project) or ' +
       'POST /api/v1/queues (create_queue, the queues API copies the project lines) or ' +
-      'PATCH /api/v1/queues/{projectId} with { version, lines } (update_queue_progress), which validate it again.',
+      'PATCH /api/v1/queues/{projectId} with { version, lines } (update_queue_progress), which validate it again. ' +
+      'An import_gcodes proposal is confirmed with POST /api/v1/gcode-imports (ADR 0035).',
   });
 
 export const chatResponseSchema = z
@@ -237,5 +281,7 @@ export const assistantReplySchema = z.object({
   proposal: z.unknown().optional(),
 });
 
+export type GcodeImportRequestDto = z.infer<typeof gcodeImportRequestSchema>;
+export type GcodeImportResultDto = z.infer<typeof gcodeImportResultSchema>;
 export type ChatDto = z.infer<typeof chatResponseSchema>;
 export type ProposalDto = z.infer<typeof proposalSchema>;

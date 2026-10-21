@@ -1,8 +1,10 @@
 """Request and response shapes. Pydantic validates them at runtime (standard §5.2)."""
 
+import re
 from typing import Annotated, Literal
 
 from pydantic import (
+    AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
@@ -98,8 +100,59 @@ class UpdateQueueProgressProposal(_Strict):
     lineNames: list[ProposalItemName]
 
 
+Material = Literal[
+    "PLA", "PETG", "ABS", "ASA", "TPU", "PA", "PC", "HIPS", "PVA", "PP", "PLA_CF", "PETG_CF",
+    "PA_CF", "PA_GF",
+]  # fmt: skip
+
+_BAD_FOLDER_CHARS = re.compile(r"[\x00-\x1f\x7f<>:\"|?*]")
+
+
+def _safe_folder(value: str) -> str:
+    """A relative sub-folder of GCODE_ROOT. The MCP server checks containment again."""
+    if _BAD_FOLDER_CHARS.search(value) or value[0] in "/\\":
+        raise ValueError("folder must be a relative path")
+    if ".." in re.split(r"[/\\]", value):
+        raise ValueError("folder must stay inside the G-code folder")
+    return value
+
+
+Folder = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=200),
+    AfterValidator(_safe_folder),
+]
+
+
+class GcodeImportPayload(_Strict):
+    """Body of POST /gcode-imports and of the proposal: one material per batch (ADR 0035)."""
+
+    material: Material
+    folder: Folder | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_none(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
+        return {key: value for key, value in handler(self).items() if value is not None}
+
+
+class ImportGcodesProposal(_Strict):
+    kind: Literal["import_gcodes"]
+    payload: GcodeImportPayload
+
+
+class GcodeImportResult(_Strict):
+    created: int
+    updated: int
+    unchanged: int
+    skipped: int
+    errors: int
+
+
 Proposal = Annotated[
-    CreateProjectProposal | CreateQueueProposal | UpdateQueueProgressProposal,
+    CreateProjectProposal
+    | CreateQueueProposal
+    | UpdateQueueProgressProposal
+    | ImportGcodesProposal,
     Field(discriminator="kind"),
 ]
 

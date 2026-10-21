@@ -5,6 +5,8 @@ import type {
   ChatRequest,
   CreateProjectRequest,
   CreateQueueRequest,
+  GcodeImportRequest,
+  GcodeImportResult,
   Project,
   Queue,
   UpdateQueueRequest,
@@ -47,6 +49,15 @@ function isQueueProposal(value: Record<string, unknown>): boolean {
   );
 }
 
+function isImportProposal(value: Record<string, unknown>): boolean {
+  const payload = value['payload'];
+  return (
+    isRecord(payload) &&
+    typeof payload['material'] === 'string' &&
+    (payload['folder'] === undefined || typeof payload['folder'] === 'string')
+  );
+}
+
 function isProgressProposal(value: Record<string, unknown>): boolean {
   const payload = value['payload'];
   if (!isRecord(payload) || !hasField(payload, 'projectId', 'string')) return false;
@@ -75,6 +86,7 @@ export function isProposal(value: unknown): value is Proposal {
   if (!isRecord(value)) return false;
   if (value['kind'] === 'create_queue') return isQueueProposal(value);
   if (value['kind'] === 'update_queue_progress') return isProgressProposal(value);
+  if (value['kind'] === 'import_gcodes') return isImportProposal(value);
   if (value['kind'] !== 'create_project') return false;
   const payload = value['payload'];
   if (!isRecord(payload) || typeof payload['name'] !== 'string') return false;
@@ -119,6 +131,16 @@ export function isCreatedProject(value: unknown): value is Project {
 /** Runtime check of the created queue returned by POST /api/v1/queues. */
 export function isCreatedQueue(value: unknown): value is Queue {
   return hasField(value, 'projectId', 'string') && hasField(value, 'goal', 'string');
+}
+
+/** Runtime check of the counts returned by POST /api/v1/gcode-imports. */
+export function isGcodeImportResult(value: unknown): value is GcodeImportResult {
+  return (
+    isRecord(value) &&
+    ['created', 'updated', 'unchanged', 'skipped', 'errors'].every(
+      (key) => typeof value[key] === 'number' && Number.isInteger(value[key]),
+    )
+  );
 }
 
 @Injectable({ providedIn: 'root' })
@@ -167,6 +189,21 @@ export class ChatApi {
     return this.http.patch<unknown>(url, body).pipe(
       map((response) => {
         if (!isCreatedQueue(response)) {
+          throw new ApiError(200, 'unexpected_response', 'El servidor respondió algo inesperado.');
+        }
+        return response;
+      }),
+    );
+  }
+
+  /**
+   * Confirmed G-code import (ADR 0035). The import is idempotent (ADR 0034), so confirming again
+   * after a failure cannot duplicate parts, but it is still never retried automatically.
+   */
+  importGcodes(payload: GcodeImportRequest): Observable<GcodeImportResult> {
+    return this.http.post<unknown>(`${this.baseUrl}/api/v1/gcode-imports`, payload).pipe(
+      map((response) => {
+        if (!isGcodeImportResult(response)) {
           throw new ApiError(200, 'unexpected_response', 'El servidor respondió algo inesperado.');
         }
         return response;

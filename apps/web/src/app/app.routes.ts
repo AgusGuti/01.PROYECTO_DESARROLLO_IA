@@ -53,6 +53,12 @@ export const routes: Routes = [
       import('./features/parts/parts-list-page').then((module) => module.PartsListPage),
   },
   {
+    path: 'piezas/importar',
+    title: 'Importar piezas · Print3D Planner',
+    loadComponent: () =>
+      import('./features/parts/parts-import-page').then((module) => module.PartsImportPage),
+  },
+  {
     path: 'piezas/nueva',
     title: 'Nueva pieza · Print3D Planner',
     loadComponent: () =>

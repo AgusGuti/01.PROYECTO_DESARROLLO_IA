@@ -1,0 +1,122 @@
+<section aria-labelledby="import-title">
+  <div class="page-header">
+    <h1 id="import-title" tabindex="-1">Importar carpeta de G-code</h1>
+    <a class="button" routerLink="/piezas">Volver a piezas</a>
+  </div>
+
+  <p>
+    Elegí una carpeta con archivos <code>.gcode</code> de Cura. Se crea una pieza por archivo; si
+    una pieza ya se importó desde el mismo archivo, se actualizan sus datos (el nombre no se toca).
+  </p>
+
+  <div class="filter">
+    <label for="import-folder">Carpeta</label>
+    <input
+      id="import-folder"
+      type="file"
+      webkitdirectory
+      multiple
+      #folder
+      [disabled]="busy()"
+      (change)="pickFolder(folder)"
+    />
+
+    <label for="import-material">Material de toda la tanda</label>
+    <select
+      id="import-material"
+      #materialSelect
+      [disabled]="busy()"
+      (change)="changeMaterial(materialSelect.value)"
+    >
+      @for (option of materialOptions; track option.value) {
+        <option [value]="option.value" [selected]="option.value === material()">
+          {{ option.label }}
+        </option>
+      }
+    </select>
+
+    <button type="button" [disabled]="!canAnalyse()" (click)="analyse()">Analizar</button>
+  </div>
+
+  @if (pickProblem(); as problem) {
+    <p class="notice notice--error" role="alert">{{ problem }}</p>
+  } @else if (candidates().length > 0) {
+    <p>
+      {{ candidates().length }}
+      {{ candidates().length === 1 ? 'archivo .gcode encontrado' : 'archivos .gcode encontrados' }}.
+    </p>
+  }
+
+  <div aria-live="polite">
+    @let view = state();
+    @switch (view.kind) {
+      @case ('analysing') {
+        <p class="status">Analizando {{ view.done }} de {{ view.total }}…</p>
+      }
+      @case ('importing') {
+        <p class="status">Importando {{ view.done }} de {{ view.total }}…</p>
+      }
+      @case ('done') {
+        <p class="notice notice--success">
+          Listo: {{ view.created }} creadas, {{ view.updated }} actualizadas.
+        </p>
+        @if (view.failed > 0) {
+          <p class="notice notice--error" role="alert">
+            {{ view.failed }} no se pudieron guardar. Volvé a analizar para ver cuáles faltan.
+          </p>
+        }
+        <p>
+          <a class="button" routerLink="/piezas">Ver piezas</a>
+          <button type="button" (click)="reset()">Importar otra tanda</button>
+        </p>
+      }
+      @case ('failed') {
+        <p class="notice notice--error" role="alert">{{ view.message }}</p>
+      }
+    }
+  </div>
+
+  @if (view.kind === 'preview') {
+    <h2>Vista previa</h2>
+    <p>
+      {{ counts().create }} para crear, {{ counts().update }} para actualizar,
+      {{ counts().unchanged }} sin cambios, {{ counts().skipped }} omitidos,
+      {{ counts().error }} con error.
+    </p>
+    <table>
+      <caption class="visually-hidden">
+        Qué pasaría con cada archivo
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">Archivo</th>
+          <th scope="col">Nombre</th>
+          <th scope="col">Peso (g)</th>
+          <th scope="col">Tiempo</th>
+          <th scope="col">Acción</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of view.rows; track row.path) {
+          <tr>
+            <td>{{ row.path }}</td>
+            <td>{{ row.name }}</td>
+            <td>{{ row.grams ?? '—' }}</td>
+            <td>{{ row.seconds === null ? '—' : duration(row.seconds) }}</td>
+            <td>
+              {{ actionText(row) }}
+              @if (reasonText(row); as reason) {
+                <br /><small>{{ reason }}</small>
+              }
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+    <p>
+      <button type="button" [disabled]="pending() === 0" (click)="runImport()">
+        Importar {{ pending() }} {{ pending() === 1 ? 'pieza' : 'piezas' }}
+      </button>
+    </p>
+  }
+</section>

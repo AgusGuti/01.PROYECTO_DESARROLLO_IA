@@ -5,7 +5,9 @@ import { MAX_REPLY_CHARACTERS } from './chat.schemas.js';
 import {
   AssistantMessageTooLongError,
   createChatService,
+  createGcodeImportService,
   type AssistantClient,
+  type GcodeImportClient,
 } from './chat.service.js';
 
 function setup(client: AssistantClient) {
@@ -210,5 +212,46 @@ describe('chat service', () => {
       await expect(absent.service.ask('x')).resolves.toEqual({ reply: 'a', proposal: null });
       await expect(nul.service.ask('x')).resolves.toEqual({ reply: 'a', proposal: null });
     });
+  });
+});
+
+describe('gcode import service', () => {
+  const input = { material: 'PLA', folder: 'Minis-secretos' } as const;
+  const counts = { created: 2, updated: 1, unchanged: 3, skipped: 0, errors: 0 };
+
+  function importSetup(client: GcodeImportClient) {
+    const lines: unknown[] = [];
+    const logger = pino({ level: 'info' }, { write: (line: string) => void lines.push(line) });
+    return { lines, service: createGcodeImportService({ client, logger, now: () => 0 }) };
+  }
+
+  it('returns the counts and logs them without the folder', async () => {
+    const received: unknown[] = [];
+    const { service, lines } = importSetup({
+      importGcodes: (body) => {
+        received.push(body);
+        return Promise.resolve(counts);
+      },
+    });
+
+    await expect(service.importGcodes(input)).resolves.toEqual(counts);
+
+    expect(received).toEqual([input]);
+    expect(lines.join('')).toContain('"created":2');
+    expect(lines.join('')).not.toContain('Minis-secretos');
+  });
+
+  it.each([
+    ['unreachable', () => Promise.reject(new TypeError('fetch failed: ECONNREFUSED'))],
+    ['a malformed reply', () => Promise.resolve({ created: 'many' })],
+    ['a reply with extra keys', () => Promise.resolve({ ...counts, files: ['x.gcode'] })],
+  ])('answers a generic 503 on %s', async (_name, importGcodes) => {
+    const { service } = importSetup({ importGcodes });
+
+    const error = await service.importGcodes(input).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AppError);
+    expect(error).toMatchObject({ code: 'service_unavailable' });
+    expect(JSON.stringify(error)).not.toContain('ECONNREFUSED');
   });
 });

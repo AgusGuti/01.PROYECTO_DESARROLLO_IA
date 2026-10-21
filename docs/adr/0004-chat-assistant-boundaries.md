@@ -1,6 +1,6 @@
 # 0004. Chat assistant boundaries
 
-- **Status:** accepted
+- **Status:** accepted (amended by 0035: one bounded read of a local folder and one write executed after confirmation)
 - **Date:** 2026-10-13
 
 ## Context

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { chatRequestSchema, proposalSchema } from './chat.schemas.js';
+import {
+  chatRequestSchema,
+  gcodeImportRequestSchema,
+  gcodeImportResultSchema,
+  proposalSchema,
+} from './chat.schemas.js';
 
 const ID = 'a'.repeat(24);
 const proposal = (payload: object = { name: 'Soportes' }, itemNames: unknown[] = []) => ({
@@ -259,5 +264,57 @@ describe('chatRequestSchema', () => {
     ['an unknown key', { message: 'hola', model: 'x' }],
   ])('rejects %s', (_name, input) => {
     expect(chatRequestSchema.safeParse(input).success).toBe(false);
+  });
+});
+
+describe('gcodeImportRequestSchema and the import_gcodes proposal', () => {
+  it.each([
+    ['only a material', { material: 'PLA' }],
+    ['a sub-folder', { material: 'PETG', folder: 'Minis/0.3mm' }],
+    ['a Windows separator', { material: 'PLA', folder: 'Minis\\0.3mm' }],
+    ['a dot in a name', { material: 'PLA', folder: 'a..b' }],
+    ['exactly 200 characters', { material: 'PLA', folder: 'a'.repeat(200) }],
+  ])('accepts %s', (_name, input) => {
+    expect(gcodeImportRequestSchema.safeParse(input).success).toBe(true);
+    expect(proposalSchema.safeParse({ kind: 'import_gcodes', payload: input }).success).toBe(true);
+  });
+
+  it.each([
+    ['a missing material', {}],
+    ['an unknown material', { material: 'WOOD' }],
+    ['a parent folder', { material: 'PLA', folder: '../secretos' }],
+    ['a parent folder with a Windows separator', { material: 'PLA', folder: 'a\\..\\b' }],
+    ['a parent folder in the middle', { material: 'PLA', folder: 'a/../../b' }],
+    ['an absolute path', { material: 'PLA', folder: '/etc' }],
+    ['a drive letter', { material: 'PLA', folder: 'C:/Windows' }],
+    ['a control character', { material: 'PLA', folder: 'a\nb' }],
+    ['an empty folder', { material: 'PLA', folder: '  ' }],
+    ['201 characters', { material: 'PLA', folder: 'a'.repeat(201) }],
+    ['a root chosen by the client', { material: 'PLA', root: 'D:/otra' }],
+    ['a confirm flag', { material: 'PLA', confirm: true }],
+  ])('rejects %s', (_name, input) => {
+    expect(gcodeImportRequestSchema.safeParse(input).success).toBe(false);
+    expect(proposalSchema.safeParse({ kind: 'import_gcodes', payload: input }).success).toBe(false);
+  });
+
+  it('rejects an import proposal with extra keys', () => {
+    expect(
+      proposalSchema.safeParse({
+        kind: 'import_gcodes',
+        payload: { material: 'PLA' },
+        itemNames: [],
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('gcodeImportResultSchema', () => {
+  it('accepts whole counts and rejects negatives, fractions and extras', () => {
+    const counts = { created: 1, updated: 0, unchanged: 2, skipped: 3, errors: 0 };
+
+    expect(gcodeImportResultSchema.safeParse(counts).success).toBe(true);
+    expect(gcodeImportResultSchema.safeParse({ ...counts, created: -1 }).success).toBe(false);
+    expect(gcodeImportResultSchema.safeParse({ ...counts, created: 1.5 }).success).toBe(false);
+    expect(gcodeImportResultSchema.safeParse({ ...counts, files: [] }).success).toBe(false);
   });
 });

@@ -1088,9 +1088,9 @@ export type ChatResponse = {
 };
 
 /**
- * A suggested action. It is NOT executed: the browser shows it, and only after the user confirms does it send the payload to POST /api/v1/projects (create_project) or POST /api/v1/queues (create_queue, the queues API copies the project lines) or PATCH /api/v1/queues/{projectId} with { version, lines } (update_queue_progress), which validate it again.
+ * A suggested action. It is NOT executed: the browser shows it, and only after the user confirms does it send the payload to POST /api/v1/projects (create_project) or POST /api/v1/queues (create_queue, the queues API copies the project lines) or PATCH /api/v1/queues/{projectId} with { version, lines } (update_queue_progress), which validate it again. An import_gcodes proposal is confirmed with POST /api/v1/gcode-imports (ADR 0035).
  */
-export type AssistantProposal = ProposalCreateProject | ProposalCreateQueue | ProposalUpdateQueueProgress | null;
+export type AssistantProposal = ProposalCreateProject | ProposalCreateQueue | ProposalUpdateQueueProgress | ProposalImportGcodes | null;
 
 export type ProposalCreateProject = {
     kind: 'create_project';
@@ -1149,11 +1149,29 @@ export type ProposalUpdateQueueProgressPayload = {
     }>;
 };
 
+export type ProposalImportGcodes = {
+    kind: 'import_gcodes';
+    payload: GcodeImportRequest;
+};
+
+export type GcodeImportRequest = {
+    material: Material & unknown;
+    folder?: string;
+};
+
 export type ChatRequest = {
     /**
      * The user message, trimmed. It is never stored or logged.
      */
     message: string;
+};
+
+export type GcodeImportResult = {
+    created: number;
+    updated: number;
+    unchanged: number;
+    skipped: number;
+    errors: number;
 };
 
 export type GetLivenessData = {
@@ -2444,3 +2462,32 @@ export type AskAssistantResponses = {
 };
 
 export type AskAssistantResponse = AskAssistantResponses[keyof AskAssistantResponses];
+
+export type ImportGcodesData = {
+    body?: GcodeImportRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/gcode-imports';
+};
+
+export type ImportGcodesErrors = {
+    /**
+     * Invalid input: unknown material, unsafe folder or unknown key.
+     */
+    400: Problem;
+    /**
+     * The assistant or the import is unreachable, off, timed out or unusable.
+     */
+    503: Problem;
+};
+
+export type ImportGcodesError = ImportGcodesErrors[keyof ImportGcodesErrors];
+
+export type ImportGcodesResponses = {
+    /**
+     * How many files were created, updated, left unchanged, skipped or failed.
+     */
+    200: GcodeImportResult;
+};
+
+export type ImportGcodesResponse = ImportGcodesResponses[keyof ImportGcodesResponses];

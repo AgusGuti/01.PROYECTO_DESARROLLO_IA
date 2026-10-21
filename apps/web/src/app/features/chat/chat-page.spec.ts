@@ -33,6 +33,7 @@ const PROPOSAL: Proposal = {
   itemNames: [{ partId: 'p1', name: 'Soporte <b>x</b>' }],
 };
 const CREATED: Pick<Project, 'id' | 'name'> = { id: 'abc123', name: HOSTILE };
+const IMPORT_COUNTS = { created: 2, updated: 1, unchanged: 3, skipped: 4, errors: 5 };
 
 async function render(
   ask: (message: string) => Observable<ChatReply>,
@@ -43,6 +44,7 @@ async function render(
     projectId: string,
     body: unknown,
   ) => Observable<{ projectId: string }> = () => of({ projectId: 'proj1' }),
+  importGcodes: (payload: unknown) => Observable<unknown> = () => of(IMPORT_COUNTS),
 ) {
   TestBed.configureTestingModule({
     imports: [ChatPage],
@@ -50,7 +52,7 @@ async function render(
       provideRouter([]),
       {
         provide: ChatApi,
-        useValue: { ask, createProject, createQueue, updateQueueProgress },
+        useValue: { ask, createProject, createQueue, updateQueueProgress, importGcodes },
       },
     ],
   });
@@ -636,6 +638,122 @@ describe('ChatPage', () => {
       await page.click('Confirmar');
 
       expect(page.button('Limpiar conversación')?.disabled).toBe(true);
+    });
+  });
+
+  describe('assistant G-code import proposal card', () => {
+    const IMPORT: Proposal = {
+      kind: 'import_gcodes',
+      payload: { material: 'PLA', folder: HOSTILE },
+    };
+    type Run = (payload: unknown) => Observable<unknown>;
+    async function withImportCard(run?: Run, proposal: Proposal = IMPORT) {
+      const page = await render(
+        () => of(reply('Armé la importación.', proposal)),
+        undefined,
+        undefined,
+        undefined,
+        run,
+      );
+      await page.type('importá los gcode');
+      await page.click('Enviar');
+      return page;
+    }
+    const card = (page: { element: HTMLElement }) =>
+      page.element.querySelector('[role="group"][aria-label="Propuesta del asistente"]');
+    const fail = (status: number) => () =>
+      throwError(() => new ApiError(status, 'x', 'SENTINEL backend text'));
+
+    it('describes the batch from the payload, hostile text as text, and imports nothing yet', async () => {
+      const run = vi.fn<Run>(() => of(IMPORT_COUNTS));
+      const page = await withImportCard(run);
+      const text = card(page)?.textContent ?? '';
+
+      expect(text).toContain(`Importar los G-code de la carpeta «${HOSTILE}»`);
+      expect(text).toContain('Material de toda la tanda: PLA');
+      expect(text).toContain('Todavía no se importó nada.');
+      expect(card(page)?.querySelector('img, b')).toBeNull();
+      expect(run).not.toHaveBeenCalled();
+    });
+
+    it('names the whole folder when the proposal has no sub-folder', async () => {
+      const page = await withImportCard(undefined, {
+        kind: 'import_gcodes',
+        payload: { material: 'PETG' },
+      });
+
+      expect(card(page)?.textContent).toContain(
+        'Importar todos los G-code de la carpeta configurada',
+      );
+    });
+
+    it('sends the exact payload once, shows the counts and a link to Piezas, focused', async () => {
+      const run = vi.fn<Run>(() => of(IMPORT_COUNTS));
+      const page = await withImportCard(run);
+
+      page.button('Confirmar')?.click();
+      page.button('Confirmar')?.click();
+      await page.fixture.whenStable();
+
+      expect(run).toHaveBeenCalledExactlyOnceWith({ material: 'PLA', folder: HOSTILE });
+      expect(card(page)?.textContent).toContain(
+        'Importación lista: 2 creadas, 1 actualizadas, 3 sin cambios, 4 omitidas, 5 con error.',
+      );
+      const link = required(card(page)?.querySelector('a') ?? null);
+      expect(link.textContent).toBe('Ir a Piezas');
+      expect(link.getAttribute('href')).toBe('/piezas');
+      expect(document.activeElement).toBe(link);
+      expect(page.button('Confirmar')).toBeUndefined();
+    });
+
+    it('shows progress text while importing and blocks clearing the conversation', async () => {
+      const page = await withImportCard(() => new Subject<unknown>());
+
+      await page.click('Confirmar');
+
+      expect(card(page)?.textContent).toContain('Importando los G-code');
+      expect(page.button('Limpiar conversación')?.disabled).toBe(true);
+    });
+
+    it('on 400 shows a fixed message and retries with the same body', async () => {
+      let calls = 0;
+      const run = vi.fn<Run>(() => {
+        calls += 1;
+        return calls === 1 ? fail(400)() : of(IMPORT_COUNTS);
+      });
+      const page = await withImportCard(run);
+
+      await page.click('Confirmar');
+      expect(card(page)?.textContent).toContain('La API no aceptó la propuesta; revisá los datos.');
+      expect(page.element.textContent).not.toContain('SENTINEL');
+
+      await page.click('Reintentar');
+      expect(run).toHaveBeenCalledTimes(2);
+      expect(run.mock.calls[1]).toEqual(run.mock.calls[0]);
+      expect(card(page)?.textContent).toContain('Importación lista');
+    });
+
+    it('on an uncertain failure says a retry cannot duplicate parts, links to Piezas', async () => {
+      const page = await withImportCard(fail(503));
+
+      await page.click('Confirmar');
+
+      expect(card(page)?.textContent).toContain('No pudimos confirmar si terminó la importación.');
+      expect(card(page)?.textContent).toContain('sin duplicar piezas');
+      expect(card(page)?.querySelector('a')?.getAttribute('href')).toBe('/piezas');
+      expect(page.button('Reintentar')).toBeDefined();
+      expect(page.element.textContent).not.toContain('SENTINEL');
+    });
+
+    it('discards without importing anything', async () => {
+      const run = vi.fn<Run>(() => of(IMPORT_COUNTS));
+      const page = await withImportCard(run);
+
+      await page.click('Descartar');
+
+      expect(card(page)?.textContent).toContain('Descartada');
+      expect(page.button('Confirmar')).toBeUndefined();
+      expect(run).not.toHaveBeenCalled();
     });
   });
 });

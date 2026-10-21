@@ -1,12 +1,25 @@
 // Use case: forward one message to the assistant. Stateless; nothing is stored.
 import type { Logger } from 'pino';
 import { AppError } from '../../shared/errors/app-error.js';
-import { MAX_REPLY_CHARACTERS, proposalSchema, type ChatDto } from './chat.schemas.js';
+import {
+  gcodeImportResultSchema,
+  MAX_REPLY_CHARACTERS,
+  proposalSchema,
+  type ChatDto,
+  type GcodeImportRequestDto,
+  type GcodeImportResultDto,
+} from './chat.schemas.js';
 
 /** Port owned by this module. The HTTP implementation lives in chat.assistant-client.ts. */
 export interface AssistantClient {
   /** `proposal` is untrusted: the service validates it before it reaches a client. */
   ask(message: string): Promise<{ reply: string; proposal?: unknown }>;
+}
+
+/** Port for the one write the assistant performs, after the user confirmed it (ADR 0035). */
+export interface GcodeImportClient {
+  /** The answer is untrusted: the service parses it. */
+  importGcodes(input: GcodeImportRequestDto): Promise<unknown>;
 }
 
 /** The assistant answered 413: it judged the message too long. */
@@ -22,6 +35,7 @@ export interface ChatService {
 }
 
 const UNAVAILABLE = 'The assistant is not available right now. Try again later.';
+const IMPORT_UNAVAILABLE = 'The G-code import is not available right now. Try again later.';
 
 export function createChatService(deps: {
   assistantClient: AssistantClient;
@@ -67,6 +81,34 @@ export function createChatService(deps: {
       const parsed = proposalSchema.safeParse(rawProposal);
       log('ok', reply.length, parsed.success ? 'valid' : 'dropped');
       return { reply, proposal: parsed.success ? parsed.data : null };
+    },
+  };
+}
+
+export interface GcodeImportService {
+  importGcodes(input: GcodeImportRequestDto): Promise<GcodeImportResultDto>;
+}
+
+export function createGcodeImportService(deps: {
+  client: GcodeImportClient;
+  logger: Logger;
+  now: () => number;
+}): GcodeImportService {
+  const { client, logger, now } = deps;
+
+  return {
+    async importGcodes(input) {
+      const startedAt = now();
+      try {
+        const result = gcodeImportResultSchema.parse(await client.importGcodes(input));
+        // Counts and timing only: file names are never logged.
+        logger.info({ outcome: 'ok', ...result, ms: now() - startedAt }, 'gcode import');
+        return result;
+      } catch (error) {
+        // The import is idempotent (ADR 0034), so confirming again after a timeout is safe.
+        logger.info({ outcome: 'unavailable', ms: now() - startedAt }, 'gcode import');
+        throw new AppError('service_unavailable', IMPORT_UNAVAILABLE, { cause: error });
+      }
     },
   };
 }

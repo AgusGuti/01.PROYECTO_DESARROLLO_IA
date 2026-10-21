@@ -8,6 +8,7 @@ dependencies = [
     "httpx>=0.28,<0.29",
     "langchain>=1.4,<2",
     "langchain-ollama>=1.1,<2",
+    "mcp>=1.30,<2",
     "pydantic-settings>=2.15,<3",
     "uvicorn>=0.54,<0.55",
 ]

@@ -2418,12 +2418,14 @@ components:
         - $ref: "#/components/schemas/ProposalCreateProject"
         - $ref: "#/components/schemas/ProposalCreateQueue"
         - $ref: "#/components/schemas/ProposalUpdateQueueProgress"
+        - $ref: "#/components/schemas/ProposalImportGcodes"
         - type: "null"
       description: "A suggested action. It is NOT executed: the browser shows it, and only after the user
         confirms does it send the payload to POST /api/v1/projects (create_project) or POST
         /api/v1/queues (create_queue, the queues API copies the project lines) or PATCH
         /api/v1/queues/{projectId} with { version, lines } (update_queue_progress), which validate
-        it again."
+        it again. An import_gcodes proposal is confirmed with POST /api/v1/gcode-imports (ADR
+        0035)."
     ProposalCreateProject:
       type: object
       properties:
@@ -2643,6 +2645,34 @@ components:
         - version
         - lines
       additionalProperties: false
+    ProposalImportGcodes:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum:
+            - import_gcodes
+        payload:
+          $ref: "#/components/schemas/GcodeImportRequest"
+      required:
+        - kind
+        - payload
+      additionalProperties: false
+    GcodeImportRequest:
+      type: object
+      properties:
+        material:
+          allOf:
+            - $ref: "#/components/schemas/Material"
+            - description: "One material for every file in the batch: a G-code file does not state it."
+        folder:
+          type: string
+          minLength: 1
+          maxLength: 200
+          example: Minis/0.3mm
+      required:
+        - material
+      additionalProperties: false
     ChatRequest:
       type: object
       properties:
@@ -2653,6 +2683,31 @@ components:
           description: The user message, trimmed. It is never stored or logged.
       required:
         - message
+      additionalProperties: false
+    GcodeImportResult:
+      type: object
+      properties:
+        created:
+          type: integer
+          minimum: 0
+        updated:
+          type: integer
+          minimum: 0
+        unchanged:
+          type: integer
+          minimum: 0
+        skipped:
+          type: integer
+          minimum: 0
+        errors:
+          type: integer
+          minimum: 0
+      required:
+        - created
+        - updated
+        - unchanged
+        - skipped
+        - errors
       additionalProperties: false
   parameters: {}
 paths:
@@ -4239,6 +4294,40 @@ paths:
                 $ref: "#/components/schemas/Problem"
         "503":
           description: The assistant is unreachable, timed out or answered something unusable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/gcode-imports:
+    post:
+      operationId: importGcodes
+      tags:
+        - Chat
+      summary: Import the .gcode files of a folder as parts (confirmed assistant proposal)
+      description: "Sent by the browser only after the user confirmed an import_gcodes proposal (ADR
+        0035). The API forwards it to the assistant, which runs the local G-code import for its
+        configured folder. One material per batch. Idempotent (ADR 0034): parts already imported
+        from the same file are updated or left alone. It can take minutes."
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GcodeImportRequest"
+      responses:
+        "200":
+          description: How many files were created, updated, left unchanged, skipped or failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GcodeImportResult"
+        "400":
+          description: "Invalid input: unknown material, unsafe folder or unknown key."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: The assistant or the import is unreachable, off, timed out or unusable.
           content:
             application/problem+json:
               schema:

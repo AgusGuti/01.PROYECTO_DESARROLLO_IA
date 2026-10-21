@@ -217,4 +217,71 @@ describe('ChatApi', () => {
     await expect(result).rejects.toBeInstanceOf(ApiError);
     await expect(result).rejects.toMatchObject({ status: 503 });
   });
+
+  describe('G-code import', () => {
+    const importProposal = {
+      kind: 'import_gcodes',
+      payload: { material: 'PLA', folder: 'Minis' },
+    };
+
+    it.each([
+      ['with a folder', importProposal],
+      ['without a folder', { kind: 'import_gcodes', payload: { material: 'PETG' } }],
+    ])('passes a well-formed import proposal through (%s)', async (_label, proposal) => {
+      const result = firstValueFrom(api.ask('Hola'));
+
+      http.expectOne('http://api.test/api/v1/chat').flush({ reply: 'ok', proposal });
+
+      await expect(result).resolves.toEqual({ reply: 'ok', proposal });
+    });
+
+    it.each([
+      ['no payload', { kind: 'import_gcodes' }],
+      ['no material', { kind: 'import_gcodes', payload: { folder: 'Minis' } }],
+      ['a numeric material', { kind: 'import_gcodes', payload: { material: 7 } }],
+      ['a numeric folder', { kind: 'import_gcodes', payload: { material: 'PLA', folder: 3 } }],
+    ])('drops a malformed import proposal keeping the reply (%s)', async (_label, bad) => {
+      const result = firstValueFrom(api.ask('Hola'));
+
+      http.expectOne('http://api.test/api/v1/chat').flush({ reply: 'ok', proposal: bad });
+
+      await expect(result).resolves.toEqual({ reply: 'ok', proposal: null });
+    });
+
+    it('posts the payload to /gcode-imports and emits the counts', async () => {
+      const counts = { created: 2, updated: 1, unchanged: 3, skipped: 0, errors: 0 };
+      const result = firstValueFrom(api.importGcodes({ material: 'PLA', folder: 'Minis' }));
+
+      const request = http.expectOne({
+        method: 'POST',
+        url: 'http://api.test/api/v1/gcode-imports',
+      });
+      expect(request.request.body).toEqual({ material: 'PLA', folder: 'Minis' });
+      request.flush(counts);
+
+      await expect(result).resolves.toEqual(counts);
+    });
+
+    it.each([
+      ['an unexpected body', { nope: 1 }],
+      ['a fractional count', { created: 1.5, updated: 0, unchanged: 0, skipped: 0, errors: 0 }],
+      ['a missing count', { created: 1, updated: 0, unchanged: 0, skipped: 0 }],
+    ])('rejects %s', async (_label, body) => {
+      const result = firstValueFrom(api.importGcodes({ material: 'PLA' }));
+
+      http.expectOne('http://api.test/api/v1/gcode-imports').flush(body);
+
+      await expect(result).rejects.toMatchObject({ code: 'unexpected_response' });
+    });
+
+    it('does not retry a failed import', async () => {
+      const result = firstValueFrom(api.importGcodes({ material: 'PLA' }));
+
+      http
+        .expectOne('http://api.test/api/v1/gcode-imports')
+        .flush({ code: 'service_unavailable' }, { status: 503, statusText: 'Unavailable' });
+
+      await expect(result).rejects.toMatchObject({ status: 503 });
+    });
+  });
 });

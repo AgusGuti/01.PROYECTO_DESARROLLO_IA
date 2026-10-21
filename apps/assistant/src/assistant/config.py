@@ -39,10 +39,20 @@ class Settings(BaseSettings):
     # The assistant reaches data only through the Express API, never MongoDB (ADR-0004).
     api_base_url: AnyHttpUrl = AnyHttpUrl("http://127.0.0.1:3000")
 
+    # Folder of .gcode files the assistant may scan and import (ADR 0035). Off when unset: the
+    # model is never offered the G-code tools. It is configuration, never model input.
+    gcode_root: Path | None = None
+
     max_message_chars: int = Field(default=2000, ge=1, le=20_000)
 
     # Set only by the container image, where the port is published on the host loopback.
     containerized: bool = False
+
+    @model_validator(mode="after")
+    def _gcode_root_is_a_folder(self) -> Self:
+        if self.gcode_root is not None and not self.gcode_root.is_dir():
+            raise ValueError("GCODE_ROOT must be an existing folder")
+        return self
 
     @model_validator(mode="after")
     def _loopback_only_without_auth(self) -> Self:
