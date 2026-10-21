@@ -32,3 +32,6 @@ Thumbs.db
 *.log
 # output of the editor's Vitest extension
 .vitest/
+
+# Playwright MCP session logs
+.playwright-mcp/
