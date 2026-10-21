@@ -8,17 +8,27 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, HTTPException, status
 from langchain_core.language_models import BaseChatModel
 
-from assistant.api_client import ApiClient
+from assistant.api_client import ApiClient, ToolError
 from assistant.chat import AssistantUnavailableError, answer
 from assistant.config import Settings, get_settings
+from assistant.gcode_import import GcodeImporter, McpGcodeImporter
 from assistant.llm import build_chat_model
-from assistant.schemas import ChatRequest, ChatResponse, ErrorResponse, HealthResponse
+from assistant.schemas import (
+    ChatRequest,
+    ChatResponse,
+    ErrorResponse,
+    GcodeImportPayload,
+    GcodeImportResult,
+    HealthResponse,
+)
 from assistant.tools import Toolbox
 
 logger = logging.getLogger("assistant")
 
 UNAVAILABLE_MESSAGE = "El asistente no está disponible en este momento. Intentá de nuevo más tarde."
 TOO_LONG_MESSAGE = "El mensaje es demasiado largo."
+GCODE_OFF_MESSAGE = "La importación de G-code no está configurada."
+GCODE_FAILED_MESSAGE = "No se pudo importar los G-code. Intentá de nuevo más tarde."
 
 
 @lru_cache(maxsize=1)
@@ -34,10 +44,18 @@ def get_chat_model() -> BaseChatModel:
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
-async def get_toolbox(settings: SettingsDep) -> AsyncIterator[Toolbox]:
+def get_gcode_importer(settings: SettingsDep) -> GcodeImporter | None:
+    """None unless GCODE_ROOT is configured (ADR 0035). Tests replace it with a fake."""
+    return None if settings.gcode_root is None else McpGcodeImporter(settings.gcode_root)
+
+
+GcodeImporterDep = Annotated[GcodeImporter | None, Depends(get_gcode_importer)]
+
+
+async def get_toolbox(settings: SettingsDep, gcode: GcodeImporterDep) -> AsyncIterator[Toolbox]:
     """FastAPI dependency: read tools on a client for the configured API. Tests replace it."""
     async with ApiClient(str(settings.api_base_url)) as api:
-        yield Toolbox(api)
+        yield Toolbox(api, gcode=gcode)
 
 
 ChatModelDep = Annotated[BaseChatModel, Depends(get_chat_model)]
@@ -72,6 +90,23 @@ def create_app() -> FastAPI:
             # Log the cause for the operator; the client gets a safe, generic message.
             logger.exception("chat model failed")
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, UNAVAILABLE_MESSAGE) from None
+
+    @app.post(
+        "/gcode-imports",
+        responses={status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ErrorResponse}},
+    )
+    async def import_gcodes(
+        payload: GcodeImportPayload, gcode: GcodeImporterDep
+    ) -> GcodeImportResult:
+        """The one write the assistant performs (ADR 0035). It is NOT a model tool: only the
+        Express API calls it, after the user pressed confirm in the browser."""
+        if gcode is None:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, GCODE_OFF_MESSAGE)
+        try:
+            return await gcode.run_import(payload)
+        except ToolError:
+            logger.exception("gcode import failed")
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, GCODE_FAILED_MESSAGE) from None
 
     return app
 

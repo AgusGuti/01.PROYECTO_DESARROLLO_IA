@@ -1,6 +1,6 @@
 # 0031. Assistant proposals need the user's confirmation
 
-- **Status:** accepted
+- **Status:** accepted (amended by 0035: a fourth proposal, import_gcodes, is confirmed through the API instead of directly by the browser)
 - **Date:** 2026-10-16
 
 ## Context

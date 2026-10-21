@@ -4,7 +4,11 @@ import { describe, expect, it } from 'vitest';
 import { problemSchema } from '../../shared/http/problem.js';
 import { createTestApp } from '../../testing/test-app.js';
 import { chatResponseSchema } from './chat.schemas.js';
-import { AssistantMessageTooLongError, type AssistantClient } from './chat.service.js';
+import {
+  AssistantMessageTooLongError,
+  type AssistantClient,
+  type GcodeImportClient,
+} from './chat.service.js';
 
 const URL = '/api/v1/chat';
 
@@ -158,5 +162,75 @@ describe('POST /api/v1/chat', () => {
     expect(response.headers['content-type']).toContain('application/problem+json');
     expect(problemSchema.parse(response.body).code).toBe('service_unavailable');
     expect(JSON.stringify(response.body)).not.toMatch(/ECONNREFUSED|secret-detail|127\.0\.0\.1/);
+  });
+});
+
+describe('POST /api/v1/gcode-imports', () => {
+  const IMPORT_URL = '/api/v1/gcode-imports';
+  const counts = { created: 2, updated: 1, unchanged: 3, skipped: 0, errors: 0 };
+  const importApp = (gcodeImportClient: GcodeImportClient) =>
+    createTestApp({ env: { RATE_LIMIT_MAX: '100000' }, chat: { gcodeImportClient } });
+
+  it('forwards the validated request to the assistant and returns the counts', async () => {
+    const received: unknown[] = [];
+    const app = importApp({
+      importGcodes: (input) => {
+        received.push(input);
+        return Promise.resolve(counts);
+      },
+    });
+
+    const response = await request(app)
+      .post(IMPORT_URL)
+      .send({ material: 'PLA', folder: ' Minis ' });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(counts);
+    expect(received).toEqual([{ material: 'PLA', folder: 'Minis' }]);
+  });
+
+  it.each([
+    ['no material', {}],
+    ['an unknown material', { material: 'WOOD' }],
+    ['a parent folder', { material: 'PLA', folder: '../x' }],
+    ['a root chosen by the client', { material: 'PLA', root: 'D:/otra' }],
+  ])('answers 400 on %s without calling the assistant', async (_name, body) => {
+    let calls = 0;
+    const app = importApp({
+      importGcodes: () => {
+        calls += 1;
+        return Promise.resolve(counts);
+      },
+    });
+
+    const response = await request(app).post(IMPORT_URL).send(body);
+
+    expect(response.status).toBe(400);
+    expect(problemSchema.parse(response.body).code).toBe('validation_failed');
+    expect(calls).toBe(0);
+  });
+
+  it('answers a generic 503 when the assistant fails', async () => {
+    const app = importApp({
+      importGcodes: () => Promise.reject(new Error('connect ECONNREFUSED 127.0.0.1:8000 secret')),
+    });
+
+    const response = await request(app).post(IMPORT_URL).send({ material: 'PLA' });
+
+    expect(response.status).toBe(503);
+    expect(problemSchema.parse(response.body).code).toBe('service_unavailable');
+    expect(JSON.stringify(response.body)).not.toMatch(/ECONNREFUSED|secret|127\.0\.0\.1/);
+  });
+
+  it('returns an import_gcodes proposal from the chat and drops an unsafe one', async () => {
+    const good = { kind: 'import_gcodes', payload: { material: 'PLA', folder: 'Minis' } };
+    const bad = { kind: 'import_gcodes', payload: { material: 'PLA', folder: '../x' } };
+    const ask = (proposal: unknown) =>
+      request(appWith({ ask: () => Promise.resolve({ reply: 'ok', proposal }) }))
+        .post(URL)
+        .send({ message: 'importá' });
+
+    expect((await ask(good)).body).toMatchObject({ proposal: good });
+    expect((await ask(bad)).body).toMatchObject({ reply: 'ok', proposal: null });
   });
 });

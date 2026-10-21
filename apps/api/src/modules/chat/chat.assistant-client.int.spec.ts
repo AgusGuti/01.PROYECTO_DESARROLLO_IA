@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestApp } from '../../testing/test-app.js';
-import { createHttpAssistantClient } from './chat.assistant-client.js';
+import { createHttpAssistantClient, createHttpGcodeImportClient } from './chat.assistant-client.js';
 
 type Handler = (req: IncomingMessage, res: ServerResponse, body: string) => void;
 
@@ -177,5 +177,50 @@ describe('chat against a fake assistant over HTTP', () => {
     const response = await request(app).post('/api/v1/chat').send({ message: 'hola' });
 
     expect(response.status).toBe(503);
+  });
+
+  describe('gcode import', () => {
+    const counts = '{"created":2,"updated":1,"unchanged":3,"skipped":0,"errors":0}';
+    const post = (app = appFor()) =>
+      request(app).post('/api/v1/gcode-imports').send({ material: 'PLA', folder: 'Minis' });
+
+    it('forwards the request to the fixed /gcode-imports path and returns the counts', async () => {
+      handler = (_req, res) => {
+        json(res, 200, counts);
+      };
+
+      const response = await post();
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(JSON.parse(counts));
+      expect(seen.url).toBe('/gcode-imports');
+      expect(JSON.parse(seen.body ?? '{}')).toEqual({ material: 'PLA', folder: 'Minis' });
+    });
+
+    it.each([
+      ['a 5xx', 503, '{"detail":"internal-text"}'],
+      ['a 422', 422, '{"detail":"internal-text"}'],
+      ['a reply that is not JSON', 200, 'internal-text <html>'],
+      ['a reply with the wrong shape', 200, '{"created":"many"}'],
+    ])('answers a generic 503 on %s', async (_name, status, payload) => {
+      handler = (_req, res) => {
+        json(res, status, payload);
+      };
+
+      const response = await post();
+
+      expect(response.status).toBe(503);
+      expect(JSON.stringify(response.body)).not.toContain('internal-text');
+    });
+
+    it('answers 503 when the assistant does not answer before the timeout', async () => {
+      handler = () => undefined; // never responds
+      const app = createTestApp({
+        env: { RATE_LIMIT_MAX: '100000' },
+        chat: { gcodeImportClient: createHttpGcodeImportClient({ baseUrl, timeoutMs: 150 }) },
+      });
+
+      expect((await post(app)).status).toBe(503);
+    });
   });
 });

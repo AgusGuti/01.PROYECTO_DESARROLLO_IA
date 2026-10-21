@@ -33,6 +33,9 @@ const NO_QUEUE = 'Ese proyecto ya no tiene cola.';
 const UNCERTAIN_PROGRESS =
   'No pudimos confirmar si se actualizó el avance. Revisá la cola antes de reintentar.';
 const QUEUE_EXISTS = 'Ese proyecto ya tiene una cola.';
+// The import is idempotent (ADR 0034), so confirming again cannot duplicate parts.
+const UNCERTAIN_IMPORT =
+  'No pudimos confirmar si terminó la importación. Revisá Piezas; podés confirmar de nuevo sin duplicar piezas.';
 const GOAL_LABELS = {
   deadline: 'Cumplir las fechas límite',
   fastest: 'Terminar lo antes posible',
@@ -92,6 +95,21 @@ function proposalView(proposal: Proposal): ProposalView {
       sendingText: 'Creando la cola…',
     };
   }
+  if (proposal.kind === 'import_gcodes') {
+    const { material, folder } = proposal.payload;
+    return {
+      title: folder
+        ? `Importar los G-code de la carpeta «${folder}»`
+        : 'Importar todos los G-code de la carpeta configurada',
+      details: [`Material de toda la tanda: ${material}`],
+      listTitle: null,
+      list: [],
+      footnote:
+        'Crea una pieza por cada archivo nuevo y actualiza las ya importadas, sin cambiarles el nombre. Puede tardar varios minutos.',
+      pendingNote: 'Todavía no se importó nada.',
+      sendingText: 'Importando los G-code… puede tardar varios minutos.',
+    };
+  }
   if (proposal.kind === 'update_queue_progress') {
     const { payload, lineNames } = proposal;
     return {
@@ -131,6 +149,17 @@ function proposalView(proposal: Proposal): ProposalView {
 /** Maps a confirm failure to a fixed card. Only a 400 proves that nothing was created. */
 function failureCard(proposal: Proposal, error: unknown): CardState {
   const status = error instanceof ApiError ? error.status : null;
+  if (proposal.kind === 'import_gcodes') {
+    if (status === 400) {
+      return { kind: 'failed', message: REJECTED_QUEUE, canRetry: true, link: null };
+    }
+    return {
+      kind: 'failed',
+      message: UNCERTAIN_IMPORT,
+      canRetry: true,
+      link: { commands: ['/piezas'], text: 'Ir a Piezas' },
+    };
+  }
   if (proposal.kind === 'update_queue_progress') {
     const queueLink = {
       commands: ['/proyectos', proposal.payload.projectId, 'cola'],
@@ -345,6 +374,14 @@ export class ChatPage {
               commands: ['/proyectos', proposal.payload.projectId, 'cola'],
               text: 'Abrir la cola',
             },
+          })),
+        );
+      case 'import_gcodes':
+        return this.api.importGcodes(proposal.payload).pipe(
+          map(({ created, updated, unchanged, skipped, errors }) => ({
+            kind: 'created' as const,
+            text: `Importación lista: ${created} creadas, ${updated} actualizadas, ${unchanged} sin cambios, ${skipped} omitidas, ${errors} con error.`,
+            link: { commands: ['/piezas'], text: 'Ir a Piezas' },
           })),
         );
       case 'update_queue_progress': {

@@ -1,5 +1,5 @@
 // Validated service result -> response DTO. Fields are copied one by one.
-import type { ChatDto, ProposalDto } from './chat.schemas.js';
+import type { ChatDto, GcodeImportResultDto, ProposalDto } from './chat.schemas.js';
 
 function toProposalDto(proposal: ProposalDto): ProposalDto {
   if (proposal.kind === 'create_queue') {
@@ -24,6 +24,13 @@ function toProposalDto(proposal: ProposalDto): ProposalDto {
       lineNames: proposal.lineNames.map(({ partId, name }) => ({ partId, name })),
     };
   }
+  if (proposal.kind === 'import_gcodes') {
+    const { material, folder } = proposal.payload;
+    return {
+      kind: proposal.kind,
+      payload: folder === undefined ? { material } : { material, folder },
+    };
+  }
   return {
     kind: proposal.kind,
     payload: proposal.payload,
@@ -36,4 +43,9 @@ export function toChatDto({ reply, proposal }: ChatDto): ChatDto {
     reply,
     proposal: proposal === null ? null : toProposalDto(proposal),
   };
+}
+
+export function toGcodeImportDto(result: GcodeImportResultDto): GcodeImportResultDto {
+  const { created, updated, unchanged, skipped, errors } = result;
+  return { created, updated, unchanged, skipped, errors };
 }
