@@ -26,11 +26,15 @@ const PROPOSAL: Proposal = {
     priority: 'high',
     deadline: '2026-12-31',
     items: [
-      { partId: 'p1', quantity: 3 },
-      { partId: 'p2', quantity: 1 },
+      { partId: 'p1', filamentId: 'f1', quantity: 3 },
+      { partId: 'p1', filamentId: 'f2', quantity: 2 },
+      { partId: 'p2', filamentId: 'f1', quantity: 1 },
     ],
   },
-  itemNames: [{ partId: 'p1', name: 'Soporte <b>x</b>' }],
+  itemNames: [
+    { partId: 'p1', filamentId: 'f1', name: 'Soporte <b>x</b>', filamentName: 'Grilon Rojo (PLA)' },
+    { partId: 'p1', filamentId: 'f2', name: 'Soporte <b>x</b>', filamentName: 'Grilon Azul (PLA)' },
+  ],
 };
 const CREATED: Pick<Project, 'id' | 'name'> = { id: 'abc123', name: HOSTILE };
 const IMPORT_COUNTS = { created: 2, updated: 1, unchanged: 3, skipped: 4, errors: 5 };
@@ -273,8 +277,10 @@ describe('ChatPage', () => {
       expect(text).toContain('Para la feria');
       expect(text).toContain('Alta');
       expect(text).toContain('31-12-2026');
-      expect(text).toContain('3 × Soporte <b>x</b>');
+      expect(text).toContain('3 × Soporte <b>x</b> · Grilon Rojo (PLA)');
+      expect(text).toContain('2 × Soporte <b>x</b> · Grilon Azul (PLA)');
       expect(text).toContain('1 × Pieza');
+      expect(card(page)?.querySelectorAll('li')).toHaveLength(3);
       expect(text).toContain('Todavía no se creó nada.');
       expect(card(page)?.querySelector('img, b')).toBeNull();
       expect(page.button('Confirmar')).toBeDefined();
@@ -288,6 +294,14 @@ describe('ChatPage', () => {
       await page.click('Confirmar');
 
       expect(createProject).toHaveBeenCalledExactlyOnceWith(PROPOSAL.payload);
+      // Same part with two spools is two items, each carrying its filamentId.
+      expect(createProject.mock.calls[0]?.[0]).toMatchObject({
+        items: [
+          { partId: 'p1', filamentId: 'f1', quantity: 3 },
+          { partId: 'p1', filamentId: 'f2', quantity: 2 },
+          { partId: 'p2', filamentId: 'f1', quantity: 1 },
+        ],
+      });
       expect(card(page)?.textContent).toContain(`Proyecto creado: «${HOSTILE}»`);
       expect(card(page)?.textContent).not.toContain('Todavía no se creó nada.');
       const link = required(card(page)?.querySelector('a') ?? null);
@@ -511,14 +525,18 @@ describe('ChatPage', () => {
 
   describe('assistant progress proposal card', () => {
     const LINES = [
-      { partId: 'a', quantity: 5, completed: 2 },
-      { partId: 'b', quantity: 3, completed: 3 },
+      { partId: 'a', filamentId: 'f1', quantity: 5, completed: 2 },
+      { partId: 'a', filamentId: 'f2', quantity: 4, completed: 1 },
+      { partId: 'b', filamentId: 'f1', quantity: 3, completed: 3 },
     ];
     const PROGRESS: Proposal = {
       kind: 'update_queue_progress',
       payload: { projectId: 'proj1', version: 4, lines: LINES },
       projectName: HOSTILE,
-      lineNames: [{ partId: 'a', name: 'Base <b>x</b>' }],
+      lineNames: [
+        { partId: 'a', filamentId: 'f1', name: 'Base <b>x</b>', filamentName: 'Grilon Rojo (PLA)' },
+        { partId: 'a', filamentId: 'f2', name: 'Base <b>x</b>', filamentName: 'Grilon Azul (PLA)' },
+      ],
     };
     type Patch = (projectId: string, body: unknown) => Observable<{ projectId: string }>;
     async function withProgressCard(update?: Patch) {
@@ -542,7 +560,8 @@ describe('ChatPage', () => {
       const text = card(page)?.textContent ?? '';
 
       expect(text).toContain(`Actualizar el avance de la cola del proyecto «${HOSTILE}»`);
-      expect(text).toContain('Base <b>x</b>: 2 de 5 impresas');
+      expect(text).toContain('Base <b>x</b> · Grilon Rojo (PLA): 2 de 5 impresas');
+      expect(text).toContain('Base <b>x</b> · Grilon Azul (PLA): 1 de 4 impresas');
       expect(text).toContain('Pieza: 3 de 3 impresas');
       expect(text).toContain('Todavía no se cambió nada.');
       expect(card(page)?.querySelector('img, b')).toBeNull();
@@ -559,6 +578,9 @@ describe('ChatPage', () => {
       expect(update).toHaveBeenCalledExactlyOnceWith('proj1', {
         version: 4,
         lines: LINES,
+      });
+      expect(update.mock.calls[0]?.[1]).toMatchObject({
+        lines: [{ filamentId: 'f1' }, { filamentId: 'f2' }, { filamentId: 'f1' }],
       });
       expect(card(page)?.textContent).toContain('Avance actualizado.');
       const link = required(card(page)?.querySelector('a') ?? null);

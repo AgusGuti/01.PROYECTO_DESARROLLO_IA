@@ -80,6 +80,15 @@ type CardState =
   | { readonly kind: 'created'; readonly text: string; readonly link: CardLink }
   | { readonly kind: 'discarded' };
 
+/** 'Soporte · Grilon Rojo (PLA)': a line is identified by its (partId, filamentId) pair. */
+function pairLabel(
+  names: readonly { partId: string; filamentId: string; name: string; filamentName: string }[],
+  line: { partId: string; filamentId: string },
+): string {
+  const found = names.find((n) => n.partId === line.partId && n.filamentId === line.filamentId);
+  return found ? `${found.name} · ${found.filamentName}` : 'Pieza';
+}
+
 function proposalView(proposal: Proposal): ProposalView {
   if (proposal.kind === 'create_queue') {
     const { payload, printerNames } = proposal;
@@ -117,8 +126,7 @@ function proposalView(proposal: Proposal): ProposalView {
       details: [],
       listTitle: 'Piezas:',
       list: payload.lines.map(
-        (l) =>
-          `${lineNames.find((n) => n.partId === l.partId)?.name ?? 'Pieza'}: ${l.completed} de ${l.quantity} impresas`,
+        (l) => `${pairLabel(lineNames, l)}: ${l.completed} de ${l.quantity} impresas`,
       ),
       footnote: null,
       pendingNote: 'Todavía no se cambió nada.',
@@ -136,10 +144,7 @@ function proposalView(proposal: Proposal): ProposalView {
     title: `Crear el proyecto «${payload.name}»`,
     details,
     listTitle: items.length > 0 ? 'Piezas:' : null,
-    list: items.map(
-      (line) =>
-        `${line.quantity} × ${itemNames.find((n) => n.partId === line.partId)?.name ?? 'Pieza'}`,
-    ),
+    list: items.map((line) => `${line.quantity} × ${pairLabel(itemNames, line)}`),
     footnote: null,
     pendingNote: NOTHING_CREATED,
     sendingText: 'Creando el proyecto…',

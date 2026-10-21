@@ -39,8 +39,8 @@ describe('ChatApi', () => {
 
   const proposal = {
     kind: 'create_project',
-    payload: { name: 'A', items: [{ partId: 'p1', quantity: 2 }] },
-    itemNames: [{ partId: 'p1', name: 'Pieza uno' }],
+    payload: { name: 'A', items: [{ partId: 'p1', filamentId: 'f1', quantity: 2 }] },
+    itemNames: [{ partId: 'p1', filamentId: 'f1', name: 'Pieza uno', filamentName: 'Rojo' }],
   };
 
   it('passes a well-formed proposal through', async () => {
@@ -58,6 +58,18 @@ describe('ChatApi', () => {
     ['bad deadline', { ...proposal, payload: { name: 'A', deadline: 'mañana' } }],
     ['bad item', { ...proposal, payload: { name: 'A', items: [{ partId: 1 }] } }],
     ['no itemNames', { kind: 'create_project', payload: { name: 'A' } }],
+    [
+      'item without filamentId',
+      { ...proposal, payload: { name: 'A', items: [{ partId: 'p1', quantity: 2 }] } },
+    ],
+    [
+      'itemNames without filamentId',
+      { ...proposal, itemNames: [{ partId: 'p1', name: 'Pieza uno', filamentName: 'Rojo' }] },
+    ],
+    [
+      'itemNames without filamentName',
+      { ...proposal, itemNames: [{ partId: 'p1', filamentId: 'f1', name: 'Pieza uno' }] },
+    ],
   ])('keeps the reply and drops a malformed proposal (%s)', async (_label, bad) => {
     const result = firstValueFrom(api.ask('Hola'));
 
@@ -124,9 +136,13 @@ describe('ChatApi', () => {
 
   const progressProposal = {
     kind: 'update_queue_progress',
-    payload: { projectId: 'p', version: 3, lines: [{ partId: 'a', quantity: 5, completed: 2 }] },
+    payload: {
+      projectId: 'p',
+      version: 3,
+      lines: [{ partId: 'a', filamentId: 'f1', quantity: 5, completed: 2 }],
+    },
     projectName: 'Proy',
-    lineNames: [{ partId: 'a', name: 'Pieza' }],
+    lineNames: [{ partId: 'a', filamentId: 'f1', name: 'Pieza', filamentName: 'Rojo' }],
   };
 
   it('passes a well-formed progress proposal through', async () => {
@@ -147,6 +163,25 @@ describe('ChatApi', () => {
     ],
     ['no projectName', { ...progressProposal, projectName: undefined }],
     ['bad lineNames', { ...progressProposal, lineNames: [{ name: 'x' }] }],
+    [
+      'line without filamentId',
+      {
+        ...progressProposal,
+        payload: {
+          projectId: 'p',
+          version: 1,
+          lines: [{ partId: 'a', quantity: 5, completed: 2 }],
+        },
+      },
+    ],
+    [
+      'lineNames without filamentName',
+      { ...progressProposal, lineNames: [{ partId: 'a', filamentId: 'f1', name: 'Pieza' }] },
+    ],
+    [
+      'lineNames without filamentId',
+      { ...progressProposal, lineNames: [{ partId: 'a', name: 'Pieza', filamentName: 'Rojo' }] },
+    ],
   ])('drops a malformed progress proposal keeping the reply (%s)', async (_label, bad) => {
     const result = firstValueFrom(api.ask('Hola'));
 
@@ -156,7 +191,10 @@ describe('ChatApi', () => {
   });
 
   it('patches the progress to the encoded queue URL and rejects an unexpected response', async () => {
-    const body = { version: 3, lines: [{ partId: 'a', quantity: 5, completed: 2 }] };
+    const body = {
+      version: 3,
+      lines: [{ partId: 'a', filamentId: 'f1', quantity: 5, completed: 2 }],
+    };
     const ok = firstValueFrom(api.updateQueueProgress('a/b?', body));
     const request = http.expectOne({
       method: 'PATCH',

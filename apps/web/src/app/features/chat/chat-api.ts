@@ -35,6 +35,16 @@ function hasField(value: unknown, key: string, type: 'string' | 'number'): boole
   return isRecord(value) && typeof value[key] === type;
 }
 
+/** A name entry for a (partId, filamentId) pair; the pair is the identity of a line. */
+function isPairName(n: unknown): boolean {
+  return (
+    hasField(n, 'partId', 'string') &&
+    hasField(n, 'filamentId', 'string') &&
+    hasField(n, 'name', 'string') &&
+    hasField(n, 'filamentName', 'string')
+  );
+}
+
 function isQueueProposal(value: Record<string, unknown>): boolean {
   const payload = value['payload'];
   if (!isRecord(payload) || typeof payload['projectId'] !== 'string') return false;
@@ -70,11 +80,12 @@ function isProgressProposal(value: Record<string, unknown>): boolean {
     lines.every(
       (l) =>
         hasField(l, 'partId', 'string') &&
+        hasField(l, 'filamentId', 'string') &&
         hasField(l, 'quantity', 'number') &&
         hasField(l, 'completed', 'number'),
     ) &&
     Array.isArray(names) &&
-    names.every((n) => hasField(n, 'partId', 'string') && hasField(n, 'name', 'string'))
+    names.every(isPairName)
   );
 }
 
@@ -106,16 +117,18 @@ export function isProposal(value: unknown): value is Proposal {
     items !== undefined &&
     !(
       Array.isArray(items) &&
-      items.every((i) => hasField(i, 'partId', 'string') && hasField(i, 'quantity', 'number'))
+      items.every(
+        (i) =>
+          hasField(i, 'partId', 'string') &&
+          hasField(i, 'filamentId', 'string') &&
+          hasField(i, 'quantity', 'number'),
+      )
     )
   ) {
     return false;
   }
   const names = value['itemNames'];
-  return (
-    Array.isArray(names) &&
-    names.every((n) => hasField(n, 'partId', 'string') && hasField(n, 'name', 'string'))
-  );
+  return Array.isArray(names) && names.every(isPairName);
 }
 
 /** Runtime check: `HttpClient` only claims the body shape (standard §9.3). `proposal` stays unknown. */
