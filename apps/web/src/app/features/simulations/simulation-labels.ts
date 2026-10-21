@@ -152,11 +152,16 @@ export function wallMinutes(value: string): number {
   return Date.UTC(year ?? 0, (month ?? 1) - 1, day, hour, minute) / MINUTE_MS;
 }
 
-/** "PLA negro: faltan 120 g. Alcanza para 3 de 5 piezas; asigná las otras 2 piezas a otra bobina." */
+/** "PLA negro: faltan 120 g. Alcanza para 3 de 5 piezas; asigná las otras 2 piezas a otra bobina."
+ * (with one piece left: "asigná la otra pieza a otra bobina.") */
 export function shortfallText(shortfall: FilamentShortfall): string {
   const missing = Number((shortfall.neededGrams - shortfall.availableGrams).toFixed(1));
   const total = shortfall.completablePieces + shortfall.remainingPieces;
-  return `${shortfall.name}: faltan ${String(missing)} g. Alcanza para ${String(shortfall.completablePieces)} de ${String(total)} piezas; asigná las otras ${String(shortfall.remainingPieces)} piezas a otra bobina.`;
+  const rest =
+    shortfall.remainingPieces === 1
+      ? 'la otra pieza'
+      : `las otras ${String(shortfall.remainingPieces)} piezas`;
+  return `${shortfall.name}: faltan ${String(missing)} g. Alcanza para ${String(shortfall.completablePieces)} de ${String(total)} piezas; asigná ${rest} a otra bobina.`;
 }
 
 /** The setup cell of a job: its minutes, plus a note when the spool changed. */

@@ -1156,7 +1156,7 @@ describe('SimulationPage', () => {
       );
 
       expect(plain(page.q('#shortfalls')?.textContent)).toContain(
-        'PLA negro: faltan 30.5 g. Alcanza para 1 de 2 piezas; asigná las otras 1 piezas a otra bobina.',
+        'PLA negro: faltan 30.5 g. Alcanza para 1 de 2 piezas; asigná la otra pieza a otra bobina.',
       );
     });
 

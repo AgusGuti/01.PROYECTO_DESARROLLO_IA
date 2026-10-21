@@ -43,6 +43,13 @@ input[type='text'] {
   inline-size: 6rem;
 }
 
+/* The longest option ("brand · colour · material · N g disponibles") would otherwise set the
+   width of the whole column and push the progress buttons out of view. */
+td select {
+  inline-size: 12rem;
+  max-inline-size: 100%;
+}
+
 .check {
   align-items: center;
   display: flex;
