@@ -6,7 +6,6 @@ import {
   lineIssues,
   lockedLineIssues,
   missingSpoolIssues,
-  newQueueLineIssues,
   printerSelectionIssues,
   queueTotals,
   type FilamentInfo,
@@ -173,7 +172,6 @@ export function createQueuesService(deps: {
       const rules = [
         ...printerSelectionIssues(input.mode, input.printerIds),
         ...lineIssues(input.lines ?? []),
-        ...newQueueLineIssues(input.lines ?? []),
         ...missingSpoolIssues(input.lines ?? []),
       ];
       if (rules.length > 0) throw invalid(rules);

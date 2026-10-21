@@ -1766,8 +1766,9 @@ class Toolbox:
         async def resolve_spools(
             refs: list[ProposedItemArgs], parts: list[ApiPart]
         ) -> list[ApiFilament]:
-            """One live spool per line, of the part's material. A line without a spool is never
-            guessed: the tool answers with a question and the spools that could be used."""
+            """One live spool per line. The API accepts any live spool for any part, so the
+            material is not checked here. A line without a spool is never guessed: the tool
+            answers with a question and the spools that could be used."""
             filaments = await load_filaments()
             spools: list[ApiFilament] = []
             missing: list[ApiPart] = []
@@ -1775,23 +1776,18 @@ class Toolbox:
                 if ref.bobina is None:
                     missing.append(part)
                     continue
-                same = [f for f in filaments.items if f.material == part.material]
-                found = _find(same, ref.bobina, _spool_label, lambda f: f.id)
-                if not found and _find(filaments.items, ref.bobina, _spool_label, lambda f: f.id):
-                    raise ToolError(f"Esa bobina no es del material de la pieza ({part.material}).")
+                found = _find(filaments.items, ref.bobina, _spool_label, lambda f: f.id)
                 spools.append(_one(found, ref.bobina, "bobina", "bobinas", _spool_label))
             if missing:
                 names = ", ".join(f"«{_safe(n)}»" for n in dict.fromkeys(p.name for p in missing))
-                materials = {p.material for p in missing}
                 options = [
                     f"{_spool_label(f)} ({f.material}, {f.availableGrams} g, id {f.id})"
                     for f in filaments.items
-                    if f.material in materials
                 ][:10]
                 available = (
                     "Bobinas posibles: " + json.dumps(options, ensure_ascii=False).replace("<", "")
                     if options
-                    else "No hay ninguna bobina de ese material cargada: primero hay que crearla."
+                    else "No hay ninguna bobina cargada: primero hay que crearla."
                 )
                 raise ToolError(
                     f"Falta la bobina de cada línea; sin bobina no se puede crear el proyecto. "
@@ -2462,8 +2458,8 @@ class Toolbox:
                 "usuario dijo: 'name' es obligatorio; 'description', 'priority' (baja, normal, "
                 "alta, urgente), 'deadline' (DD-MM-AAAA) e 'items' son opcionales y no debés "
                 "inventarlos. Cada ítem de 'items' lleva 'pieza' (nombre o id de una pieza que "
-                "ya existe), 'cantidad' (1 a 1000) y 'bobina' (nombre o id de una bobina del "
-                "mismo material): la bobina es obligatoria en cada línea; si el usuario no la "
+                "ya existe), 'cantidad' (1 a 1000) y 'bobina' (nombre o id de una bobina "
+                "existente): la bobina es obligatoria en cada línea; si el usuario no la "
                 "dijo, NO la inventes ni la omitas: la herramienta te devuelve las bobinas "
                 "posibles y debés preguntarle cuál usar. La misma pieza puede estar en varias "
                 "líneas con bobinas distintas. Máximo una propuesta por conversación.",

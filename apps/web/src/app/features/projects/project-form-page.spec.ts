@@ -4,7 +4,11 @@ import type { Project } from '@print3d/api-contracts';
 import { Subject } from 'rxjs';
 import { vi } from 'vitest';
 import { ApiError, type ApiFieldIssue } from '../../core/api/api-error';
-import { FilamentsPickerApi, type PickerSpool, type SpoolCatalogue } from './filaments-picker-api';
+import {
+  FilamentsPickerApi,
+  type PickerSpool,
+  type SpoolCatalogue,
+} from '../../core/api/filaments-picker-api';
 import { PartsPickerApi, type PickerCatalogue, type PickerPart } from './parts-picker-api';
 import { ProjectFormPage } from './project-form-page';
 import { ProjectsApi } from './projects-api';
@@ -126,11 +130,11 @@ async function render(
     spoolCatalogues,
     text: () => element.textContent,
     byId: (id: string) => element.querySelector<HTMLInputElement>(`#${id}`),
-    selectById: (id: string) => element.querySelector<HTMLSelectElement>(`#${id}`),
+    selectById: (id: string) => element.querySelector<HTMLSelectElement>(idSelector(id)),
     button: (label: string) =>
       Array.from(element.querySelectorAll('button')).find((b) => b.textContent.trim() === label),
     live: () => element.querySelector('[aria-live="polite"]')?.textContent.trim() ?? '',
-    errorOf: (id: string) => element.querySelector(`#${id}`)?.textContent.trim() ?? null,
+    errorOf: (id: string) => element.querySelector(idSelector(id))?.textContent.trim() ?? null,
     lineNames: () =>
       Array.from(element.querySelectorAll('tbody th')).map((th) => th.textContent.trim()),
     partOptions: () =>
@@ -214,6 +218,10 @@ beforeEach(() => {
     this.setAttribute('open', '');
   };
 });
+
+/** The spool dialog ids carry a per-instance counter, so they are found by their suffix. */
+const idSelector = (id: string): string =>
+  id.startsWith('spool-dialog-') ? `dialog [id$="${id.slice('spool-dialog'.length)}"]` : `#${id}`;
 
 describe('ProjectFormPage (create)', () => {
   it('has one h1 and a label for every control', async () => {
@@ -1170,7 +1178,7 @@ describe('ProjectFormPage (spools)', () => {
       await openDialog(page);
 
       const dialog = dialogOf(page);
-      expect(dialog?.getAttribute('aria-labelledby')).toBe('spool-dialog-title');
+      expect(dialog?.getAttribute('aria-labelledby')).toBe(dialog?.querySelector('h2')?.id);
       expect(page.element.querySelector('h2')?.textContent).toBe('Elegir otra bobina');
       expect(document.activeElement).toBe(page.selectById('spool-dialog-select'));
       const options = Array.from(page.selectById('spool-dialog-select')?.options ?? []).map((o) =>

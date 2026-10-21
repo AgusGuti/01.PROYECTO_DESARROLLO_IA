@@ -172,6 +172,84 @@ describe('projects API on a real MongoDB', () => {
     });
   });
 
+  describe('spool on every line (ADR 0036)', () => {
+    let otherSpoolId: string;
+    beforeEach(async () => {
+      const other = await request(app).post('/api/v1/filaments').send(filamentBody);
+      otherSpoolId = (other.body as { id: string }).id;
+    });
+
+    it('accepts the same part on two different spools', async () => {
+      const created = await create({
+        items: [
+          { partId, filamentId: spoolId, quantity: 2 },
+          { partId, filamentId: otherSpoolId, quantity: 3 },
+        ],
+      });
+
+      expect(created.status).toBe(201);
+      expect((created.body as ProjectBody).items.map((item) => item.filamentId)).toEqual([
+        spoolId,
+        otherSpoolId,
+      ]);
+    });
+
+    it('rejects the same part and spool twice on the second line', async () => {
+      const response = await create({
+        items: [
+          { partId, filamentId: spoolId, quantity: 2 },
+          { partId, filamentId: spoolId, quantity: 3 },
+        ],
+      });
+
+      expect(response.status).toBe(400);
+      expect(problemSchema.parse(response.body).issues?.map((issue) => issue.path)).toEqual([
+        'items.1.filamentId',
+      ]);
+      expect(await projects().countDocuments({})).toBe(0);
+    });
+
+    describe('a project stored before spools existed', () => {
+      let legacyId: string;
+      beforeEach(async () => {
+        const now = new Date();
+        const inserted = await projects().insertOne({
+          name: 'Antiguo',
+          description: null,
+          priority: 'medium',
+          deadline: null,
+          items: [{ partId: new mongoose.Types.ObjectId(partId), quantity: 2 }],
+          version: 1,
+          deletedAt: null,
+          createdAt: now,
+          updatedAt: now,
+        });
+        legacyId = inserted.insertedId.toHexString();
+      });
+
+      it('opens with filamentId null, refuses to save a null spool and accepts a real one', async () => {
+        const url = `${BASE}/${legacyId}`;
+
+        const read = await request(app).get(url);
+        const withNull = await request(app)
+          .patch(url)
+          .send({ version: 1, items: [{ partId, filamentId: null, quantity: 2 }] });
+        const withSpool = await request(app)
+          .patch(url)
+          .send({ version: 1, items: [{ partId, filamentId: spoolId, quantity: 2 }] });
+
+        expect(read.status).toBe(200);
+        expect((read.body as ProjectBody).items).toMatchObject([{ partId, filamentId: null }]);
+        expect(withNull.status).toBe(400);
+        expect(problemSchema.parse(withNull.body).issues?.map((issue) => issue.path)).toEqual([
+          'items.0.filamentId',
+        ]);
+        expect(withSpool.status).toBe(200);
+        expect((withSpool.body as ProjectBody).items).toMatchObject([{ filamentId: spoolId }]);
+      });
+    });
+  });
+
   describe('version races', () => {
     it('lets one of two edits with the same version win and answers 409 to the other', async () => {
       const created = await create();

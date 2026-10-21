@@ -1,11 +1,18 @@
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import type { CreateQueueRequest, Queue, UpdateQueueRequest } from '@print3d/api-contracts';
 import { Subject } from 'rxjs';
 import { vi } from 'vitest';
+import { API_BASE_URL } from '../../core/api/api-config';
 import { ApiError, type ApiFieldIssue } from '../../core/api/api-error';
+import {
+  FilamentsPickerApi,
+  type PickerSpool,
+  type SpoolCatalogue,
+} from '../../core/api/filaments-picker-api';
 import { formatDuration, parseQuantity } from './queue-labels';
-import type { SpoolOption } from '../../shared/ui/spool-dialog';
 import { QueuePage } from './queue-page';
 import { type PrinterOption, type ProjectSnapshot, QueuesApi } from './queues-api';
 
@@ -17,10 +24,15 @@ const PRINTERS: readonly PrinterOption[] = [
   { id: 'pr3', name: 'Bambu' },
 ];
 
-const SPOOLS: readonly SpoolOption[] = [
-  { id: 's1', label: 'Grilon3 · Rojo · PLA · 800 g disponibles' },
-  { id: 's2', label: 'Esun · Azul · PETG · 300 g disponibles' },
+const SPOOLS: readonly PickerSpool[] = [
+  { id: 's1', brand: 'Grilon3', colorName: 'Rojo', material: 'PLA', availableGrams: 800 },
+  { id: 's2', brand: 'Esun', colorName: 'Azul', material: 'PETG', availableGrams: 300 },
 ];
+
+const catalogue = (spools: readonly PickerSpool[], truncated = false): SpoolCatalogue => ({
+  spools,
+  truncated,
+});
 
 const RED_SUMMARY = {
   brand: 'Grilon3',
@@ -89,15 +101,23 @@ function problem(status: number, issues: ApiFieldIssue[] = []): ApiError {
   });
 }
 
-async function render() {
+/** `realPicker` swaps the spool fake for the real paged loader over a faked HTTP backend. */
+async function render(realPicker = false) {
   const gets: Subject<Queue | null>[] = [];
   const printerReplies: Subject<readonly PrinterOption[]>[] = [];
-  const spoolReplies: Subject<readonly SpoolOption[]>[] = [];
+  const spoolReplies: Subject<SpoolCatalogue>[] = [];
   const projectReplies: Subject<ProjectSnapshot>[] = [];
   const creates: { body: CreateQueueRequest; reply: Subject<Queue> }[] = [];
   const updates: { body: UpdateQueueRequest; reply: Subject<Queue> }[] = [];
   const removes: { version: number; reply: Subject<void> }[] = [];
 
+  const spoolPicker = {
+    loadAll: vi.fn(() => {
+      const reply = new Subject<SpoolCatalogue>();
+      spoolReplies.push(reply);
+      return reply;
+    }),
+  } satisfies Pick<FilamentsPickerApi, 'loadAll'>;
   const api = {
     get: vi.fn((_id: string) => {
       const reply = new Subject<Queue | null>();
@@ -107,11 +127,6 @@ async function render() {
     printers: vi.fn(() => {
       const reply = new Subject<readonly PrinterOption[]>();
       printerReplies.push(reply);
-      return reply;
-    }),
-    spools: vi.fn(() => {
-      const reply = new Subject<readonly SpoolOption[]>();
-      spoolReplies.push(reply);
       return reply;
     }),
     project: vi.fn((_id: string) => {
@@ -140,6 +155,13 @@ async function render() {
     providers: [
       provideRouter([]),
       { provide: QueuesApi, useValue: api },
+      ...(realPicker
+        ? [
+            provideHttpClient(),
+            provideHttpClientTesting(),
+            { provide: API_BASE_URL, useValue: 'http://api.test' },
+          ]
+        : [{ provide: FilamentsPickerApi, useValue: spoolPicker }]),
       {
         provide: ActivatedRoute,
         useValue: { snapshot: { paramMap: convertToParamMap({ id: 'p1' }) } },
@@ -192,7 +214,7 @@ async function render() {
       gets[0]?.complete();
       printerReplies[0]?.next(PRINTERS);
       printerReplies[0]?.complete();
-      spoolReplies[0]?.next(SPOOLS);
+      spoolReplies[0]?.next(catalogue(SPOOLS));
       spoolReplies[0]?.complete();
       if (queue === null) {
         projectReplies[0]?.next(PROJECT);
@@ -265,7 +287,7 @@ describe('QueuePage', () => {
 
     page.gets[0]?.next(null);
     page.printerReplies[0]?.error(problem(503));
-    page.spoolReplies[0]?.next(SPOOLS);
+    page.spoolReplies[0]?.next(catalogue(SPOOLS));
     page.projectReplies[0]?.next(PROJECT);
     await page.settle();
 
@@ -457,7 +479,7 @@ describe('QueuePage', () => {
       page.gets[0]?.complete();
       page.printerReplies[0]?.next([]);
       page.printerReplies[0]?.complete();
-      page.spoolReplies[0]?.next(SPOOLS);
+      page.spoolReplies[0]?.next(catalogue(SPOOLS));
       page.spoolReplies[0]?.complete();
       page.projectReplies[0]?.next(PROJECT);
       page.projectReplies[0]?.complete();
@@ -1023,7 +1045,7 @@ describe('QueuePage', () => {
       const page = await render();
       await page.open(makeQueue());
       await page.click(page.btn('#line-0-split'));
-      await page.choose(page.select('#spool-dialog-select'), 's2');
+      await page.choose(page.select('dialog select'), 's2');
 
       await page.click(page.button('Dividir'));
 
@@ -1066,7 +1088,7 @@ describe('QueuePage', () => {
 
       await page.click(page.btn('#line-0-split'));
 
-      const options = Array.from(page.select('#spool-dialog-select')?.options ?? []);
+      const options = Array.from(page.select('dialog select')?.options ?? []);
       expect(options.map((option) => option.disabled)).toEqual([false, true, true]);
     });
 
@@ -1076,7 +1098,7 @@ describe('QueuePage', () => {
 
       await page.click(page.btn('#line-0-split'));
 
-      const options = Array.from(page.select('#spool-dialog-select')?.options ?? []);
+      const options = Array.from(page.select('dialog select')?.options ?? []);
       expect(options.map((option) => option.disabled)).toEqual([false, true, false]);
     });
 
@@ -1084,7 +1106,7 @@ describe('QueuePage', () => {
       const page = await render();
       await page.open(makeQueue());
       await page.click(page.btn('#line-0-split'));
-      expect(document.activeElement).toBe(page.q('#spool-dialog-select'));
+      expect(document.activeElement).toBe(page.q('dialog select'));
 
       page.q('dialog')?.dispatchEvent(new Event('cancel', { cancelable: true }));
       await page.settle();
@@ -1101,7 +1123,7 @@ describe('QueuePage', () => {
 
       await page.click(page.button('Dividir'));
 
-      expect(page.q('#spool-dialog-error')?.textContent).toBe('Elegí una bobina.');
+      expect(page.q('dialog [role=alert]')?.textContent).toBe('Elegí una bobina.');
       expect(page.api.update).not.toHaveBeenCalled();
     });
 
@@ -1109,7 +1131,7 @@ describe('QueuePage', () => {
       const page = await render();
       await page.open(makeQueue());
       await page.click(page.btn('#line-0-split'));
-      await page.choose(page.select('#spool-dialog-select'), 's2');
+      await page.choose(page.select('dialog select'), 's2');
       await page.click(page.button('Dividir'));
 
       page.updates[0]?.reply.error(problem(409));
@@ -1125,7 +1147,7 @@ describe('QueuePage', () => {
       const page = await render();
       await page.open(makeQueue());
       await page.click(page.btn('#line-0-split'));
-      await page.choose(page.select('#spool-dialog-select'), 's2');
+      await page.choose(page.select('dialog select'), 's2');
       await page.click(page.button('Dividir'));
 
       page.updates[0]?.reply.error(
@@ -1160,12 +1182,69 @@ describe('QueuePage', () => {
       page.gets[0]?.complete();
       page.printerReplies[0]?.next(PRINTERS);
       page.printerReplies[0]?.complete();
-      page.spoolReplies[0]?.next([]);
+      page.spoolReplies[0]?.next(catalogue([]));
       page.spoolReplies[0]?.complete();
       await page.settle();
 
       expect(page.q('#no-spools')?.textContent).toContain('No hay bobinas cargadas.');
       expect(page.q('#no-spools a')?.getAttribute('href')).toBe('/filamentos/nuevo');
+    });
+
+    it('shows a notice when there are more spools than the pages that are read', async () => {
+      const page = await render();
+
+      page.gets[0]?.next(makeQueue());
+      page.gets[0]?.complete();
+      page.printerReplies[0]?.next(PRINTERS);
+      page.printerReplies[0]?.complete();
+      page.spoolReplies[0]?.next(catalogue(SPOOLS, true));
+      page.spoolReplies[0]?.complete();
+      await page.settle();
+
+      expect(page.q('#spools-truncated')?.textContent).toContain('Hay demasiadas bobinas');
+    });
+
+    it('does not show the notice when every spool was read', async () => {
+      const page = await render();
+      await page.open(makeQueue());
+
+      expect(page.q('#spools-truncated')).toBeNull();
+    });
+
+    it('lets the user pick a spool from the second page of more than 100', async () => {
+      const page = await render(true);
+      const http = TestBed.inject(HttpTestingController);
+      const spoolsOf = (first: number, count: number) =>
+        Array.from({ length: count }, (_, offset) => ({
+          id: `s${String(first + offset)}`,
+          brand: 'Marca',
+          material: 'PLA',
+          colorName: 'Rojo',
+          availableGrams: 500,
+        }));
+      const filaments = (pageNumber: string) =>
+        http.expectOne(
+          (r) =>
+            r.url === 'http://api.test/api/v1/filaments' && r.params.get('page') === pageNumber,
+        );
+
+      page.gets[0]?.next(makeQueue());
+      page.gets[0]?.complete();
+      page.printerReplies[0]?.next(PRINTERS);
+      page.printerReplies[0]?.complete();
+      filaments('1').flush({ items: spoolsOf(1, 100), page: 1, pageSize: 100, total: 101 });
+      filaments('2').flush({ items: spoolsOf(101, 1), page: 2, pageSize: 100, total: 101 });
+      await page.settle();
+      await page.click(page.btn('#line-0-split'));
+
+      const values = Array.from(page.select('dialog select')?.options ?? []).map((o) => o.value);
+      expect(values).toContain('s101');
+      await page.choose(page.select('dialog select'), 's101');
+      await page.click(page.button('Dividir'));
+
+      expect(page.updates[0]?.body.lines?.[1]).toMatchObject({ filamentId: 's101' });
+      expect(page.q('#spools-truncated')).toBeNull();
+      http.verify();
     });
 
     it('fails safely when the spools cannot be read', async () => {
@@ -1246,7 +1325,7 @@ describe('QueuePage', () => {
         const page = await render();
         await page.open(withGoneSpool());
         await page.click(page.btn('#line-1-spool-replace'));
-        await page.choose(page.select('#spool-dialog-select'), 's2');
+        await page.choose(page.select('dialog select'), 's2');
 
         await page.click(page.button('Elegir bobina'));
 
@@ -1277,7 +1356,7 @@ describe('QueuePage', () => {
         page.gets[0]?.complete();
         page.printerReplies[0]?.next(PRINTERS);
         page.printerReplies[0]?.complete();
-        page.spoolReplies[0]?.next(SPOOLS);
+        page.spoolReplies[0]?.next(catalogue(SPOOLS));
         page.spoolReplies[0]?.complete();
         page.projectReplies[0]?.next(legacyProject);
         page.projectReplies[0]?.complete();

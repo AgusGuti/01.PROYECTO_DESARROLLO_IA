@@ -215,40 +215,6 @@ describe('QueuesApi', () => {
     await expect(result).rejects.toMatchObject({ code: 'unexpected_response' });
   });
 
-  it('lists the live spools as options with their stock', async () => {
-    const result = firstValueFrom(api.spools());
-
-    const request = http.expectOne((r) => r.url === `${BASE}/filaments`);
-    expect(request.request.params.get('pageSize')).toBe('100');
-    expect(request.request.params.get('sort')).toBe('brand');
-    request.flush({
-      items: [
-        {
-          id: 'f1',
-          brand: 'Grilon3',
-          material: 'PLA',
-          colorName: 'Rojo',
-          availableGrams: 800,
-          extra: 1,
-        },
-      ],
-    });
-
-    await expect(result).resolves.toEqual([
-      { id: 'f1', label: 'Grilon3 · Rojo · PLA · 800 g disponibles' },
-    ]);
-  });
-
-  it('rejects a malformed spool list', async () => {
-    const result = firstValueFrom(api.spools());
-
-    http
-      .expectOne((r) => r.url === `${BASE}/filaments`)
-      .flush({ items: [{ id: 'f1', brand: 'x' }] });
-
-    await expect(result).rejects.toMatchObject({ code: 'unexpected_response' });
-  });
-
   it('rejects a malformed project', async () => {
     const result = firstValueFrom(api.project('p1'));
 

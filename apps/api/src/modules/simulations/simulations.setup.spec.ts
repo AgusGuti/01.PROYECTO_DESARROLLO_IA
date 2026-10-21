@@ -154,6 +154,18 @@ function expectInvariants(plan: View, c: Case, label: string): void {
   }
 }
 
+/** Every day: intervention windows 08:00-12:00 and 14:00-18:00. */
+const splitShift = (): ScheduleRules => ({
+  weekly: DAY_SHIFT.weekly.map(() => ({
+    ranges: [
+      { startMinute: 480, endMinute: 720 },
+      { startMinute: 840, endMinute: 1080 },
+    ],
+  })),
+  exceptions: [],
+  absences: [],
+});
+
 const CASES: readonly (readonly [string, Case])[] = [
   ['a single job', { lines: [spec('a', 'A')], setup: cfg(10, 30) }],
   ['the same spool three times', { lines: [spec('a', 'A', 60, 3)], setup: cfg(10, 30) }],
@@ -331,6 +343,24 @@ describe.each(ENGINES)('exact schedules, %s', (engine) => {
 
       expect(text(result.jobs[1]?.start ?? 0)).toBe('2026-03-03T08:10');
       expect(result.jobs[1]?.unattended).toBe(false);
+    });
+
+    it('a setup that spans the gap between two windows is unattended although the print is attended', () => {
+      // Collected at 11:50; setup 120 + 120 runs 11:50-15:50 across the 12:00-14:00 gap; the print
+      // (15:50-16:50) lies wholly inside a window, so measuring from the print start would say false.
+      const result = plan({
+        lines: [spec('a', 'A', 230), spec('b', 'B', 60)],
+        setup: cfg(120, 120),
+        schedule: splitShift(),
+      });
+
+      expect(result.jobs[1]).toMatchObject({ filamentChanged: true, setupMinutes: 240 });
+      expect([text(result.jobs[0]?.handoff ?? 0), text(result.jobs[1]?.start ?? 0)]).toEqual([
+        '2026-03-02T11:50',
+        '2026-03-02T15:50',
+      ]);
+      expect(text(result.jobs[1]?.end ?? 0)).toBe('2026-03-02T16:50');
+      expect(result.jobs[1]?.unattended).toBe(true);
     });
 
     it('a setup that runs far past the end of the window is unattended', () => {
@@ -624,6 +654,26 @@ describe('filamentShortfalls', () => {
     );
 
     expect(result).toEqual([]);
+  });
+
+  it('one spool, light 10 g x 3 and heavy 50 g x 2, stock 120 g: completable = floor(120 x 5 / 130) = 4, remaining = 5 - 4', () => {
+    const result = filamentShortfalls(
+      [
+        { filamentId: 'A', pendingUnits: 3, unitWeightGrams: 10 },
+        { filamentId: 'A', pendingUnits: 2, unitWeightGrams: 50 },
+      ],
+      stock({ A: 120 }),
+    );
+
+    expect(result).toEqual([
+      {
+        filamentId: 'A',
+        availableGrams: 120,
+        neededGrams: 130,
+        completablePieces: 4,
+        remainingPieces: 1,
+      },
+    ]);
   });
 
   it('registers the two new warning codes', () => {

@@ -92,6 +92,13 @@
         </p>
       }
 
+      @if (view.spoolsTruncated) {
+        <p class="status" id="spools-truncated" role="status">
+          Hay demasiadas bobinas para este selector: se muestran solo las primeras, por orden
+          alfabético de marca.
+        </p>
+      }
+
       @if (options.length === 0) {
         <p class="status" id="no-printers">
           No hay impresoras activas. <a routerLink="/impresoras/nueva">Cargar una impresora</a>

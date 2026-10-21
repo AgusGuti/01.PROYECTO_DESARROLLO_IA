@@ -1,22 +1,22 @@
 <dialog
   #dialog
-  aria-labelledby="spool-dialog-title"
-  aria-describedby="spool-dialog-text"
+  [attr.aria-labelledby]="uid + '-title'"
+  [attr.aria-describedby]="uid + '-text'"
   (cancel)="onCancelEvent($event)"
 >
-  <h2 id="spool-dialog-title">{{ heading() }}</h2>
-  <p id="spool-dialog-text">{{ intro() }}</p>
+  <h2 [id]="uid + '-title'">{{ heading() }}</h2>
+  <p [id]="uid + '-text'">{{ intro() }}</p>
 
   @if (options().length === 0) {
     <p role="status">No hay bobinas para elegir.</p>
   } @else {
     <div class="field">
-      <label for="spool-dialog-select">Bobina</label>
+      <label [for]="uid + '-select'">Bobina</label>
       <select
         #select
-        id="spool-dialog-select"
+        [id]="uid + '-select'"
         [attr.aria-invalid]="missing() ? 'true' : null"
-        [attr.aria-describedby]="missing() ? 'spool-dialog-error' : null"
+        [attr.aria-describedby]="missing() ? uid + '-error' : null"
         (change)="missing.set(false)"
       >
         <option value="">Elegí una bobina</option>
@@ -27,7 +27,7 @@
         }
       </select>
       @if (missing()) {
-        <p id="spool-dialog-error" class="field-error" role="alert">Elegí una bobina.</p>
+        <p [id]="uid + '-error'" class="field-error" role="alert">Elegí una bobina.</p>
       }
     </div>
   }

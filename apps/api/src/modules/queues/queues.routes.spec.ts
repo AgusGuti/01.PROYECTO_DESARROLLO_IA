@@ -137,6 +137,39 @@ describe('POST /api/v1/queues', () => {
     expect(repository.stored.size).toBe(0);
   });
 
+  it('answers 400 on the second line when only it has printed pieces, even if fully printed', async () => {
+    const { app, repository } = setup();
+
+    const response = await request(app)
+      .post(QUEUES)
+      .send({
+        ...body,
+        lines: [
+          { partId: PART_A, filamentId: SPOOL_1, quantity: 2 },
+          { partId: PART_B, filamentId: SPOOL_2, quantity: 2, completed: 2 },
+        ],
+      });
+
+    expect(expectProblem(response, 400, 'validation_failed').issues?.map((i) => i.path)).toEqual([
+      'lines.1.completed',
+    ]);
+    expect(repository.stored.size).toBe(0);
+  });
+
+  it('starts every line at completed 0 when the lines are copied from the project', async () => {
+    const { app } = setup();
+
+    const response = await request(app).post(QUEUES).send(body);
+
+    expect(response.status).toBe(201);
+    const dto = queueSchema.parse(response.body);
+    expect(dto.lines.map((l) => [l.completed, l.pendingUnits === l.quantity])).toEqual([
+      [0, true],
+      [0, true],
+    ]);
+    expect(dto.totals.completedUnits).toBe(0);
+  });
+
   it('answers 400 listing every problem at once with indexed paths', async () => {
     const { app } = setup();
 

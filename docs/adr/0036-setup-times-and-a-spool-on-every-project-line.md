@@ -71,6 +71,8 @@ same part to be allowed on several lines with different spools.
   work that was always there.
 - The assistant and every fixture that builds a project or queue line must
   supply a spool.
+- A legacy queue (a line with no spool) cannot record printed pieces or be edited until every line
+  has a spool, because every save validates every line; the queue page explains it.
 - The weight of a part is `estimatedWeightGrams`; the warning is as good as the weights entered.
 - Deducting stock when pieces are marked printed (and restoring it on undo) is a separate decision,
   taken in its own ADR.

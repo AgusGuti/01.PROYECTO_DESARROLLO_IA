@@ -291,7 +291,7 @@ async def test_the_same_piece_with_two_spools_stays_two_lines() -> None:
     ]
 
 
-async def test_a_line_without_a_spool_asks_and_lists_only_spools_of_its_material() -> None:
+async def test_a_line_without_a_spool_asks_and_lists_the_spools_with_their_material() -> None:
     api = catalog()
     box = api.toolbox()
 
@@ -302,7 +302,7 @@ async def test_a_line_without_a_spool_asks_and_lists_only_spools_of_its_material
     assert "preguntale al usuario" in result
     assert "Grilon Rojo (PLA, 800 g" in result
     assert "Grilon Azul (PLA, 800 g" in result
-    assert "Gris" not in result  # a PETG spool cannot go with a PLA part
+    assert "Grilon Gris (PETG, 800 g" in result  # the material is shown so the user can choose
     assert box.proposal is None
     assert {r.method for r in api.requests} == {"GET"}  # a question is read-only
 
@@ -322,30 +322,32 @@ async def test_one_line_with_and_one_without_a_spool_still_proposes_nothing() ->
     assert box.proposal is None
 
 
-async def test_a_material_with_no_spool_loaded_says_so_instead_of_listing() -> None:
+async def test_no_spool_loaded_at_all_says_so_instead_of_listing() -> None:
     api = FakeApi(
         {
             PARTS: parts_response(part(SOPORTE, "Soporte")),
-            FILAMENTS: spools_response(spool(PETG, "Gris", "PETG")),
+            FILAMENTS: spools_response(),
         }
     )
     box = api.toolbox()
 
     result = await propose(box, name="P", items=[{"pieza": "Soporte", "cantidad": 1}])
 
-    assert "No hay ninguna bobina de ese material cargada" in result
+    assert "No hay ninguna bobina cargada" in result
     assert box.proposal is None
 
 
-async def test_a_spool_of_another_material_is_refused() -> None:
+async def test_any_live_spool_is_accepted_whatever_its_material() -> None:
     box = catalog().toolbox()
 
     result = await propose(
         box, name="P", items=[{"pieza": "Soporte", "cantidad": 1, "bobina": "Gris"}]
     )
 
-    assert result == "ERROR: Esa bobina no es del material de la pieza (PLA)."
-    assert box.proposal is None
+    assert not result.startswith("ERROR")
+    items = created(box).payload.items
+    assert items is not None
+    assert [(i.partId, i.filamentId) for i in items] == [(SOPORTE, PETG)]
 
 
 async def test_an_unknown_spool_is_refused() -> None:

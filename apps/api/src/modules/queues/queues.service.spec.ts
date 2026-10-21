@@ -93,14 +93,6 @@ describe('create', () => {
     expect(repository.stored.size).toBe(0);
   });
 
-  it('rejects printed pieces on create', async () => {
-    const { service } = setup();
-
-    const error = await failureOf(service.create({ ...input, lines: [line(PART_A, 3, 1)] }));
-
-    expect(error.issues.map((issue) => issue.path)).toEqual(['lines.0.completed']);
-  });
-
   it('rejects a given line without a spool and a repeated pair', async () => {
     const { service } = setup();
 

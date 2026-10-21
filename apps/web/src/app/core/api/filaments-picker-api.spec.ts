@@ -2,8 +2,8 @@ import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { firstValueFrom } from 'rxjs';
-import { API_BASE_URL } from '../../core/api/api-config';
-import { apiErrorInterceptor } from '../../core/api/api-error.interceptor';
+import { API_BASE_URL } from './api-config';
+import { apiErrorInterceptor } from './api-error.interceptor';
 import { FilamentsPickerApi } from './filaments-picker-api';
 
 const URL = 'http://api.test/api/v1/filaments';
@@ -98,7 +98,7 @@ describe('FilamentsPickerApi', () => {
   });
 
   it.each([
-    ['an unknown material', { ...spool(1), material: 'GOLD' }],
+    ['a non-text material', { ...spool(1), material: 7 }],
     ['fractional grams', { ...spool(1), availableGrams: 1.5 }],
     ['a missing colour', { ...spool(1), colorName: undefined }],
   ])('rejects a spool with %s', async (_name, item) => {

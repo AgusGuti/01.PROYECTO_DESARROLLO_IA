@@ -28,8 +28,8 @@ import type {
 import { catchError, map, of, startWith, Subject, switchMap } from 'rxjs';
 import { ApiError } from '../../core/api/api-error';
 import { DateTools } from '../../shared/ui/date-tools';
+import { FilamentsPickerApi, type PickerSpool } from '../../core/api/filaments-picker-api';
 import { SpoolDialog, type SpoolOption, spoolLabel } from '../../shared/ui/spool-dialog';
-import { FilamentsPickerApi, type PickerSpool } from './filaments-picker-api';
 import { type PickerPart, PartsPickerApi } from './parts-picker-api';
 import {
   formatDeadline,

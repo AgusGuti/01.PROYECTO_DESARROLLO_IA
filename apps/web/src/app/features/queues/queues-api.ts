@@ -9,7 +9,6 @@ import type {
 import { catchError, map, of, type Observable, throwError } from 'rxjs';
 import { API_BASE_URL } from '../../core/api/api-config';
 import { ApiError } from '../../core/api/api-error';
-import { type SpoolOption, spoolLabel } from '../../shared/ui/spool-dialog';
 import { isGoal, isMode } from './queue-labels';
 
 /** A live printer the user may pick. */
@@ -201,46 +200,6 @@ export class QueuesApi {
           if (picked !== undefined) printers.push(picked);
         }
         return printers;
-      }),
-    );
-  }
-
-  /**
-   * Live spools, by brand, as select options with their stock. shortcut: first 100 only, upgrade
-   * if one workshop owns more spools.
-   */
-  spools(): Observable<readonly SpoolOption[]> {
-    const params = new HttpParams()
-      .set('page', 1)
-      .set('pageSize', 100)
-      .set('sort', 'brand')
-      .set('order', 'asc');
-    return this.http.get<unknown>(`${this.baseUrl}/api/v1/filaments`, { params }).pipe(
-      map((body) => {
-        if (!isRecord(body) || !Array.isArray(body['items'])) throw unexpected();
-        const options: SpoolOption[] = [];
-        for (const row of body['items'] as unknown[]) {
-          if (
-            !isRecord(row) ||
-            typeof row['id'] !== 'string' ||
-            typeof row['brand'] !== 'string' ||
-            typeof row['colorName'] !== 'string' ||
-            typeof row['material'] !== 'string' ||
-            !isWholeNumber(row['availableGrams'])
-          ) {
-            throw unexpected();
-          }
-          options.push({
-            id: row['id'],
-            label: spoolLabel({
-              brand: row['brand'],
-              colorName: row['colorName'],
-              material: row['material'],
-              availableGrams: row['availableGrams'],
-            }),
-          });
-        }
-        return options;
       }),
     );
   }

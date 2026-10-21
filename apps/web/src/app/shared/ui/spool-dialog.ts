@@ -27,6 +27,8 @@ export function spoolLabel(spool: {
   return `${spool.brand} · ${spool.colorName} · ${spool.material} · ${String(spool.availableGrams)} g disponibles`;
 }
 
+let nextId = 0;
+
 /**
  * Asks the user to pick another spool (ADR 0036). Native <dialog>: `showModal()` makes the page
  * inert, traps Tab and fires `cancel` on Escape. The parent creates it only while open and puts the
@@ -49,6 +51,8 @@ export class SpoolDialog {
   readonly picked = output<string>();
   readonly cancelled = output();
 
+  /** Unique per instance so aria-labelledby/describedby never point at another dialog. */
+  protected readonly uid = `spool-dialog-${String(nextId++)}`;
   protected readonly missing = signal(false);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
   private readonly select = viewChild<ElementRef<HTMLSelectElement>>('select');

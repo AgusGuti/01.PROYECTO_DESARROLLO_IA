@@ -115,20 +115,6 @@ export function missingSpoolIssues(
   );
 }
 
-/** A queue is created with nothing printed yet. */
-export function newQueueLineIssues(lines: readonly QueueLine[]): FieldIssue[] {
-  return lines.flatMap((line, index) =>
-    line.completed > 0
-      ? [
-          {
-            path: `lines.${String(index)}.completed`,
-            message: 'A new queue starts with nothing printed.',
-          },
-        ]
-      : [],
-  );
-}
-
 /**
  * A stored line with printed pieces keeps its part and spool and cannot be removed: the printed
  * pieces were made with that spool. Splitting is the way out. A legacy line without a spool may gain

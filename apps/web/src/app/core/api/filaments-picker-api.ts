@@ -2,15 +2,14 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import type { Filament } from '@print3d/api-contracts';
 import { EMPTY, expand, map, type Observable, reduce } from 'rxjs';
-import { API_BASE_URL } from '../../core/api/api-config';
-import { ApiError } from '../../core/api/api-error';
-import { isMaterial } from './project-labels';
+import { API_BASE_URL } from './api-config';
+import { ApiError } from './api-error';
 
 /** What the project form needs to offer a spool: nothing more is read from the response. */
-export type PickerSpool = Pick<
-  Filament,
-  'id' | 'brand' | 'material' | 'colorName' | 'availableGrams'
->;
+export type PickerSpool = Pick<Filament, 'id' | 'brand' | 'colorName' | 'availableGrams'> & {
+  /** Only shown as text, so a string is enough (core cannot import a feature's material list). */
+  readonly material: string;
+};
 
 export interface SpoolCatalogue {
   readonly spools: readonly PickerSpool[];
@@ -42,7 +41,7 @@ function isPickerSpool(value: unknown): value is PickerSpool {
     isRecord(value) &&
     typeof value['id'] === 'string' &&
     typeof value['brand'] === 'string' &&
-    isMaterial(value['material']) &&
+    typeof value['material'] === 'string' &&
     typeof value['colorName'] === 'string' &&
     isWholeNumber(value['availableGrams'])
   );
@@ -73,8 +72,8 @@ function readPage(body: unknown, requested: number): SpoolPage {
 const hasMore = (page: SpoolPage): boolean => page.requested * page.pageSize < page.total;
 
 /**
- * A small copy of the spools list call, kept here because a feature never imports from another
- * feature. It reads every live spool (page after page, sorted by brand) for the line selects.
+ * Shared by the features that offer a spool in a select (a feature never imports another). It
+ * reads every live spool, page after page, sorted by brand.
  */
 @Injectable({ providedIn: 'root' })
 export class FilamentsPickerApi {

@@ -26,6 +26,7 @@ import type {
 import { catchError, finalize, forkJoin, map, of, startWith, Subject, switchMap } from 'rxjs';
 import type { Observable } from 'rxjs';
 import { ApiError } from '../../core/api/api-error';
+import { FilamentsPickerApi } from '../../core/api/filaments-picker-api';
 import { SpoolDialog, type SpoolOption, spoolLabel } from '../../shared/ui/spool-dialog';
 import { QueueDeleteDialog } from './queue-delete-dialog';
 import {
@@ -49,12 +50,15 @@ type ViewState =
       readonly project: ProjectSnapshot;
       readonly printers: readonly PrinterOption[];
       readonly spools: readonly SpoolOption[];
+      /** There are more spools than the pages we read: the select shows only the first ones. */
+      readonly spoolsTruncated: boolean;
     }
   | {
       readonly kind: 'ready';
       readonly queue: Queue;
       readonly printers: readonly PrinterOption[];
       readonly spools: readonly SpoolOption[];
+      readonly spoolsTruncated: boolean;
     };
 
 /** An action that failed; `reload` offers "Recargar" (stale version, queue gone or duplicate). */
@@ -118,6 +122,7 @@ function failedState(error: unknown): ViewState {
 })
 export class QueuePage {
   private readonly api = inject(QueuesApi);
+  private readonly spoolsApi = inject(FilamentsPickerApi);
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -176,22 +181,36 @@ export class QueuePage {
     this.loads.next();
   }
 
+  private spools(): Observable<{ spools: readonly SpoolOption[]; spoolsTruncated: boolean }> {
+    return this.spoolsApi.loadAll().pipe(
+      map((catalogue) => ({
+        spools: catalogue.spools.map((spool) => ({ id: spool.id, label: spoolLabel(spool) })),
+        spoolsTruncated: catalogue.truncated,
+      })),
+    );
+  }
+
   private load(): Observable<ViewState> {
     const id = this.projectId;
     if (id === null) return of(failedState(null));
     return this.api.get(id).pipe(
       switchMap((queue): Observable<ViewState> => {
         if (queue !== null) {
-          return forkJoin({ printers: this.api.printers(), spools: this.api.spools() }).pipe(
-            map(({ printers, spools }) => ({ kind: 'ready', queue, printers, spools })),
+          return forkJoin({ printers: this.api.printers(), spools: this.spools() }).pipe(
+            map(({ printers, spools }) => ({ kind: 'ready', queue, printers, ...spools })),
           );
         }
         return forkJoin({
           printers: this.api.printers(),
-          spools: this.api.spools(),
+          spools: this.spools(),
           project: this.api.project(id),
         }).pipe(
-          map(({ printers, spools, project }) => ({ kind: 'missing', project, printers, spools })),
+          map(({ printers, spools, project }) => ({
+            kind: 'missing',
+            project,
+            printers,
+            ...spools,
+          })),
         );
       }),
       catchError((error: unknown) => of(failedState(error))),
@@ -489,11 +508,12 @@ export class QueuePage {
   private context(): {
     readonly printers: readonly PrinterOption[];
     readonly spools: readonly SpoolOption[];
+    readonly spoolsTruncated: boolean;
   } {
     const state = this.state();
     return state.kind === 'missing' || state.kind === 'ready'
-      ? { printers: state.printers, spools: state.spools }
-      : { printers: [], spools: [] };
+      ? { printers: state.printers, spools: state.spools, spoolsTruncated: state.spoolsTruncated }
+      : { printers: [], spools: [], spoolsTruncated: false };
   }
 
   // ---- progress ------------------------------------------------------------------------------

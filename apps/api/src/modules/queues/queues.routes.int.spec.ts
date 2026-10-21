@@ -152,6 +152,60 @@ describe('queues API on a real MongoDB with the real wiring', () => {
     expect(split.body).toMatchObject({ version: 3, totals: { pendingUnits: 3 } });
   });
 
+  describe('a line with printed pieces', () => {
+    let part: string;
+    let other: string;
+    let project: string;
+    const patch = (version: number, lines: unknown[]) =>
+      request(app).patch(`/api/v1/queues/${project}`).send({ version, lines });
+
+    beforeEach(async () => {
+      part = await makePart('Soporte', 600);
+      const printer = await makePrinter('Ender 3');
+      other = idOf(await request(app).post('/api/v1/filaments').send(spoolBody));
+      project = await makeProject([{ partId: part, filamentId: spool, quantity: 4 }]);
+      await request(app)
+        .post('/api/v1/queues')
+        .send({ projectId: project, goal: 'fastest', mode: 'single', printerIds: [printer] });
+      const printed = await patch(1, [
+        { partId: part, filamentId: spool, quantity: 4, completed: 2 },
+      ]);
+      expect(printed.status).toBe(200);
+    });
+
+    it('cannot be removed: 400 on lines', async () => {
+      const response = await patch(2, [
+        { partId: part, filamentId: other, quantity: 1, completed: 0 },
+      ]);
+
+      expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({ issues: [{ path: 'lines' }] });
+    });
+
+    it('cannot change its spool: 400 on lines', async () => {
+      const response = await patch(2, [
+        { partId: part, filamentId: other, quantity: 4, completed: 2 },
+      ]);
+
+      expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({ issues: [{ path: 'lines' }] });
+    });
+
+    it('lets exactly one of two simultaneous splits with the same version win, the other is 409', async () => {
+      const split = (quantityOnOther: number) =>
+        patch(2, [
+          { partId: part, filamentId: spool, quantity: 2, completed: 2 },
+          { partId: part, filamentId: other, quantity: quantityOnOther, completed: 0 },
+        ]);
+
+      const [a, b] = await Promise.all([split(2), split(3)]);
+
+      expect([a.status, b.status].sort()).toEqual([200, 409]);
+      const stored = await request(app).get(`/api/v1/queues/${project}`);
+      expect(stored.body).toMatchObject({ version: 3 });
+    });
+  });
+
   it('refuses to create a queue from a project line saved before spools existed', async () => {
     const part = await makePart('Soporte', 600);
     const printer = await makePrinter('Ender 3');

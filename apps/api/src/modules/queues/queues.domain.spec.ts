@@ -3,7 +3,6 @@ import {
   lineIssues,
   lockedLineIssues,
   missingSpoolIssues,
-  newQueueLineIssues,
   pendingOf,
   printerSelectionIssues,
   queueTotals,
@@ -41,14 +40,6 @@ describe('missingSpoolIssues', () => {
   it('names each line without a spool, with the given message', () => {
     expect(missingSpoolIssues([line(PART_A, 1), line(PART_B, 1, 0, null)], 'Pick one.')).toEqual([
       { path: 'lines.1.filamentId', message: 'Pick one.' },
-    ]);
-  });
-});
-
-describe('newQueueLineIssues', () => {
-  it('rejects printed pieces on a new queue', () => {
-    expect(newQueueLineIssues([line(PART_A, 4, 0), line(PART_B, 4, 1)])).toEqual([
-      { path: 'lines.1.completed', message: 'A new queue starts with nothing printed.' },
     ]);
   });
 });
