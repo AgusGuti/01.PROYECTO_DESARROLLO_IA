@@ -161,9 +161,17 @@ test('a queue whose spool was deleted holds the save until another spool is chos
     await page.getByRole('button', { name: 'Guardar cambios' }).click();
     await expect(page.getByText('Elegí una bobina para esta línea.')).toBeVisible();
 
-    await page.getByRole('button', { name: /Elegir otra bobina/ }).focus();
+    const opener = page.getByRole('button', { name: /Elegir otra bobina/ });
+    await opener.focus();
     await page.keyboard.press('Enter');
     const dialog = page.getByRole('dialog', { name: 'Elegir otra bobina' });
+    // The native dialog traps focus inside and Escape is always a way out; focus goes back.
+    await expect(dialog.getByLabel('Bobina')).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(opener).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(dialog).toBeVisible();
     await dialog
       .getByLabel('Bobina')
       .selectOption({ label: `${spoolB} · Rojo · PLA · 1000 g disponibles` });
