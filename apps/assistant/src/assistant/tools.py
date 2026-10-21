@@ -246,6 +246,8 @@ class AgendaArgs(_Args):
 class ProposedItemArgs(_Args):
     pieza: ProjectRef  # a part id or name; resolved to an id in code
     cantidad: Annotated[int, Field(ge=1, le=1000)]
+    # Optional here only so the tool can ask; without it no proposal is made (ADR 0036).
+    bobina: ProjectRef | None = None
 
 
 class ProposeCreateProjectArgs(_Args):
@@ -273,6 +275,7 @@ class ProposeCreateQueueArgs(_Args):
 class ProgressEntry(_Args):
     pieza: ProjectRef  # a part name or id of the queue's own lines
     impresas: Annotated[int, Field(ge=0, le=1000)]
+    bobina: ProjectRef | None = None  # only to tell apart lines of the same part
 
 
 class ProposeQueueProgressArgs(_Args):
@@ -355,10 +358,19 @@ class ApiProjectPart(_Data):
     material: str
 
 
+class ApiLineFilament(_Data):
+    brand: Text
+    material: str
+    colorName: Text
+    availableGrams: int
+
+
 class ApiProjectItem(_Data):
     partId: str
+    filamentId: str | None  # null only for a line saved before ADR 0036
     quantity: int
     part: ApiProjectPart | None
+    filament: ApiLineFilament | None
 
 
 class ApiProject(_Data):
@@ -372,11 +384,14 @@ class ApiProject(_Data):
 
 class ApiQueueLine(_Data):
     partId: str
+    filamentId: str | None
     partName: Text | None
     quantity: int
     completed: int
     pendingUnits: int
     partDeleted: bool
+    filament: ApiLineFilament | None
+    filamentDeleted: bool
 
 
 class ApiQueueTotals(_Data):
@@ -645,6 +660,7 @@ class ProyectosResult(BaseModel):
 class LineaProyecto(BaseModel):
     pieza: str
     material: str | None
+    bobina: str
     cantidad: int
 
 
@@ -659,6 +675,7 @@ class ProyectoDetalle(BaseModel):
 
 class LineaCola(BaseModel):
     pieza: str
+    bobina: str
     cantidad: int
     completadas: int
     pendientes: int
@@ -1113,6 +1130,23 @@ def _spool_label(f: ApiFilament) -> str:
     return f"{f.brand} {f.colorName}"
 
 
+def _line_spool(filament_id: str | None, filament: ApiLineFilament | None) -> str:
+    """What the model reads as a line's spool; a legacy or deleted spool is said plainly."""
+    if filament is not None:
+        return f"{filament.brand} {filament.colorName} ({filament.material})"
+    return "sin bobina" if filament_id is None else "bobina eliminada"
+
+
+def _safe(text: str) -> str:
+    """Text for an error message (which is not wrapped as DATA): shortened, no markup."""
+    return _clip(text[:100]).replace("<", "")
+
+
+def _line_key(part_id: str, filament_id: str | None) -> tuple[str, str]:
+    """A project or queue line is the pair (part, spool), never the part alone (ADR 0036)."""
+    return part_id.casefold(), (filament_id or "").casefold()
+
+
 def _cost_warnings(*groups: Sequence[ApiSimWarning]) -> list[str]:
     codes = dict.fromkeys(w.code for group in groups for w in group)  # unique, in order
     return [_COST_WARNING.get(code, code) for code in codes]
@@ -1342,6 +1376,7 @@ class Toolbox:
                     LineaProyecto(
                         pieza=i.part.name if i.part else "(pieza eliminada)",
                         material=i.part.material if i.part else None,
+                        bobina=_line_spool(i.filamentId, i.filament),
                         cantidad=i.quantity,
                     )
                     for i in p.items[:MAX_ITEMS]
@@ -1368,6 +1403,7 @@ class Toolbox:
                 lineas=[
                     LineaCola(
                         pieza=line.partName or "(pieza eliminada)",
+                        bobina=_line_spool(line.filamentId, line.filament),
                         cantidad=line.quantity,
                         completadas=line.completed,
                         pendientes=line.pendingUnits,
@@ -1612,6 +1648,29 @@ class Toolbox:
         def line_name(line: ApiQueueLine) -> str:
             return line.partName or ""
 
+        def line_spool(line: ApiQueueLine) -> str:
+            return _line_spool(line.filamentId, line.filament)
+
+        def pick_queue_line(lines: list[ApiQueueLine], entry: ProgressEntry) -> ApiQueueLine:
+            """The one line meant. The same part may be on several lines (one per spool): then
+            the user must say which, and the tool lists them instead of choosing."""
+            found = _find(lines, entry.pieza, line_name, lambda ln: ln.partId)
+            if entry.bobina is not None:
+                found = _find(found, entry.bobina, line_spool, lambda ln: ln.filamentId or "")
+                if not found:
+                    raise ToolError(
+                        f"No encontré «{_safe(entry.pieza)}» con la bobina «{_safe(entry.bobina)}» "
+                        "en la cola."
+                    )
+            if len(found) > 1 and len({ln.partId.casefold() for ln in found}) == 1:
+                options = json.dumps([line_spool(ln) for ln in found[:5]], ensure_ascii=False)
+                raise ToolError(
+                    f"«{_safe(line_name(found[0]))}» está en {len(found)} líneas de la cola con "
+                    f"distinta bobina: {options.replace('<', '')}. Preguntale al usuario de "
+                    "cuál habla y pasá 'bobina'."
+                )
+            return _one(found, entry.pieza, "pieza de la cola", "piezas de la cola", line_name)
+
         async def propose_queue_progress(args: ProposeQueueProgressArgs) -> BaseModel:
             project_id, project_name = await resolve_named(args.proyecto)
             queue = await api.request(
@@ -1622,17 +1681,18 @@ class Toolbox:
             )
             if queue.version is None:
                 raise ToolError("La API respondió algo inesperado.")
-            done = {ln.partId.casefold(): ln.completed for ln in queue.lines}
-            chosen: dict[str, int] = {}
-            for entry in args.avance:
-                line = _one(
-                    _find(queue.lines, entry.pieza, line_name, lambda ln: ln.partId),
-                    entry.pieza,
-                    "pieza de la cola",
-                    "piezas de la cola",
-                    line_name,
+            # The PATCH replaces ALL lines and the API requires a spool on each of them.
+            if any(ln.filamentId is None for ln in queue.lines):
+                raise ToolError(
+                    "Hay líneas de la cola sin bobina (se guardaron antes de que fuera "
+                    "obligatoria). Que el usuario las asigne desde la pantalla de la cola; "
+                    "después se puede registrar el avance."
                 )
-                key = line.partId.casefold()
+            done = {_line_key(ln.partId, ln.filamentId): ln.completed for ln in queue.lines}
+            chosen: dict[tuple[str, str], int] = {}
+            for entry in args.avance:
+                line = pick_queue_line(queue.lines, entry)
+                key = _line_key(line.partId, line.filamentId)
                 if key in chosen:
                     raise ToolError("Una pieza aparece más de una vez; indicala una sola vez.")
                 total = entry.impresas + (done[key] if args.modo == "sumar" else 0)
@@ -1650,8 +1710,9 @@ class Toolbox:
                     lines=[
                         ProgressLine(
                             partId=ln.partId.lower(),
+                            filamentId=(ln.filamentId or "").lower(),
                             quantity=ln.quantity,
-                            completed=chosen.get(ln.partId.casefold(), ln.completed),
+                            completed=chosen.get(_line_key(ln.partId, ln.filamentId), ln.completed),
                         )
                         for ln in queue.lines
                     ],
@@ -1659,7 +1720,10 @@ class Toolbox:
                 projectName=project_name,
                 lineNames=[
                     ProposalItemName(
-                        partId=ln.partId.lower(), name=line_name(ln)[:100] or "Pieza eliminada"
+                        partId=ln.partId.lower(),
+                        filamentId=(ln.filamentId or "").lower(),
+                        name=line_name(ln)[:100] or "Pieza eliminada",
+                        filamentName=_line_spool(ln.filamentId, ln.filament)[:100],
                     )
                     for ln in queue.lines
                 ],
@@ -1697,12 +1761,54 @@ class Toolbox:
                         "Pedile al usuario que sea más específico."
                     )
                 found.append(matches[0])
-            if len({p.id for p in found}) != len(found):
-                raise ToolError("Una pieza aparece más de una vez; indicala una sola vez.")
             return found
+
+        async def resolve_spools(
+            refs: list[ProposedItemArgs], parts: list[ApiPart]
+        ) -> list[ApiFilament]:
+            """One live spool per line, of the part's material. A line without a spool is never
+            guessed: the tool answers with a question and the spools that could be used."""
+            filaments = await load_filaments()
+            spools: list[ApiFilament] = []
+            missing: list[ApiPart] = []
+            for part, ref in zip(parts, refs, strict=True):
+                if ref.bobina is None:
+                    missing.append(part)
+                    continue
+                same = [f for f in filaments.items if f.material == part.material]
+                found = _find(same, ref.bobina, _spool_label, lambda f: f.id)
+                if not found and _find(filaments.items, ref.bobina, _spool_label, lambda f: f.id):
+                    raise ToolError(f"Esa bobina no es del material de la pieza ({part.material}).")
+                spools.append(_one(found, ref.bobina, "bobina", "bobinas", _spool_label))
+            if missing:
+                names = ", ".join(f"«{_safe(n)}»" for n in dict.fromkeys(p.name for p in missing))
+                materials = {p.material for p in missing}
+                options = [
+                    f"{_spool_label(f)} ({f.material}, {f.availableGrams} g, id {f.id})"
+                    for f in filaments.items
+                    if f.material in materials
+                ][:10]
+                available = (
+                    "Bobinas posibles: " + json.dumps(options, ensure_ascii=False).replace("<", "")
+                    if options
+                    else "No hay ninguna bobina de ese material cargada: primero hay que crearla."
+                )
+                raise ToolError(
+                    f"Falta la bobina de cada línea; sin bobina no se puede crear el proyecto. "
+                    f"Líneas sin bobina: {names}. No elijas una vos: preguntale al usuario "
+                    f"cuál usar. {available}"
+                )
+            keys = [(p.id.casefold(), s.id.casefold()) for p, s in zip(parts, spools, strict=True)]
+            if len(set(keys)) != len(keys):
+                raise ToolError(
+                    "Una pieza con la misma bobina aparece más de una vez; sumá las cantidades "
+                    "en una sola línea."
+                )
+            return spools
 
         async def propose_create_project(args: ProposeCreateProjectArgs) -> BaseModel:
             parts = await resolve_parts(args.items) if args.items else []
+            spools = await resolve_spools(args.items, parts) if args.items else []
             priority = _API_PRIORITY.get(args.priority or "", args.priority)
             proposal = CreateProjectProposal(
                 kind="create_project",
@@ -1713,13 +1819,23 @@ class Toolbox:
                         "priority": priority,
                         "deadline": args.deadline,
                         "items": [
-                            ProposalItem(partId=p.id.lower(), quantity=i.cantidad)
-                            for p, i in zip(parts, args.items or [], strict=True)
+                            ProposalItem(
+                                partId=p.id.lower(), filamentId=s.id.lower(), quantity=i.cantidad
+                            )
+                            for p, s, i in zip(parts, spools, args.items or [], strict=True)
                         ]
                         or None,
                     }
                 ),
-                itemNames=[ProposalItemName(partId=p.id.lower(), name=p.name[:100]) for p in parts],
+                itemNames=[
+                    ProposalItemName(
+                        partId=p.id.lower(),
+                        filamentId=s.id.lower(),
+                        name=p.name[:100],
+                        filamentName=_spool_label(s)[:100],
+                    )
+                    for p, s in zip(parts, spools, strict=True)
+                ],
             )
             if self._proposal is not None and self._proposal != proposal:
                 raise ToolError("Ya hay una propuesta en esta conversación; solo se admite una.")
@@ -2313,10 +2429,12 @@ class Toolbox:
                 "solo cuando el usuario diga qué imprimió (por ejemplo 'ya imprimí 10 cubos y 4 "
                 "engranajes del proyecto X'); nunca inventes cantidades y, si no queda claro "
                 "qué pieza o cuántas, preguntalo. 'proyecto': id o nombre. 'avance': lista de "
-                "{pieza, impresas} con piezas de la cola. Por defecto 'impresas' es el TOTAL "
-                "impreso de esa pieza; si el usuario dice 'otras 3' o 'tres más' pasá "
-                "modo='sumar' y se suma a lo ya impreso. No puede superar la cantidad de la "
-                "línea. Máximo una propuesta por conversación.",
+                "{pieza, impresas, bobina} con piezas de la cola; 'bobina' (opcional) solo "
+                "hace falta cuando la misma pieza está en varias líneas con distinta bobina: "
+                "si la herramienta pregunta cuál, preguntáselo al usuario. Por defecto "
+                "'impresas' es el TOTAL impreso de esa pieza; si el usuario dice 'otras 3' o "
+                "'tres más' pasá modo='sumar' y se suma a lo ya impreso. No puede superar la "
+                "cantidad de la línea. Máximo una propuesta por conversación.",
                 ProposeQueueProgressArgs,
                 propose_queue_progress,
             ),
@@ -2344,7 +2462,11 @@ class Toolbox:
                 "usuario dijo: 'name' es obligatorio; 'description', 'priority' (baja, normal, "
                 "alta, urgente), 'deadline' (DD-MM-AAAA) e 'items' son opcionales y no debés "
                 "inventarlos. Cada ítem de 'items' lleva 'pieza' (nombre o id de una pieza que "
-                "ya existe) y 'cantidad' (1 a 1000). Máximo una propuesta por conversación.",
+                "ya existe), 'cantidad' (1 a 1000) y 'bobina' (nombre o id de una bobina del "
+                "mismo material): la bobina es obligatoria en cada línea; si el usuario no la "
+                "dijo, NO la inventes ni la omitas: la herramienta te devuelve las bobinas "
+                "posibles y debés preguntarle cuál usar. La misma pieza puede estar en varias "
+                "líneas con bobinas distintas. Máximo una propuesta por conversación.",
                 ProposeCreateProjectArgs,
                 propose_create_project,
             ),

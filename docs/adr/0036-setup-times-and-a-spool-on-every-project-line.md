@@ -69,7 +69,7 @@ same part to be allowed on several lines with different spools.
 
 - With the defaults the plans are longer than before, which is the point: the estimate now includes
   work that was always there.
-- The assistant, the bulk G-code import and every fixture that builds a project or queue line must
+- The assistant and every fixture that builds a project or queue line must
   supply a spool.
 - The weight of a part is `estimatedWeightGrams`; the warning is as good as the weights entered.
 - Deducting stock when pieces are marked printed (and restoring it on undo) is a separate decision,

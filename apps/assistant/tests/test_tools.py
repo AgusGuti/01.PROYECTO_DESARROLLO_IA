@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 from assistant.tools import MAX_ITEMS, MAX_RESULT_CHARS, date_ar, default_start, duration_seconds
-from fakes import PROJECT_ID, FakeApi
+from fakes import PROJECT_ID, FakeApi, project_item, queue_line
 
 pytestmark = pytest.mark.anyio
 
@@ -108,8 +108,8 @@ async def test_get_project_returns_lines() -> None:
     body = {
         **project(),
         "items": [
-            {"partId": PROJECT_ID, "quantity": 3, "part": {"name": "Gancho", "material": "PLA"}},
-            {"partId": PROJECT_ID, "quantity": 1, "part": None},
+            project_item(PROJECT_ID, 3, {"name": "Gancho", "material": "PLA"}),
+            project_item(PROJECT_ID, 1, None, filament_id=None),
         ],
     }
     api = FakeApi({("GET", f"/api/v1/projects/{PROJECT_ID}"): ok(body)})
@@ -118,6 +118,8 @@ async def test_get_project_returns_lines() -> None:
 
     assert "Gancho" in out
     assert '"cantidad":3' in out
+    assert '"bobina":"Grilon Rojo (PLA)"' in out
+    assert '"bobina":"sin bobina"' in out  # a line saved before ADR 0036
 
 
 async def test_get_project_not_found_gives_a_clear_message() -> None:
@@ -134,17 +136,7 @@ async def test_queue_progress_returns_lines_and_totals() -> None:
         "goal": "fastest",
         "mode": "single",
         "printerIds": [],
-        "lines": [
-            {
-                "partId": PROJECT_ID,
-                "quantity": 10,
-                "completed": 4,
-                "pendingUnits": 6,
-                "partName": "Gancho",
-                "estimatedPrintSeconds": 600,
-                "partDeleted": False,
-            }
-        ],
+        "lines": [queue_line(PROJECT_ID, "Gancho", 10, 4)],
         "totals": {
             "totalUnits": 10,
             "completedUnits": 4,
@@ -158,6 +150,7 @@ async def test_queue_progress_returns_lines_and_totals() -> None:
     out = await api.toolbox().run("get_queue_progress", {"proyecto": PROJECT_ID})
 
     assert '"completadas":4' in out
+    assert '"bobina":"Grilon Rojo (PLA)"' in out
     assert '"tiempo_de_impresion_pendiente":"1 h 0 min"' in out
 
 

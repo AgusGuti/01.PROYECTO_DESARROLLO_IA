@@ -9,7 +9,7 @@ from langchain_core.messages import AIMessage
 from assistant.chat import SYSTEM_PROMPT, answer
 from assistant.schemas import UpdateQueueProgressProposal
 from assistant.tools import Toolbox
-from fakes import PROJECT_ID, FakeApi, ScriptedModel
+from fakes import PROJECT_ID, SPOOL, SPOOL_2, FakeApi, ScriptedModel, queue_line
 
 pytestmark = pytest.mark.anyio
 
@@ -25,14 +25,7 @@ READY = "Propuesta lista; el usuario debe confirmarla en pantalla. No está camb
 
 
 def line(part_id: str, name: str | None, quantity: int, completed: int) -> dict[str, object]:
-    return {
-        "partId": part_id,
-        "partName": name,
-        "quantity": quantity,
-        "completed": completed,
-        "pendingUnits": quantity - completed,
-        "partDeleted": name is None,
-    }
+    return queue_line(part_id, name, quantity, completed)
 
 
 LINES = [
@@ -105,18 +98,22 @@ async def test_the_proposal_is_the_exact_dict_with_every_line_kept() -> None:
             "projectId": PROJECT_ID,
             "version": 7,
             "lines": [
-                {"partId": CUBO, "quantity": 20, "completed": 10},
-                {"partId": GEAR, "quantity": 10, "completed": 4},
-                {"partId": SUP1, "quantity": 5, "completed": 1},  # not mentioned: unchanged
-                {"partId": SUP2, "quantity": 5, "completed": 0},
+                {"partId": CUBO, "filamentId": SPOOL, "quantity": 20, "completed": 10},
+                {"partId": GEAR, "filamentId": SPOOL, "quantity": 10, "completed": 4},
+                # not mentioned: unchanged
+                {"partId": SUP1, "filamentId": SPOOL, "quantity": 5, "completed": 1},
+                {"partId": SUP2, "filamentId": SPOOL, "quantity": 5, "completed": 0},
             ],
         },
         "projectName": "Mueble",
         "lineNames": [
-            {"partId": CUBO, "name": "Cubo"},
-            {"partId": GEAR, "name": "Engranaje"},
-            {"partId": SUP1, "name": "Soporte uno"},
-            {"partId": SUP2, "name": "Soporte dos"},
+            {"partId": p, "filamentId": SPOOL, "name": n, "filamentName": "Grilon Rojo (PLA)"}
+            for p, n in [
+                (CUBO, "Cubo"),
+                (GEAR, "Engranaje"),
+                (SUP1, "Soporte uno"),
+                (SUP2, "Soporte dos"),
+            ]
         ],
     }
     assert {r.method for r in api.requests} == {"GET"}
@@ -242,10 +239,15 @@ async def test_a_deleted_part_line_is_kept_and_cannot_be_matched_by_name() -> No
     await progress(box, [{"pieza": "Cubo", "impresas": 5}])
 
     assert [(x.partId, x.completed) for x in proposal(box).payload.lines] == [(CUBO, 5), (GEAR, 1)]
-    assert proposal(box).lineNames[1].model_dump() == {"partId": GEAR, "name": "Pieza eliminada"}
+    assert proposal(box).lineNames[1].model_dump() == {
+        "partId": GEAR,
+        "filamentId": SPOOL,
+        "name": "Pieza eliminada",
+        "filamentName": "Grilon Rojo (PLA)",
+    }
     assert [x.model_dump() for x in proposal(box).payload.lines] == [
-        {"partId": CUBO, "quantity": 20, "completed": 5},
-        {"partId": GEAR, "quantity": 3, "completed": 1},
+        {"partId": CUBO, "filamentId": SPOOL, "quantity": 20, "completed": 5},
+        {"partId": GEAR, "filamentId": SPOOL, "quantity": 3, "completed": 1},
     ]
 
 
@@ -354,6 +356,107 @@ def test_the_prompt_covers_progress_and_desde() -> None:
     assert "nunca inventes cantidades" in SYSTEM_PROMPT
     assert "Nunca digas que el avance ya quedó guardado" in SYSTEM_PROMPT
     assert "optimize_project con `desde`" in SYSTEM_PROMPT
+
+
+# --- the same part on several lines, one spool each (ADR 0036) -------------------------------
+
+TWO_SPOOLS = [
+    queue_line(CUBO, "Cubo", 20, 2, SPOOL, "Rojo"),
+    queue_line(CUBO, "Cubo", 6, 1, SPOOL_2, "Azul"),
+    queue_line(GEAR, "Engranaje", 10, 0, SPOOL, "Rojo"),
+]
+
+
+async def test_the_same_part_with_two_spools_stays_two_lines() -> None:
+    box = api_with(queue_body(TWO_SPOOLS)).toolbox()
+
+    await progress(box, [{"pieza": "Cubo", "bobina": "Azul", "impresas": 4}])
+
+    assert [(x.partId, x.filamentId, x.completed) for x in proposal(box).payload.lines] == [
+        (CUBO, SPOOL, 2),  # the red line is untouched, not overwritten
+        (CUBO, SPOOL_2, 4),
+        (GEAR, SPOOL, 0),
+    ]
+    assert [(n.filamentId, n.filamentName) for n in proposal(box).lineNames] == [
+        (SPOOL, "Grilon Rojo (PLA)"),
+        (SPOOL_2, "Grilon Azul (PLA)"),
+        (SPOOL, "Grilon Rojo (PLA)"),
+    ]
+
+
+async def test_both_spools_of_a_part_can_be_updated_in_one_proposal() -> None:
+    box = api_with(queue_body(TWO_SPOOLS)).toolbox()
+
+    await progress(
+        box,
+        [
+            {"pieza": "Cubo", "bobina": SPOOL, "impresas": 7},
+            {"pieza": "Cubo", "bobina": SPOOL_2.upper(), "impresas": 3},
+        ],
+    )
+
+    assert [x.completed for x in proposal(box).payload.lines] == [7, 3, 0]
+
+
+async def test_a_part_on_several_lines_without_a_spool_asks_which_one() -> None:
+    api = api_with(queue_body(TWO_SPOOLS))
+    box = api.toolbox()
+
+    result = await progress(box, [{"pieza": "Cubo", "impresas": 4}])
+
+    assert result.startswith("ERROR: «Cubo» está en 2 líneas de la cola con distinta bobina")
+    assert "Grilon Rojo (PLA)" in result
+    assert "Grilon Azul (PLA)" in result
+    assert "pasá 'bobina'" in result
+    assert box.proposal is None
+    assert {r.method for r in api.requests} == {"GET"}
+
+
+async def test_a_spool_that_matches_no_line_of_the_part_is_refused() -> None:
+    box = api_with(queue_body(TWO_SPOOLS)).toolbox()
+
+    result = await progress(box, [{"pieza": "Cubo", "bobina": "Verde", "impresas": 4}])
+
+    assert result == "ERROR: No encontré «Cubo» con la bobina «Verde» en la cola."
+    assert box.proposal is None
+
+
+async def test_the_same_line_named_twice_is_refused_even_with_two_spools_around() -> None:
+    box = api_with(queue_body(TWO_SPOOLS)).toolbox()
+
+    result = await progress(
+        box,
+        [
+            {"pieza": "Cubo", "bobina": "Azul", "impresas": 1},
+            {"pieza": CUBO, "bobina": "azul", "impresas": 2},
+        ],
+    )
+
+    assert "más de una vez" in result
+    assert box.proposal is None
+
+
+async def test_a_legacy_line_without_a_spool_cannot_be_patched_so_nothing_is_proposed() -> None:
+    legacy = [queue_line(CUBO, "Cubo", 20, 2, None), queue_line(GEAR, "Engranaje", 10, 0)]
+    api = api_with(queue_body(legacy))
+    box = api.toolbox()
+
+    result = await progress(box, [{"pieza": "Engranaje", "impresas": 1}])
+
+    assert result.startswith("ERROR: Hay líneas de la cola sin bobina")
+    assert box.proposal is None
+    assert {r.method for r in api.requests} == {"GET"}
+
+
+async def test_hostile_spool_text_in_the_which_one_answer_is_clipped_and_has_no_markup() -> None:
+    lines = [queue_line(CUBO, "Cubo", 5, 0, SPOOL, "Rojo<b>" + "x" * 300), TWO_SPOOLS[1]]
+    box = api_with(queue_body(lines)).toolbox()
+
+    result = await progress(box, [{"pieza": "Cubo", "impresas": 1}])
+
+    assert result.startswith("ERROR: «Cubo» está en 2 líneas")
+    assert "<b>" not in result
+    assert "x" * 200 not in result
 
 
 # --- desde -----------------------------------------------------------------------------------

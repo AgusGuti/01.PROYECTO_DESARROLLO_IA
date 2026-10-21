@@ -13,7 +13,7 @@ from langchain_core.messages import AIMessage, ToolMessage
 from assistant.chat import SYSTEM_PROMPT, answer
 from assistant.help_text import HELP
 from assistant.tools import RISK_PROJECTS, ApiFilament, Theme, Toolbox, basis_points, pick_spool
-from fakes import PROJECT_ID, FakeApi, ScriptedModel, call
+from fakes import PROJECT_ID, FakeApi, ScriptedModel, call, project_item, queue_line
 
 pytestmark = pytest.mark.anyio
 
@@ -134,9 +134,9 @@ def summary(pid: str, name: str, deadline: str | None) -> dict[str, object]:
 
 def project_body(name: str = "Soportes", items: list[object] | None = None) -> dict[str, object]:
     default: list[object] = [
-        {"partId": SOPORTE, "quantity": 3, "part": {"name": "Soporte", "material": "PLA"}},
-        {"partId": TAPA, "quantity": 2, "part": {"name": "Tapa", "material": "PETG"}},
-        {"partId": GONE, "quantity": 1, "part": None},
+        project_item(SOPORTE, 3, {"name": "Soporte", "material": "PLA"}),
+        project_item(TAPA, 2, {"name": "Tapa", "material": "PETG"}),
+        project_item(GONE, 1, None),
     ]
     return {
         "id": PROJECT_ID,
@@ -343,7 +343,7 @@ async def test_project_cost_with_no_spool_for_any_material_is_one_error() -> Non
 
 
 async def test_project_cost_refuses_a_project_with_only_deleted_parts() -> None:
-    only_deleted = project_body(items=[{"partId": GONE, "quantity": 1, "part": None}])
+    only_deleted = project_body(items=[project_item(GONE, 1, None)])
     api = cost_api({PROJECT: ok(only_deleted)})
 
     out = await api.toolbox().run("costo_de_proyecto", {"proyecto": PROJECT_ID})
@@ -382,11 +382,27 @@ async def test_project_cost_failures_are_short_spanish_errors(
     assert "api.test" not in out
 
 
+async def test_a_400_on_a_spool_is_a_readable_message_with_no_internal_text() -> None:
+    problem = {
+        "type": "about:blank",
+        "title": "Validation failed",
+        "detail": "mongo://10.0.0.5 Cast to ObjectId failed",
+        "issues": [{"path": "lines.0.filamentId", "message": "Unknown spool"}],
+    }
+    api = cost_api({PROJECT_ESTIMATE: httpx.Response(400, json=problem)})
+
+    out = await api.toolbox().run("costo_de_proyecto", {"proyecto": PROJECT_ID})
+
+    assert out.startswith("ERROR: La API rechazó el cálculo: una pieza, bobina o impresora")
+    assert "10.0.0.5" not in out
+    assert "lines.0" not in out
+    assert "Traceback" not in out
+
+
 async def test_project_cost_caps_the_lines_sent_and_the_lines_shown() -> None:
     ids = [f"66f0c0ffee0123456789d{n:03x}" for n in range(120)]
     items: list[object] = [
-        {"partId": i, "quantity": 1, "part": {"name": f"P{n}", "material": "PLA"}}
-        for n, i in enumerate(ids)
+        project_item(i, 1, {"name": f"P{n}", "material": "PLA"}) for n, i in enumerate(ids)
     ]
     lines = [{**cost_line(1, 10, 100, None, 10, 0), "partId": i} for i in ids[:100]]
     api = cost_api(
@@ -679,14 +695,7 @@ def queue_body(*lines: tuple[str, int, bool]) -> dict[str, object]:
         "goal": "fastest",
         "mode": "single",
         "lines": [
-            {
-                "partId": pid,
-                "quantity": 10,
-                "completed": 10 - pending,
-                "pendingUnits": pending,
-                "partName": "x",
-                "partDeleted": deleted,
-            }
+            {**queue_line(pid, "x", 10, 10 - pending), "partDeleted": deleted}
             for pid, pending, deleted in lines
         ],
         "totals": {"totalUnits": 10, "completedUnits": 0, "pendingUnits": 0, "pendingSeconds": 0},

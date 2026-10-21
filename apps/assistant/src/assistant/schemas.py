@@ -27,7 +27,10 @@ class ChatRequest(_Strict):
 
 
 class ProposalItem(_Strict):
+    """A project line: the pair (partId, filamentId) is its key (ADR 0036)."""
+
     partId: str
+    filamentId: str
     quantity: int
 
 
@@ -46,8 +49,12 @@ class ProposalPayload(_Strict):
 
 
 class ProposalItemName(_Strict):
+    """Display names of one line, keyed like the line itself by (partId, filamentId)."""
+
     partId: str
+    filamentId: str
     name: str
+    filamentName: str
 
 
 class CreateProjectProposal(_Strict):
@@ -81,6 +88,7 @@ class CreateQueueProposal(_Strict):
 
 class ProgressLine(_Strict):
     partId: str
+    filamentId: str
     quantity: int
     completed: int
 
