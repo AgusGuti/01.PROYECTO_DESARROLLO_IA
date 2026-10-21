@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { updatePlanningSettingsSchema } from './planning.schemas.js';
 
-const settings = { batchSavingBasisPoints: 1500, version: 0 };
+const settings = {
+  batchSavingBasisPoints: 1500,
+  printerTurnaroundMinutes: 10,
+  filamentChangeMinutes: 30,
+  version: 0,
+};
 const accepts = (body: unknown): boolean => updatePlanningSettingsSchema.safeParse(body).success;
 
 describe('planning settings request', () => {
@@ -32,7 +37,29 @@ describe('planning settings request', () => {
     expect(accepts({ ...settings, version: value })).toBe(expected);
   });
 
-  it.each(['batchSavingBasisPoints', 'version'])('rejects a body without %s', (field) => {
+  it.each(['printerTurnaroundMinutes', 'filamentChangeMinutes'])(
+    '%s is accepted from 0 to 240 and nothing else',
+    (field) => {
+      for (const [value, expected] of [
+        [0, true],
+        [240, true],
+        [241, false],
+        [-1, false],
+        [1.5, false],
+        ['10', false],
+        [null, false],
+      ] as const) {
+        expect(accepts({ ...settings, [field]: value })).toBe(expected);
+      }
+    },
+  );
+
+  it.each([
+    'batchSavingBasisPoints',
+    'printerTurnaroundMinutes',
+    'filamentChangeMinutes',
+    'version',
+  ])('rejects a body without %s', (field) => {
     const rest = Object.fromEntries(Object.entries(settings).filter(([key]) => key !== field));
 
     expect(accepts(rest)).toBe(false);

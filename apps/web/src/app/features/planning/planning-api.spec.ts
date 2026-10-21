@@ -10,6 +10,8 @@ import { PlanningApi } from './planning-api';
 const URL = 'http://api.test/api/v1/planning/settings';
 const SETTINGS: PlanningSettings = {
   batchSavingBasisPoints: 1250,
+  printerTurnaroundMinutes: 10,
+  filamentChangeMinutes: 30,
   version: 2,
   updatedAt: '2026-10-16T12:00:00.000Z',
 };
@@ -43,7 +45,12 @@ describe('PlanningApi', () => {
   });
 
   it('puts the saving with its version', async () => {
-    const body = { batchSavingBasisPoints: 500, version: 2 };
+    const body = {
+      batchSavingBasisPoints: 500,
+      printerTurnaroundMinutes: 15,
+      filamentChangeMinutes: 45,
+      version: 2,
+    };
     const result = firstValueFrom(api.putSettings(body));
 
     const request = http.expectOne({ method: 'PUT', url: URL });
@@ -54,7 +61,14 @@ describe('PlanningApi', () => {
   });
 
   it('fails with the safe error on a 409 and does not retry', async () => {
-    const result = firstValueFrom(api.putSettings({ batchSavingBasisPoints: 0, version: 1 }));
+    const result = firstValueFrom(
+      api.putSettings({
+        batchSavingBasisPoints: 0,
+        printerTurnaroundMinutes: 10,
+        filamentChangeMinutes: 30,
+        version: 1,
+      }),
+    );
 
     http.expectOne(URL).flush({ detail: 'boom' }, { status: 409, statusText: 'x' });
 
@@ -64,7 +78,9 @@ describe('PlanningApi', () => {
   it.each([
     ['not an object', 'nope'],
     ['a fractional saving', { ...SETTINGS, batchSavingBasisPoints: 1.5 }],
-    ['a missing version', { batchSavingBasisPoints: 0, updatedAt: null }],
+    ['a missing version', { ...SETTINGS, version: undefined }],
+    ['a missing turnaround', { ...SETTINGS, printerTurnaroundMinutes: undefined }],
+    ['a fractional filament change', { ...SETTINGS, filamentChangeMinutes: 0.5 }],
     ['a numeric updatedAt', { ...SETTINGS, updatedAt: 5 }],
   ])('rejects %s as an unexpected response', async (_name, body) => {
     const result = firstValueFrom(api.getSettings());

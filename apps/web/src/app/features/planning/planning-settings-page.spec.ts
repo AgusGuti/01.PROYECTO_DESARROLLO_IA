@@ -12,6 +12,8 @@ const SENTINEL = 'SENTINEL-backend-detail-9f3a';
 function makeSettings(overrides: Partial<PlanningSettings> = {}): PlanningSettings {
   return {
     batchSavingBasisPoints: 1250,
+    printerTurnaroundMinutes: 10,
+    filamentChangeMinutes: 30,
     version: 3,
     updatedAt: '2026-10-16T12:00:00.000Z',
     ...overrides,
@@ -70,6 +72,15 @@ async function render() {
       }
       await fixture.whenStable();
     },
+    minutes: (selector: string) => element.querySelector<HTMLInputElement>(selector),
+    async typeMinutes(selector: string, value: string) {
+      const input = element.querySelector<HTMLInputElement>(selector);
+      if (input) {
+        input.value = value;
+        input.dispatchEvent(new Event('input'));
+      }
+      await fixture.whenStable();
+    },
     async submit() {
       view.button('Guardar')?.click();
       await fixture.whenStable();
@@ -105,11 +116,11 @@ describe('PlanningSettingsPage', () => {
     );
     expect(page.input()?.value).toBe('12,5');
     const help = page.element.querySelector('.help');
-    expect(help?.querySelectorAll('li')).toHaveLength(5);
+    expect(help?.querySelectorAll('li')).toHaveLength(7);
     expect(help?.textContent).toContain('10 mm');
     expect(help?.textContent).toContain('90 %');
     expect(help?.textContent).toContain('Con 0 no se ahorra tiempo');
-    expect(page.text()).not.toContain('Todavía no guardaste este ajuste');
+    expect(page.text()).not.toContain('Todavía no guardaste estos ajustes');
   });
 
   it('tells the user nothing is saved when the setting was never saved', async () => {
@@ -117,7 +128,7 @@ describe('PlanningSettingsPage', () => {
 
     await page.load(makeSettings({ batchSavingBasisPoints: 0, version: 0, updatedAt: null }));
 
-    expect(page.text()).toContain('Todavía no guardaste este ajuste');
+    expect(page.text()).toContain('Todavía no guardaste estos ajustes');
     expect(page.input()?.value).toBe('0');
   });
 
@@ -150,6 +161,8 @@ describe('PlanningSettingsPage', () => {
 
     expect(page.api.putSettings).toHaveBeenCalledExactlyOnceWith({
       batchSavingBasisPoints: basisPoints,
+      printerTurnaroundMinutes: 10,
+      filamentChangeMinutes: 30,
       version: 3,
     });
   });
@@ -174,7 +187,7 @@ describe('PlanningSettingsPage', () => {
 
     await page.respond(makeSettings({ version: 1 }));
 
-    expect(page.text()).not.toContain('Todavía no guardaste este ajuste');
+    expect(page.text()).not.toContain('Todavía no guardaste estos ajustes');
   });
 
   it('disables the button while saving and sends only one request', async () => {
@@ -209,7 +222,70 @@ describe('PlanningSettingsPage', () => {
     },
   );
 
+  it('shows the two setup times as labelled fields filled with the loaded values', async () => {
+    const page = await render();
+
+    await page.load(makeSettings({ printerTurnaroundMinutes: 12, filamentChangeMinutes: 45 }));
+
+    expect(page.element.querySelector('label[for="field-turnaround"]')?.textContent).toBe(
+      'Tiempo entre impresiones (minutos)',
+    );
+    expect(page.element.querySelector('label[for="field-change"]')?.textContent).toBe(
+      'Cambio de filamento (minutos)',
+    );
+    expect(page.minutes('#field-turnaround')?.value).toBe('12');
+    expect(page.minutes('#field-change')?.value).toBe('45');
+  });
+
+  it('saves the typed setup times, accepting the limits 0 and 240', async () => {
+    const page = await render();
+    await page.load(makeSettings({ version: 3 }));
+    await page.typeMinutes('#field-turnaround', '0');
+    await page.typeMinutes('#field-change', '240');
+
+    await page.submit();
+
+    expect(page.api.putSettings).toHaveBeenCalledExactlyOnceWith({
+      batchSavingBasisPoints: 1250,
+      printerTurnaroundMinutes: 0,
+      filamentChangeMinutes: 240,
+      version: 3,
+    });
+  });
+
+  it.each([
+    ['#field-turnaround', 'turnaround-error'],
+    ['#field-change', 'change-error'],
+  ])('rejects 241, focuses %s and does not call the API', async (selector, errorId) => {
+    const page = await render();
+    await page.load(makeSettings());
+    await page.typeMinutes(selector, '241');
+
+    await page.submit();
+
+    expect(page.api.putSettings).not.toHaveBeenCalled();
+    const field = page.minutes(selector);
+    expect(field?.getAttribute('aria-invalid')).toBe('true');
+    expect(field?.getAttribute('aria-describedby')).toBe(errorId);
+    expect(page.element.querySelector(`#${errorId}`)?.textContent).toContain('0 a 240');
+    expect(document.activeElement).toBe(field);
+  });
+
   describe('save errors', () => {
+    it('puts a 400 issue on the setup time field the API rejected', async () => {
+      const page = await render();
+      await page.load(makeSettings());
+      await page.submit();
+
+      await page.rejectSave(problem(400, [{ path: 'filamentChangeMinutes', message: SENTINEL }]));
+
+      expect(page.element.querySelector('#change-error')?.textContent).toBe(
+        'El valor no es válido.',
+      );
+      expect(document.activeElement).toBe(page.minutes('#field-change'));
+      expect(page.text()).not.toContain(SENTINEL);
+    });
+
     it('puts a 400 issue next to the field without showing backend text', async () => {
       const page = await render();
       await page.load(makeSettings());
@@ -218,7 +294,7 @@ describe('PlanningSettingsPage', () => {
       await page.rejectSave(problem(400, [{ path: 'batchSavingBasisPoints', message: SENTINEL }]));
 
       expect(page.element.querySelector('#saving-error')?.textContent).toBe(
-        'El ahorro al agrupar piezas no es válido.',
+        'El valor no es válido.',
       );
       expect(document.activeElement).toBe(page.input());
       expect(page.text()).not.toContain(SENTINEL);

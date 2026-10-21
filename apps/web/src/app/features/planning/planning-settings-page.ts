@@ -19,7 +19,11 @@ import type { PlanningSettings, UpdatePlanningSettingsRequest } from '@print3d/a
 import { catchError, map, of, startWith, Subject, switchMap } from 'rxjs';
 import { ApiError } from '../../core/api/api-error';
 import { PlanningApi } from './planning-api';
-import { basisPointsToPercentInput, parsePercentToBasisPoints } from './planning-labels';
+import {
+  basisPointsToPercentInput,
+  parseMinutes,
+  parsePercentToBasisPoints,
+} from './planning-labels';
 
 type LoadState =
   | { readonly kind: 'loading' }
@@ -33,13 +37,35 @@ type SaveState =
   | { readonly kind: 'failed'; readonly message: string; readonly stale: boolean };
 
 const VALIDATION_MESSAGE = 'Ingresá un porcentaje de 0 a 50, con hasta 2 decimales.';
-const SERVER_REJECTED = 'El ahorro al agrupar piezas no es válido.';
+const MINUTES_MESSAGE = 'Ingresá un número entero de minutos, de 0 a 240.';
+const SERVER_REJECTED = 'El valor no es válido.';
 const GENERIC_ERROR = 'Ocurrió un error inesperado. Intentá de nuevo.';
 const INITIAL_LOAD: LoadState = { kind: 'loading' };
 
 function percentValidator(control: AbstractControl<string>): ValidationErrors | null {
   return parsePercentToBasisPoints(control.value) === null ? { invalid: true } : null;
 }
+
+function minutesValidator(control: AbstractControl<string>): ValidationErrors | null {
+  return parseMinutes(control.value) === null ? { invalid: true } : null;
+}
+
+type FieldName = 'saving' | 'turnaround' | 'filamentChange';
+
+/** The request field that each form control edits, to put a server 400 on the right input. */
+const REQUEST_FIELD: Record<FieldName, string> = {
+  saving: 'batchSavingBasisPoints',
+  turnaround: 'printerTurnaroundMinutes',
+  filamentChange: 'filamentChangeMinutes',
+};
+
+const FIELD_IDS: Record<FieldName, string> = {
+  saving: 'field-saving',
+  turnaround: 'field-turnaround',
+  filamentChange: 'field-change',
+};
+
+const FIELD_NAMES = Object.keys(REQUEST_FIELD) as FieldName[];
 
 @Component({
   selector: 'app-planning-settings-page',
@@ -56,6 +82,8 @@ export class PlanningSettingsPage {
 
   protected readonly form = this.fb.group({
     saving: this.fb.control('', percentValidator),
+    turnaround: this.fb.control('', minutesValidator),
+    filamentChange: this.fb.control('', minutesValidator),
   });
 
   protected readonly submitted = signal(false);
@@ -103,11 +131,12 @@ export class PlanningSettingsPage {
     return loaded.kind === 'ready' && this.saved() === null && loaded.settings.version === 0;
   });
 
-  protected fieldError(): string | null {
-    const control = this.form.controls.saving;
+  protected fieldError(name: FieldName): string | null {
+    const control = this.form.controls[name];
     const errors = control.errors;
     if (errors === null || !(control.touched || this.submitted())) return null;
-    return errors['server'] ? SERVER_REJECTED : VALIDATION_MESSAGE;
+    if (errors['server']) return SERVER_REJECTED;
+    return name === 'saving' ? VALIDATION_MESSAGE : MINUTES_MESSAGE;
   }
 
   protected submit(): void {
@@ -117,14 +146,23 @@ export class PlanningSettingsPage {
     this.form.markAllAsTouched();
     if (this.load().kind !== 'ready') return;
 
-    const batchSavingBasisPoints = parsePercentToBasisPoints(this.form.getRawValue().saving);
-    if (batchSavingBasisPoints === null) {
-      this.focusField();
+    const raw = this.form.getRawValue();
+    const batchSavingBasisPoints = parsePercentToBasisPoints(raw.saving);
+    const printerTurnaroundMinutes = parseMinutes(raw.turnaround);
+    const filamentChangeMinutes = parseMinutes(raw.filamentChange);
+    if (
+      batchSavingBasisPoints === null ||
+      printerTurnaroundMinutes === null ||
+      filamentChangeMinutes === null
+    ) {
+      this.focusFirstInvalid();
       return;
     }
 
     const body: UpdatePlanningSettingsRequest = {
       batchSavingBasisPoints,
+      printerTurnaroundMinutes,
+      filamentChangeMinutes,
       version: this.currentVersion(),
     };
     this.save.set({ kind: 'saving' });
@@ -167,24 +205,32 @@ export class PlanningSettingsPage {
       return;
     }
 
-    if (
-      error.status === 400 &&
-      error.issues.some((issue) => issue.path === 'batchSavingBasisPoints')
-    ) {
-      this.form.controls.saving.setErrors({ server: true });
-      this.save.set({ kind: 'idle' });
-      this.focusField();
-      return;
+    if (error.status === 400) {
+      const rejected = FIELD_NAMES.filter((name) =>
+        error.issues.some((issue) => issue.path === REQUEST_FIELD[name]),
+      );
+      if (rejected.length > 0) {
+        for (const name of rejected) this.form.controls[name].setErrors({ server: true });
+        this.save.set({ kind: 'idle' });
+        this.focusFirstInvalid();
+        return;
+      }
     }
     this.save.set({ kind: 'failed', message: error.message, stale: false });
   }
 
   private populate(settings: PlanningSettings): void {
-    this.form.reset({ saving: basisPointsToPercentInput(settings.batchSavingBasisPoints) });
+    this.form.reset({
+      saving: basisPointsToPercentInput(settings.batchSavingBasisPoints),
+      turnaround: String(settings.printerTurnaroundMinutes),
+      filamentChange: String(settings.filamentChangeMinutes),
+    });
     this.submitted.set(false);
   }
 
-  private focusField(): void {
-    this.host.nativeElement.querySelector<HTMLElement>('#field-saving')?.focus();
+  private focusFirstInvalid(): void {
+    const first = FIELD_NAMES.find((name) => this.form.controls[name].invalid);
+    if (first === undefined) return;
+    this.host.nativeElement.querySelector<HTMLElement>(`#${FIELD_IDS[first]}`)?.focus();
   }
 }

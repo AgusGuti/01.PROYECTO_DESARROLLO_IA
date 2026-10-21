@@ -17,6 +17,8 @@ export function isPlanningSettings(value: unknown): value is PlanningSettings {
   return (
     isRecord(value) &&
     isCount(value['batchSavingBasisPoints']) &&
+    isCount(value['printerTurnaroundMinutes']) &&
+    isCount(value['filamentChangeMinutes']) &&
     isCount(value['version']) &&
     (value['updatedAt'] === null || typeof value['updatedAt'] === 'string')
   );

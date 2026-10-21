@@ -1,6 +1,19 @@
 /** 50 % is the API's ceiling for the batching saving (ADR 0027). */
 export const MAX_SAVING_BASIS_POINTS = 5000;
 
+/** 4 hours is the API's ceiling for each setup time (ADR 0036). */
+export const MAX_SETUP_MINUTES = 240;
+
+const MINUTES_INPUT = /^\d{1,3}$/;
+
+/** "15" becomes 15; null when the text is not a whole number of minutes from 0 to 240. */
+export function parseMinutes(text: string): number | null {
+  const trimmed = text.trim();
+  if (!MINUTES_INPUT.test(trimmed)) return null;
+  const minutes = Number(trimmed);
+  return minutes <= MAX_SETUP_MINUTES ? minutes : null;
+}
+
 const PERCENT_INPUT = /^(\d{1,2})(?:[,.](\d{1,2}))?$/;
 
 /**

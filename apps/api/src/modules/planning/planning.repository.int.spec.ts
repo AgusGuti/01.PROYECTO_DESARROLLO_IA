@@ -63,7 +63,9 @@ describe('planning settings repository on a real MongoDB', () => {
   it('answers a conflict on version, without driver text, when a document already exists', async () => {
     await repository.create(validRates, T0);
 
-    const error = await failureOf(repository.create({ batchSavingBasisPoints: 1 }, T1));
+    const error = await failureOf(
+      repository.create({ ...validRates, batchSavingBasisPoints: 1 }, T1),
+    );
 
     expect(error).toMatchObject({ code: 'conflict', issues: [{ path: 'version' }] });
     expect(JSON.stringify({ message: error.message, issues: error.issues })).not.toMatch(
@@ -75,7 +77,7 @@ describe('planning settings repository on a real MongoDB', () => {
   it('lets exactly one of several simultaneous first saves win', async () => {
     const outcomes = await Promise.allSettled(
       [100, 200, 300, 400].map((basisPoints) =>
-        repository.create({ batchSavingBasisPoints: basisPoints }, T0),
+        repository.create({ ...validRates, batchSavingBasisPoints: basisPoints }, T0),
       ),
     );
 
@@ -91,9 +93,14 @@ describe('planning settings repository on a real MongoDB', () => {
   it('updates atomically with the matching version, bumps it and keeps createdAt', async () => {
     await repository.create(validRates, T0);
 
-    const updated = await repository.update({ batchSavingBasisPoints: 7 }, 1, T1);
+    const updated = await repository.update({ ...validRates, batchSavingBasisPoints: 7 }, 1, T1);
 
-    expect(updated).toEqual({ batchSavingBasisPoints: 7, version: 2, updatedAt: T1 });
+    expect(updated).toEqual({
+      ...validRates,
+      batchSavingBasisPoints: 7,
+      version: 2,
+      updatedAt: T1,
+    });
     expect(await collection().findOne({})).toMatchObject({ createdAt: T0, version: 2 });
   });
 
@@ -102,7 +109,7 @@ describe('planning settings repository on a real MongoDB', () => {
 
     const results = await Promise.all(
       [1, 2, 3].map((basisPoints) =>
-        repository.update({ batchSavingBasisPoints: basisPoints }, 1, T1),
+        repository.update({ ...validRates, batchSavingBasisPoints: basisPoints }, 1, T1),
       ),
     );
 
@@ -114,7 +121,7 @@ describe('planning settings repository on a real MongoDB', () => {
     expect(await repository.update(validRates, 1, T1)).toBeNull();
     await repository.create(validRates, T0);
 
-    expect(await repository.update({ batchSavingBasisPoints: 1 }, 2, T1)).toBeNull();
+    expect(await repository.update({ ...validRates, batchSavingBasisPoints: 1 }, 2, T1)).toBeNull();
 
     expect(await repository.find()).toEqual({ ...validRates, version: 1, updatedAt: T0 });
   });
@@ -122,11 +129,39 @@ describe('planning settings repository on a real MongoDB', () => {
   it('rejects a value outside 0..5000 with a generic 503 and keeps the stored data', async () => {
     await repository.create(validRates, T0);
 
-    const error = await failureOf(repository.update({ batchSavingBasisPoints: 5001 }, 1, T1));
+    const error = await failureOf(
+      repository.update({ ...validRates, batchSavingBasisPoints: 5001 }, 1, T1),
+    );
 
     expect(error.code).toBe('service_unavailable');
     expect(error.message).not.toMatch(/validation|batchSaving/i);
     expect(await repository.find()).toEqual({ ...validRates, version: 1, updatedAt: T0 });
+  });
+
+  it('reads a document saved before the setup times existed as the defaults, then saves them', async () => {
+    await collection().insertOne({
+      _id: 'planning' as never,
+      batchSavingBasisPoints: 700,
+      version: 1,
+      createdAt: T0,
+      updatedAt: T0,
+    });
+
+    expect(await repository.find()).toEqual({
+      batchSavingBasisPoints: 700,
+      printerTurnaroundMinutes: 10,
+      filamentChangeMinutes: 30,
+      version: 1,
+      updatedAt: T0,
+    });
+
+    await repository.update({ ...validRates, printerTurnaroundMinutes: 15 }, 1, T1);
+
+    expect(await collection().findOne({})).toMatchObject({
+      printerTurnaroundMinutes: 15,
+      filamentChangeMinutes: 30,
+      version: 2,
+    });
   });
 
   it('has no index beyond _id', async () => {

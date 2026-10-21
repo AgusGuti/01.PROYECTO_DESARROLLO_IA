@@ -18,7 +18,8 @@
 
       @if (neverSaved()) {
         <p class="notice">
-          Todavía no guardaste este ajuste: al agrupar piezas no se ahorra tiempo (0 %).
+          Todavía no guardaste estos ajustes: al agrupar piezas no se ahorra tiempo (0 %), y se usan
+          10 minutos entre impresiones y 30 por cada cambio de filamento.
         </p>
       }
 
@@ -40,7 +41,16 @@
             Con <strong>0</strong> no se ahorra tiempo: dejalo así hasta que lo midas en tus
             impresiones reales.
           </li>
-          <li>Después de guardar, volvé a optimizar un proyecto para ver el efecto.</li>
+          <li>
+            <strong>Tiempo entre impresiones</strong>: minutos que se suman cuando una impresora
+            termina una pieza y empieza otra (limpiar la cama, volver a calentar). No se cuenta
+            antes de la primera impresión.
+          </li>
+          <li>
+            <strong>Cambio de filamento</strong>: minutos extra cuando la siguiente impresión usa
+            otro carrete que la anterior en esa impresora.
+          </li>
+          <li>Después de guardar, volvé a simular u optimizar un proyecto para ver el efecto.</li>
         </ul>
       </section>
 
@@ -60,7 +70,9 @@
           </div>
         }
 
-        @let savingError = fieldError();
+        @let savingError = fieldError('saving');
+        @let turnaroundError = fieldError('turnaround');
+        @let changeError = fieldError('filamentChange');
         <div class="field">
           <label for="field-saving">Ahorro al agrupar piezas (%)</label>
           <input
@@ -74,6 +86,38 @@
           />
           @if (savingError) {
             <p id="saving-error" class="field-error">{{ savingError }}</p>
+          }
+        </div>
+
+        <div class="field">
+          <label for="field-turnaround">Tiempo entre impresiones (minutos)</label>
+          <input
+            id="field-turnaround"
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
+            formControlName="turnaround"
+            [attr.aria-invalid]="turnaroundError ? 'true' : null"
+            [attr.aria-describedby]="turnaroundError ? 'turnaround-error' : null"
+          />
+          @if (turnaroundError) {
+            <p id="turnaround-error" class="field-error">{{ turnaroundError }}</p>
+          }
+        </div>
+
+        <div class="field">
+          <label for="field-change">Cambio de filamento (minutos)</label>
+          <input
+            id="field-change"
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
+            formControlName="filamentChange"
+            [attr.aria-invalid]="changeError ? 'true' : null"
+            [attr.aria-describedby]="changeError ? 'change-error' : null"
+          />
+          @if (changeError) {
+            <p id="change-error" class="field-error">{{ changeError }}</p>
           }
         </div>
 

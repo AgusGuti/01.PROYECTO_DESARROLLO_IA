@@ -1,4 +1,23 @@
-import { basisPointsToPercentInput, parsePercentToBasisPoints } from './planning-labels';
+import {
+  basisPointsToPercentInput,
+  parseMinutes,
+  parsePercentToBasisPoints,
+} from './planning-labels';
+
+describe('parseMinutes', () => {
+  it.each([
+    ['0', 0],
+    ['15', 15],
+    ['240', 240],
+    [' 30 ', 30],
+  ])('converts %j to %i minutes', (text, minutes) => {
+    expect(parseMinutes(text)).toBe(minutes);
+  });
+
+  it.each(['', 'abc', '241', '-1', '1,5', '1.5', '1e1', '1000'])('rejects %j', (text) => {
+    expect(parseMinutes(text)).toBeNull();
+  });
+});
 
 describe('parsePercentToBasisPoints', () => {
   it.each([

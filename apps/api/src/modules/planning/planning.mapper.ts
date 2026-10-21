@@ -5,6 +5,8 @@ import type { PlanningSettingsDto } from './planning.schemas.js';
 export function toPlanningSettingsDto(settings: PlanningSettings): PlanningSettingsDto {
   return {
     batchSavingBasisPoints: settings.batchSavingBasisPoints,
+    printerTurnaroundMinutes: settings.printerTurnaroundMinutes,
+    filamentChangeMinutes: settings.filamentChangeMinutes,
     version: settings.version,
     updatedAt: settings.updatedAt === null ? null : settings.updatedAt.toISOString(),
   };

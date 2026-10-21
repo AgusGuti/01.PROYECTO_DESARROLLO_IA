@@ -2,7 +2,7 @@
 import type { Router } from 'express';
 import type { Clock } from '../health/index.js';
 import { createPlanningController } from './planning.controller.js';
-import { DEFAULT_PLANNING_SETTINGS } from './planning.domain.js';
+import { DEFAULT_PLANNING_SETTINGS, type PlanningRates } from './planning.domain.js';
 import { createMongoPlanningSettingsRepository } from './planning.repository.js';
 import { createPlanningRouter } from './planning.routes.js';
 import { createPlanningService, type PlanningSettingsRepository } from './planning.service.js';
@@ -15,10 +15,14 @@ export { registerPlanningPaths } from './planning.openapi.js';
  */
 export function createPlanningSettingsReader(
   repository: Pick<PlanningSettingsRepository, 'find'> = createMongoPlanningSettingsRepository(),
-): () => Promise<{ batchSavingBasisPoints: number }> {
+): () => Promise<PlanningRates> {
   return async () => {
     const settings = (await repository.find()) ?? DEFAULT_PLANNING_SETTINGS;
-    return { batchSavingBasisPoints: settings.batchSavingBasisPoints };
+    return {
+      batchSavingBasisPoints: settings.batchSavingBasisPoints,
+      printerTurnaroundMinutes: settings.printerTurnaroundMinutes,
+      filamentChangeMinutes: settings.filamentChangeMinutes,
+    };
   };
 }
 

@@ -699,6 +699,8 @@ export type InterventionRange = {
 
 export type PlanningSettings = {
     batchSavingBasisPoints: number;
+    printerTurnaroundMinutes: number;
+    filamentChangeMinutes: number;
     /**
      * 0 until the settings are first saved.
      */
@@ -711,6 +713,14 @@ export type UpdatePlanningSettingsRequest = {
      * Time saved when identical pieces share a plate, in basis points: 1000 is 10 %. 0 to 5000.
      */
     batchSavingBasisPoints: number;
+    /**
+     * Minutes between a print ending and the next one starting on the same printer (cleaning the bed, reheating). 0 to 240.
+     */
+    printerTurnaroundMinutes: number;
+    /**
+     * Extra minutes when the next print on that printer uses a different spool. 0 to 240.
+     */
+    filamentChangeMinutes: number;
     /**
      * 0 for the first save, otherwise the version last seen (ADR 0027).
      */

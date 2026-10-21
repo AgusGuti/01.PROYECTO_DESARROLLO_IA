@@ -32,23 +32,29 @@ describe('planning service', () => {
 
     const saved = await service.saveSettings({ ...validRates, version: 0 });
 
-    expect(saved).toMatchObject({ batchSavingBasisPoints: 1500, version: 1 });
+    expect(saved).toMatchObject({ ...validRates, batchSavingBasisPoints: 1500, version: 1 });
   });
 
   it('updates with the matching version and bumps it', async () => {
     const { service } = setup();
     await service.saveSettings({ ...validRates, version: 0 });
 
-    const saved = await service.saveSettings({ batchSavingBasisPoints: 200, version: 1 });
+    const saved = await service.saveSettings({
+      ...validRates,
+      batchSavingBasisPoints: 200,
+      version: 1,
+    });
 
-    expect(saved).toMatchObject({ batchSavingBasisPoints: 200, version: 2 });
+    expect(saved).toMatchObject({ ...validRates, batchSavingBasisPoints: 200, version: 2 });
   });
 
   it('answers a conflict on version for a stale update', async () => {
     const { repository, service } = setup();
     await service.saveSettings({ ...validRates, version: 0 });
 
-    const error = await failure(service.saveSettings({ batchSavingBasisPoints: 1, version: 5 }));
+    const error = await failure(
+      service.saveSettings({ ...validRates, batchSavingBasisPoints: 1, version: 5 }),
+    );
 
     expect(error).toMatchObject({ code: 'conflict', issues: [{ path: 'version' }] });
     expect(repository.stored?.batchSavingBasisPoints).toBe(1500);

@@ -7,7 +7,13 @@ import { planningSettingsSchema } from './planning.schemas.js';
 import { createFakeSettingsRepository, createTestClock, validRates } from './testing/fakes.js';
 
 const SETTINGS = '/api/v1/planning/settings';
-const KEYS = ['batchSavingBasisPoints', 'updatedAt', 'version'];
+const KEYS = [
+  'batchSavingBasisPoints',
+  'filamentChangeMinutes',
+  'printerTurnaroundMinutes',
+  'updatedAt',
+  'version',
+];
 
 function setup() {
   const repository = createFakeSettingsRepository();
@@ -36,6 +42,8 @@ describe('GET /api/v1/planning/settings', () => {
     expect(response.status).toBe(200);
     expect(planningSettingsSchema.parse(response.body)).toEqual({
       batchSavingBasisPoints: 0,
+      printerTurnaroundMinutes: 10,
+      filamentChangeMinutes: 30,
       version: 0,
       updatedAt: null,
     });
@@ -51,6 +59,8 @@ describe('GET /api/v1/planning/settings', () => {
     expect(Object.keys(response.body as object).sort()).toEqual(KEYS);
     expect(response.body).toEqual({
       batchSavingBasisPoints: 1500,
+      printerTurnaroundMinutes: 10,
+      filamentChangeMinutes: 30,
       version: 3,
       updatedAt: '2026-02-01T00:00:00.000Z',
     });
@@ -89,7 +99,7 @@ describe('PUT /api/v1/planning/settings', () => {
 
     const response = await request(app)
       .put(SETTINGS)
-      .send({ batchSavingBasisPoints: 5000, version: 1 });
+      .send({ ...validRates, batchSavingBasisPoints: 5000, version: 1 });
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({ batchSavingBasisPoints: 5000, version: 2 });
@@ -100,7 +110,9 @@ describe('PUT /api/v1/planning/settings', () => {
     repository.stored = { ...validRates, version: 3, updatedAt: new Date() };
 
     const problem = expectProblem(
-      await request(app).put(SETTINGS).send({ batchSavingBasisPoints: 1, version: 2 }),
+      await request(app)
+        .put(SETTINGS)
+        .send({ ...validRates, batchSavingBasisPoints: 1, version: 2 }),
       409,
       'conflict',
     );
@@ -110,11 +122,14 @@ describe('PUT /api/v1/planning/settings', () => {
   });
 
   it.each([
-    ['a value above 5000', { batchSavingBasisPoints: 5001, version: 0 }],
-    ['a negative value', { batchSavingBasisPoints: -1, version: 0 }],
-    ['a float', { batchSavingBasisPoints: 10.5, version: 0 }],
-    ['a missing version', { batchSavingBasisPoints: 10 }],
-    ['an unknown field', { batchSavingBasisPoints: 10, version: 0, _id: 'x' }],
+    ['a value above 5000', { ...validRates, batchSavingBasisPoints: 5001, version: 0 }],
+    ['a negative value', { ...validRates, batchSavingBasisPoints: -1, version: 0 }],
+    ['a float', { ...validRates, batchSavingBasisPoints: 10.5, version: 0 }],
+    ['a turnaround above 240', { ...validRates, printerTurnaroundMinutes: 241, version: 0 }],
+    ['a negative filament change', { ...validRates, filamentChangeMinutes: -1, version: 0 }],
+    ['a missing turnaround', { batchSavingBasisPoints: 10, filamentChangeMinutes: 30, version: 0 }],
+    ['a missing version', validRates],
+    ['an unknown field', { ...validRates, version: 0, _id: 'x' }],
     ['a body that is not an object', []],
   ])('answers 400 for %s and writes nothing', async (_label, payload) => {
     const { app, repository } = setup();

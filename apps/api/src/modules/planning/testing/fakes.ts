@@ -8,7 +8,11 @@ export function createTestClock(start = '2026-03-01T10:00:00.000Z'): Clock {
   return { now: () => new Date(start) };
 }
 
-export const validRates: PlanningRates = { batchSavingBasisPoints: 1500 };
+export const validRates: PlanningRates = {
+  batchSavingBasisPoints: 1500,
+  printerTurnaroundMinutes: 10,
+  filamentChangeMinutes: 30,
+};
 
 export interface FakePlanningSettingsRepository extends PlanningSettingsRepository {
   /** Names of the repository methods called, in order. */

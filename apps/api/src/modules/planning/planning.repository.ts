@@ -2,7 +2,10 @@
 import mongoose, { Schema } from 'mongoose';
 import { AppError } from '../../shared/errors/app-error.js';
 import {
+  DEFAULT_FILAMENT_CHANGE_MINUTES,
+  DEFAULT_TURNAROUND_MINUTES,
   MAX_BATCH_SAVING_BASIS_POINTS,
+  MAX_SETUP_MINUTES,
   type PlanningRates,
   type PlanningSettings,
 } from './planning.domain.js';
@@ -15,6 +18,9 @@ const SETTINGS_ID = 'planning';
 interface StoredSettings {
   _id: string;
   batchSavingBasisPoints: number;
+  /** Absent in documents saved before ADR 0036: read as the defaults (expand-only change). */
+  printerTurnaroundMinutes?: number;
+  filamentChangeMinutes?: number;
   version: number;
   createdAt: Date;
   updatedAt: Date;
@@ -33,6 +39,8 @@ const settingsSchema = new Schema<StoredSettings>(
       min: 0,
       max: MAX_BATCH_SAVING_BASIS_POINTS,
     },
+    printerTurnaroundMinutes: { type: Number, min: 0, max: MAX_SETUP_MINUTES },
+    filamentChangeMinutes: { type: Number, min: 0, max: MAX_SETUP_MINUTES },
     version: { type: Number, required: true, min: 1 },
     createdAt: { type: Date, required: true },
     updatedAt: { type: Date, required: true },
@@ -45,6 +53,8 @@ const SettingsModel = mongoose.model<StoredSettings>('PlanningSettings', setting
 function toSettings(stored: StoredSettings): PlanningSettings {
   return {
     batchSavingBasisPoints: stored.batchSavingBasisPoints,
+    printerTurnaroundMinutes: stored.printerTurnaroundMinutes ?? DEFAULT_TURNAROUND_MINUTES,
+    filamentChangeMinutes: stored.filamentChangeMinutes ?? DEFAULT_FILAMENT_CHANGE_MINUTES,
     version: stored.version,
     updatedAt: stored.updatedAt,
   };
@@ -53,6 +63,8 @@ function toSettings(stored: StoredSettings): PlanningSettings {
 /** The editable numbers, copied one by one (never the request object itself). */
 const ratesSet = (rates: PlanningRates): PlanningRates => ({
   batchSavingBasisPoints: rates.batchSavingBasisPoints,
+  printerTurnaroundMinutes: rates.printerTurnaroundMinutes,
+  filamentChangeMinutes: rates.filamentChangeMinutes,
 });
 
 function isDuplicateKey(error: unknown): boolean {
