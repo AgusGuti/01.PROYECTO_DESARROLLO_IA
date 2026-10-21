@@ -18,6 +18,7 @@ import type {
 } from '@print3d/api-contracts';
 import { catchError, map, of, startWith, Subject, switchMap } from 'rxjs';
 import { ApiError } from '../../core/api/api-error';
+import { DateTools } from '../../shared/ui/date-tools';
 import { AvailabilityApi } from './availability-api';
 import {
   DAY_NAMES,
@@ -141,7 +142,7 @@ function readRanges(
 
 @Component({
   selector: 'app-availability-page',
-  imports: [ReactiveFormsModule, RangesEditor],
+  imports: [DateTools, ReactiveFormsModule, RangesEditor],
   templateUrl: './availability-page.html',
   styleUrl: './availability-page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

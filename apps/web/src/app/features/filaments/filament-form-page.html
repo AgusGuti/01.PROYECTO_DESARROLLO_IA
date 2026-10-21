@@ -161,6 +161,7 @@
               [attr.aria-invalid]="dateError ? 'true' : null"
               [attr.aria-describedby]="describedBy('purchaseDate', null)"
             />
+            <app-date-tools [control]="form.controls.purchaseDate" label="fecha de compra" />
             @if (dateError) {
               <p id="field-date-error" class="field-error">{{ dateError }}</p>
             }

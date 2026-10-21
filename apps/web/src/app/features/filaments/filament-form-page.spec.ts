@@ -133,7 +133,7 @@ describe('FilamentFormPage (create)', () => {
     expect(page.element.querySelectorAll('h1')).toHaveLength(1);
     expect(page.element.querySelector('h1')?.textContent).toBe('Nuevo filamento');
     const controls = Array.from(page.element.querySelectorAll('input, select'));
-    expect(controls).toHaveLength(7);
+    expect(controls).toHaveLength(8);
     for (const control of controls) {
       const labelled = control as HTMLInputElement;
       expect(labelled.labels?.length, `control ${labelled.id} has no label`).toBeGreaterThan(0);
@@ -149,6 +149,7 @@ describe('FilamentFormPage (create)', () => {
       'Gramos disponibles (g), opcional',
       'Costo de compra (pesos)',
       'Fecha de compra',
+      'Calendario de fecha de compra',
     ]);
   });
 

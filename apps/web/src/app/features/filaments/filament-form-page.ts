@@ -23,6 +23,7 @@ import type {
 } from '@print3d/api-contracts';
 import { catchError, map, of, startWith, Subject, switchMap } from 'rxjs';
 import { ApiError } from '../../core/api/api-error';
+import { DateTools } from '../../shared/ui/date-tools';
 import {
   formatDate,
   MATERIAL_LABELS,
@@ -187,7 +188,7 @@ interface FormValues {
 
 @Component({
   selector: 'app-filament-form-page',
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [DateTools, ReactiveFormsModule, RouterLink],
   templateUrl: './filament-form-page.html',
   styleUrl: './filament-form-page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

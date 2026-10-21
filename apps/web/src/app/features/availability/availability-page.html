@@ -94,6 +94,7 @@
                 [attr.aria-invalid]="dateError ? 'true' : null"
                 [attr.aria-describedby]="dateError ? dateId + '-error' : null"
               />
+              <app-date-tools [control]="row.controls.date" label="fecha de la excepción" />
               @if (dateError) {
                 <p [id]="dateId + '-error'" class="field-error">{{ dateError }}</p>
               }
@@ -158,6 +159,10 @@
                 [attr.aria-invalid]="fromError ? 'true' : null"
                 [attr.aria-describedby]="fromError ? fromId + '-error' : null"
               />
+              <app-date-tools
+                [control]="row.controls.from"
+                label="fecha de inicio de la ausencia"
+              />
               @if (fromError) {
                 <p [id]="fromId + '-error'" class="field-error">{{ fromError }}</p>
               }
@@ -174,6 +179,7 @@
                 [attr.aria-invalid]="toError ? 'true' : null"
                 [attr.aria-describedby]="toError ? toId + '-error' : null"
               />
+              <app-date-tools [control]="row.controls.to" label="fecha de fin de la ausencia" />
               @if (toError) {
                 <p [id]="toId + '-error'" class="field-error">{{ toError }}</p>
               }
